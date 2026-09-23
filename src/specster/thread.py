@@ -15,6 +15,21 @@ TRUSTED: dict[str, frozenset[str]] = {
 }
 _OWN = "<!-- specster:"
 _FOOTER = re.compile(r"<details data-specster=\"metrics\">.*?</details>", re.DOTALL)
+_FRAMING_TAG = re.compile(r"</?(entry|issue_thread)\b[^>]*>", re.IGNORECASE)
+_FRAMING_BARE = re.compile(r"</?(?:entry|issue_thread)", re.IGNORECASE)
+
+
+def _defuse(text: str) -> str:
+    # Neutralize forged <entry>/<issue_thread> framing tags (and any attributes they
+    # carry, e.g. a fake role) without a blanket HTML escape, so code snippets with
+    # < and > stay readable to the model. A well-formed tag is collapsed to an inert
+    # placeholder; a bare/unclosed occurrence just gets its "<" escaped.
+    def collapse(m: re.Match[str]) -> str:
+        slash = "/" if m.group(0)[1] == "/" else ""
+        return f"&lt;{slash}{m.group(1).lower()}&gt;"
+
+    text = _FRAMING_TAG.sub(collapse, text)
+    return _FRAMING_BARE.sub(lambda m: "&lt;" + m.group(0)[1:], text)
 
 
 @dataclass(frozen=True)
@@ -35,7 +50,7 @@ class Thread:
 
 
 def _entry(author: str, role: str, at: str, body: str) -> str:
-    return f'<entry author="{escape(author)}" role="{role}" at="{at}">\n{body}\n</entry>'
+    return f'<entry author="{escape(author)}" role="{role}" at="{at}">\n{_defuse(body)}\n</entry>'
 
 
 def build_thread(
