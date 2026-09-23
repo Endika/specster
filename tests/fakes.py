@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from specster.github import Comment, Issue
+from specster.llm.base import ToolCall, ToolResult, ToolSpec, Turn, Usage
 
 
 @dataclass
@@ -49,3 +50,35 @@ def _with_labels(issue: Issue, labels: set[str]) -> Issue:
         issue.author_association,
         tuple(sorted(labels)),
     )
+
+
+class ScriptedModel:
+    provider = "fake"
+    model = "fake-1"
+
+    def __init__(self, script: list[list[ToolCall] | str]) -> None:
+        self.script = list(script)
+        self.sessions_started = 0
+        self.user_text = ""
+        self.system = ""
+        self.context = ""
+        self.tools: list[ToolSpec] = []
+        self.received: list[tuple[ToolResult, ...]] = []
+        self.nudges: list[str] = []
+
+    def start(
+        self, system: str, context: str, user: str, tools: Sequence[ToolSpec]
+    ) -> "ScriptedModel":
+        self.sessions_started += 1
+        self.system, self.context, self.user_text, self.tools = system, context, user, list(tools)
+        return self
+
+    def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+        self.received.append(tuple(results))
+        if user_text:
+            self.nudges.append(user_text)
+        item = self.script.pop(0)
+        usage = Usage(100, 50, 0, 20)
+        if isinstance(item, str):
+            return Turn(item, (), usage)
+        return Turn("", tuple(item), usage)
