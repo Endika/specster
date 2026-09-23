@@ -22,6 +22,21 @@ PROVIDERS: dict[str, ModelConfig] = {
         project="specster-dev",
         max_tokens=1024,
     ),
+    "openai": ModelConfig(provider="openai", model="gpt-5-mini", max_tokens=1024),
+    "openai-compatible": ModelConfig(
+        provider="openai-compatible",
+        model="gemini-flash-latest",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key_env="GEMINI_API_KEY",
+        max_tokens=1024,
+    ),
+    "azure-openai": ModelConfig(
+        provider="azure-openai",
+        model="specster-dev",
+        base_url="https://specster-dev.openai.azure.com",
+        api_version="2024-10-21",
+        max_tokens=1024,
+    ),
 }
 
 TOOLS = [
