@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from specster.workspace import ToolError, Workspace
+from specster.workspace import FILE_MAX_BYTES, ToolError, Workspace
 
 
 @pytest.fixture
@@ -64,3 +64,43 @@ def test_grep_reports_when_it_truncates(ws: Workspace, tmp_path: Path) -> None:
 def test_invalid_regex_is_a_tool_error(ws: Workspace) -> None:
     with pytest.raises(ToolError, match="invalid pattern"):
         ws.grep("(")
+
+
+def test_read_file_reports_and_marks_cut_lines(ws: Workspace, tmp_path: Path) -> None:
+    long_line = "x" * 310
+    (tmp_path / "long.txt").write_text(f"short\n{long_line}\n")
+    out = ws.read_file("long.txt")
+    assert out == f"1: short\n2: {'x' * 300} [cut]"
+    assert ws.truncations == ["read long.txt: 1 lines cut to 300 chars"]
+
+
+def test_grep_reports_and_marks_cut_lines(ws: Workspace, tmp_path: Path) -> None:
+    long_line = "hit " + "x" * 310
+    (tmp_path / "long.txt").write_text(long_line + "\n")
+    out = ws.grep("hit", "long.txt")
+    assert out == f"long.txt:1: {long_line[:300]} [cut]"
+    assert ws.truncations == ["grep 'hit': 1 matched lines cut to 300 chars"]
+
+
+def test_files_skips_oversized_files_and_reports(ws: Workspace, tmp_path: Path) -> None:
+    (tmp_path / "big.txt").write_text("a" * (FILE_MAX_BYTES + 1))
+    assert "big.txt" not in ws.files()
+    assert ws.truncations == ["1 files over 2 MB skipped: big.txt"]
+
+
+def test_read_file_refuses_oversized_file(ws: Workspace, tmp_path: Path) -> None:
+    (tmp_path / "big.txt").write_text("a" * (FILE_MAX_BYTES + 1))
+    with pytest.raises(ToolError, match="larger than 2 MB"):
+        ws.read_file("big.txt")
+
+
+def test_symlinked_dir_escape_is_refused(ws: Workspace, tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside_dir"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("nope")
+    (tmp_path / "linked_dir").symlink_to(outside)
+    assert not any(f.startswith("linked_dir/") for f in ws.files())
+    with pytest.raises(ToolError, match="outside"):
+        ws.read_file("linked_dir/secret.txt")
+    with pytest.raises(ToolError, match="outside"):
+        ws.list_dir("linked_dir")

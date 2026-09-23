@@ -7,6 +7,7 @@ import pathspec
 READ_MAX_LINES = 400
 GREP_MAX_MATCHES = 200
 LINE_MAX_CHARS = 300
+FILE_MAX_BYTES = 2_000_000
 
 
 class ToolError(Exception):
@@ -44,13 +45,22 @@ class Workspace:
     def files(self) -> list[str]:
         if self._files is None:
             found = []
+            skipped_large = []
             for path in self.root.rglob("*"):
                 rel = path.relative_to(self.root).as_posix()
                 if path.is_symlink() or not path.is_file() or self._ignore.match_file(rel):
                     continue
+                if path.stat().st_size > FILE_MAX_BYTES:
+                    skipped_large.append(rel)
+                    continue
                 if not _is_binary(path):
                     found.append(rel)
             self._files = sorted(found)
+            if skipped_large:
+                names = sorted(skipped_large)
+                shown = ", ".join(names[:5])
+                more = ", ..." if len(names) > 5 else ""
+                self.truncations.append(f"{len(names)} files over 2 MB skipped: {shown}{more}")
         return self._files
 
     def list_dir(self, path: str = ".") -> str:
@@ -71,6 +81,8 @@ class Workspace:
         target = self._resolve(path)
         if not target.is_file():
             raise ToolError(f"{path}: not a file")
+        if target.stat().st_size > FILE_MAX_BYTES:
+            raise ToolError(f"{path}: larger than 2 MB")
         if _is_binary(target):
             raise ToolError(f"{path}: binary file")
         lines = target.read_text(errors="replace").splitlines()
@@ -78,7 +90,17 @@ class Workspace:
         last = min(end or len(lines), len(lines), start + READ_MAX_LINES - 1)
         rel = target.relative_to(self.root).as_posix()
         self.files_read.add(rel)
-        out = [f"{n}: {lines[n - 1][:LINE_MAX_CHARS]}" for n in range(start, last + 1)]
+        out = []
+        cut = 0
+        for n in range(start, last + 1):
+            line = lines[n - 1]
+            if len(line) > LINE_MAX_CHARS:
+                cut += 1
+                out.append(f"{n}: {line[:LINE_MAX_CHARS]} [cut]")
+            else:
+                out.append(f"{n}: {line}")
+        if cut:
+            self.truncations.append(f"read {rel}: {cut} lines cut to {LINE_MAX_CHARS} chars")
         wanted_end = min(end or len(lines), len(lines))
         if last < wanted_end:
             note = f"read {rel}: lines {start}-{last} of {start}-{wanted_end} shown"
@@ -93,13 +115,22 @@ class Workspace:
             raise ToolError(f"invalid pattern: {e}") from e
         glob = pathspec.PathSpec.from_lines("gitwildmatch", [path_glob])
         hits = []
+        cut = 0
         for rel in self.files():
             if not glob.match_file(rel):
                 continue
             text = (self.root / rel).read_text(errors="replace")
             for n, line in enumerate(text.splitlines(), 1):
                 if regex.search(line):
-                    hits.append(f"{rel}:{n}: {line[:LINE_MAX_CHARS]}")
+                    if len(line) > LINE_MAX_CHARS:
+                        cut += 1
+                        hits.append(f"{rel}:{n}: {line[:LINE_MAX_CHARS]} [cut]")
+                    else:
+                        hits.append(f"{rel}:{n}: {line}")
+        if cut:
+            self.truncations.append(
+                f"grep '{pattern}': {cut} matched lines cut to {LINE_MAX_CHARS} chars"
+            )
         if len(hits) > GREP_MAX_MATCHES:
             self.truncations.append(
                 f"grep '{pattern}': {GREP_MAX_MATCHES} of {len(hits)} matches shown"
