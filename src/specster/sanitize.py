@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 
 _HTML_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
-_INVISIBLE = re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿]")
+_INVISIBLE = re.compile("[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 
 
 @dataclass(frozen=True)
