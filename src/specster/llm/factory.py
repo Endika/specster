@@ -6,6 +6,7 @@ import openai
 from specster.config import ModelConfig
 from specster.llm.anthropic_chat import AnthropicChat
 from specster.llm.base import ChatModel
+from specster.llm.gemini_chat import GeminiChat
 from specster.llm.openai_chat import OpenAIChat
 
 REPLAY_KEY = "replay-placeholder"
@@ -95,10 +96,36 @@ def _openai(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel
     return OpenAIChat(client, p, cfg.model, cfg.max_tokens, param)
 
 
+def _gemini(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel:
+    from google import genai
+
+    p = cfg.provider
+    if p == "gemini":
+        key = _key(env, cfg.api_key_env or "GEMINI_API_KEY", p, replay)
+        client = genai.Client(api_key=key)
+    else:
+        project, region = _need(cfg.project, "project", p), _need(cfg.region, "region", p)
+        if replay:
+            from google.oauth2.credentials import Credentials
+
+            client = genai.Client(
+                vertexai=True,
+                project=project,
+                location=region,
+                # google-auth leaves Credentials.__init__ unannotated.
+                credentials=Credentials(token="replay"),  # type: ignore[no-untyped-call]
+            )
+        else:
+            client = genai.Client(vertexai=True, project=project, location=region)
+    return GeminiChat(client, p, cfg.model, cfg.max_tokens, cfg.max_retries)
+
+
 def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = False) -> ChatModel:
     p = cfg.provider
     if p in ("anthropic", "bedrock", "vertex-anthropic"):
         return _anthropic(cfg, env, replay)
     if p in ("openai", "openai-compatible", "azure-openai"):
         return _openai(cfg, env, replay)
+    if p in ("gemini", "vertex-gemini"):
+        return _gemini(cfg, env, replay)
     raise ProviderConfigError(f"provider {p} is not wired yet")
