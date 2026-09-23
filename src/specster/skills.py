@@ -46,7 +46,7 @@ class SkillBook:
     read: set[str] = field(default_factory=set)
 
     def get(self, name: str) -> Skill:
-        for skill in self.skills:
+        for skill in self.inline + self.on_demand:
             if skill.name == name:
                 self.read.add(name)
                 return skill
@@ -59,25 +59,74 @@ def http_fetch(url: str, headers: Mapping[str, str]) -> bytes:
     return resp.content
 
 
-def _split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
-    if text.startswith("---\n"):
-        end = text.find("\n---", 4)
-        if end != -1:
-            meta = yaml.safe_load(text[4:end]) or {}
-            if isinstance(meta, dict):
-                return meta, text[end + 4 :].lstrip("\n")
-    return {}, text
+def _confine(root: Path, rel: str) -> Path | None:
+    """Resolve a repo-relative skill path, or None if it escapes the repo."""
+    if Path(rel).is_absolute():
+        return None
+    candidate = root / rel
+    if candidate.is_symlink():
+        return None
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(root.resolve()):
+        return None
+    return resolved
+
+
+def _split_frontmatter(text: str, origin: str, warnings: list[str]) -> tuple[dict[str, Any], str]:
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---", 4)
+    if end == -1:
+        return {}, text
+    try:
+        meta = yaml.safe_load(text[4:end])
+    except yaml.YAMLError:
+        warnings.append(f"{origin}: invalid frontmatter ignored")
+        return {}, text
+    if meta is None:
+        meta = {}
+    if not isinstance(meta, dict):
+        warnings.append(f"{origin}: invalid frontmatter ignored")
+        return {}, text
+    return meta, text[end + 4 :].lstrip("\n")
+
+
+def _phases_from_meta(meta: dict[str, Any], origin: str, warnings: list[str]) -> frozenset[Phase]:
+    raw = meta.get("phases", "all")
+    if raw == "all":
+        return ALL_PHASES
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        warnings.append(f"{origin}: invalid phases ignored, defaulting to all phases")
+        return ALL_PHASES
+    valid = [p for p in raw if p in ALL_PHASES]
+    unknown = [p for p in raw if p not in ALL_PHASES]
+    if unknown:
+        names = ", ".join(str(p) for p in unknown)
+        warnings.append(f"{origin}: unknown phases ignored: {names}")
+    if not valid:
+        warnings.append(f"{origin}: no valid phases, defaulting to all phases")
+        return ALL_PHASES
+    return frozenset(valid)
 
 
 def _make(
-    text: str, origin: str, stem: str, source: SkillSource | None, verified: bool | None
+    text: str,
+    origin: str,
+    stem: str,
+    source: SkillSource | None,
+    verified: bool | None,
+    warnings: list[str],
 ) -> Skill:
-    meta, body = _split_frontmatter(text)
+    meta, body = _split_frontmatter(text, origin, warnings)
     first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
     phases = source.phase_set() if source else None
     if phases is None:
-        raw = meta.get("phases", "all")
-        phases = ALL_PHASES if raw == "all" else frozenset(p for p in raw if p in ALL_PHASES)
+        phases = _phases_from_meta(meta, origin, warnings)
     return Skill(
         name=str(meta.get("name") or stem),
         description=str(meta.get("description") or first[:120]),
@@ -88,29 +137,44 @@ def _make(
     )
 
 
+def _autodiscover_candidates(root: Path) -> list[str]:
+    found = [p for p in AUTODISCOVER_FILES if (root / p).is_file()]
+    for pattern in AUTODISCOVER_GLOBS:
+        found += sorted(p.relative_to(root).as_posix() for p in root.glob(pattern) if p.is_file())
+    return found
+
+
 def load_skills(
     root: Path, cfg: SkillsConfig, phase: Phase, fetch: Fetch, auth_token: str | None
 ) -> SkillBook:
     warnings: list[str] = []
     by_origin: dict[str, Skill] = {}
     if cfg.autodiscover:
-        found = [p for p in AUTODISCOVER_FILES if (root / p).is_file()]
-        for pattern in AUTODISCOVER_GLOBS:
-            found += sorted(
-                p.relative_to(root).as_posix() for p in root.glob(pattern) if p.is_file()
-            )
-        for rel in found:
+        for rel in _autodiscover_candidates(root):
+            resolved = _confine(root, rel)
+            if resolved is None:
+                warnings.append(f"{rel}: skipped (symlink or outside the repository)")
+                continue
             by_origin[rel] = _make(
-                (root / rel).read_text(errors="replace"), rel, PurePosixPath(rel).stem, None, None
+                resolved.read_text(errors="replace"),
+                rel,
+                PurePosixPath(rel).stem,
+                None,
+                None,
+                warnings,
             )
     for source in cfg.sources:
         if source.path is not None:
+            local = _confine(root, source.path)
+            if local is None:
+                raise SkillIntegrityError(f"{source.path}: outside the repository")
             by_origin[source.path] = _make(
-                (root / source.path).read_text(errors="replace"),
+                local.read_text(errors="replace"),
                 source.path,
                 PurePosixPath(source.path).stem,
                 source,
                 None,
+                warnings,
             )
             continue
         assert source.url is not None
@@ -135,6 +199,7 @@ def load_skills(
             PurePosixPath(parsed.path).stem,
             source,
             verified,
+            warnings,
         )
 
     skills = list(by_origin.values())
