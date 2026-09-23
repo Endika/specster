@@ -84,3 +84,55 @@ def test_get_records_reads(tmp_path: Path) -> None:
     book = load_skills(tmp_path, SkillsConfig(), "spec", FakeWeb({}), None)
     assert book.get("AGENTS").body == "x"
     assert book.read == {"AGENTS"}
+
+
+def test_configured_path_traversal_raises(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (tmp_path / "outside.txt").write_text("data")
+    cfg = SkillsConfig(autodiscover=False, sources=[SkillSource(path="../outside.txt")])
+    with pytest.raises(SkillIntegrityError, match="outside the repository"):
+        load_skills(root, cfg, "spec", FakeWeb({}), None)
+
+
+def test_configured_absolute_path_raises(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.md").write_text("A")
+    cfg = SkillsConfig(autodiscover=False, sources=[SkillSource(path=str(root / "a.md"))])
+    with pytest.raises(SkillIntegrityError, match="outside the repository"):
+        load_skills(root, cfg, "spec", FakeWeb({}), None)
+
+
+def test_autodiscovered_symlink_outside_repo_is_skipped(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("secret")
+    (root / "AGENTS.md").symlink_to(outside)
+    book = load_skills(root, SkillsConfig(), "spec", FakeWeb({}), None)
+    assert book.skills == []
+    assert any("AGENTS.md" in w for w in book.warnings)
+
+
+def test_invalid_frontmatter_yaml_is_ignored_with_warning(tmp_path: Path) -> None:
+    (tmp_path / "bad.md").write_text("---\nname: [unterminated\n---\nBody text.\n")
+    cfg = SkillsConfig(autodiscover=False, sources=[SkillSource(path="bad.md")])
+    book = load_skills(tmp_path, cfg, "spec", FakeWeb({}), None)
+    assert book.skills[0].name == "bad"
+    assert "bad.md: invalid frontmatter ignored" in book.warnings
+
+
+def test_scalar_phases_string_becomes_one_item_list(tmp_path: Path) -> None:
+    (tmp_path / "solo.md").write_text("---\nphases: spec\n---\nBody.\n")
+    cfg = SkillsConfig(autodiscover=False, sources=[SkillSource(path="solo.md")])
+    book = load_skills(tmp_path, cfg, "spec", FakeWeb({}), None)
+    assert book.skills[0].phases == frozenset({"spec"})
+
+
+def test_get_ignores_skills_inactive_in_current_phase(tmp_path: Path) -> None:
+    (tmp_path / "buildonly.md").write_text("---\nphases: [build]\n---\nBody.\n")
+    cfg = SkillsConfig(autodiscover=False, sources=[SkillSource(path="buildonly.md")])
+    book = load_skills(tmp_path, cfg, "spec", FakeWeb({}), None)
+    with pytest.raises(KeyError):
+        book.get("buildonly")
