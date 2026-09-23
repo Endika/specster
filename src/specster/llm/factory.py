@@ -1,10 +1,12 @@
 from collections.abc import Mapping
 
 import anthropic
+import openai
 
 from specster.config import ModelConfig
 from specster.llm.anthropic_chat import AnthropicChat
 from specster.llm.base import ChatModel
+from specster.llm.openai_chat import OpenAIChat
 
 REPLAY_KEY = "replay-placeholder"
 
@@ -28,7 +30,7 @@ def _key(env: Mapping[str, str], name: str, provider: str, replay: bool) -> str:
     return value
 
 
-def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = False) -> ChatModel:
+def _anthropic(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel:
     p = cfg.provider
     client: anthropic.Anthropic | anthropic.AnthropicBedrockMantle | anthropic.AnthropicVertex
     if p == "anthropic":
@@ -42,7 +44,7 @@ def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = Fa
         client = anthropic.AnthropicBedrockMantle(
             aws_region=region, max_retries=cfg.max_retries, skip_auth=replay
         )
-    elif p == "vertex-anthropic":
+    else:
         region, project = _need(cfg.region, "region", p), _need(cfg.project, "project", p)
         client = anthropic.AnthropicVertex(
             project_id=project,
@@ -50,6 +52,53 @@ def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = Fa
             max_retries=cfg.max_retries,
             access_token="replay" if replay else None,
         )
-    else:
-        raise ProviderConfigError(f"provider {p} is not wired yet")
     return AnthropicChat(client, p, cfg.model, cfg.max_tokens, cfg.effort)
+
+
+def _openai(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel:
+    p = cfg.provider
+    default_param = "max_tokens" if p == "openai-compatible" else "max_completion_tokens"
+    param = cfg.token_param or default_param
+    client: openai.OpenAI
+    if p == "azure-openai":
+        endpoint = _need(cfg.base_url, "base_url", p)
+        version = _need(cfg.api_version, "api_version", p)
+        key = REPLAY_KEY if replay else env.get(cfg.api_key_env or "AZURE_OPENAI_API_KEY")
+        if key:
+            client = openai.AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_version=version,
+                api_key=key,
+                max_retries=cfg.max_retries,
+            )
+        else:
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+            # Without a key, the OIDC login from azure/login in the workflow supplies the token.
+            token = get_bearer_token_provider(
+                DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+            )
+            client = openai.AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_version=version,
+                azure_ad_token_provider=token,
+                max_retries=cfg.max_retries,
+            )
+    elif p == "openai":
+        key = _key(env, cfg.api_key_env or "OPENAI_API_KEY", p, replay)
+        client = openai.OpenAI(api_key=key, base_url=cfg.base_url, max_retries=cfg.max_retries)
+    else:
+        base_url = _need(cfg.base_url, "base_url", p)
+        # Local servers take no key; the SDK still refuses to start without one.
+        key = _key(env, cfg.api_key_env, p, replay) if cfg.api_key_env else "not-needed"
+        client = openai.OpenAI(api_key=key, base_url=base_url, max_retries=cfg.max_retries)
+    return OpenAIChat(client, p, cfg.model, cfg.max_tokens, param)
+
+
+def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = False) -> ChatModel:
+    p = cfg.provider
+    if p in ("anthropic", "bedrock", "vertex-anthropic"):
+        return _anthropic(cfg, env, replay)
+    if p in ("openai", "openai-compatible", "azure-openai"):
+        return _openai(cfg, env, replay)
+    raise ProviderConfigError(f"provider {p} is not wired yet")
