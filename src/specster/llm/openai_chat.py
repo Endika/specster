@@ -42,6 +42,8 @@ class _Session:
         if choice.finish_reason == "content_filter":
             raise ModelRefusal("content_filter")
         message = choice.message
+        if message.refusal:
+            raise ModelRefusal(message.refusal)
         self._messages.append(message.model_dump(exclude_none=True))
         calls = []
         for tc in message.tool_calls or []:

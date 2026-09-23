@@ -26,6 +26,15 @@ from specster.llm.openai_chat import OpenAIChat
             ModelConfig(provider="azure-openai", base_url="https://a.openai.azure.com"),
             "api_version",
         ),
+        (
+            ModelConfig(
+                provider="azure-openai",
+                base_url="https://a.openai.azure.com",
+                api_version="2024-10-21",
+                api_key_env="AZ_KEY",
+            ),
+            "AZ_KEY",
+        ),
         (ModelConfig(provider="gemini", model="gemini-flash-latest"), "GEMINI_API_KEY"),
         (ModelConfig(provider="vertex-gemini", region="global"), "project"),
         (ModelConfig(provider="vertex-gemini", project="p"), "region"),

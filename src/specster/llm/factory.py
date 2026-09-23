@@ -64,7 +64,10 @@ def _openai(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel
     if p == "azure-openai":
         endpoint = _need(cfg.base_url, "base_url", p)
         version = _need(cfg.api_version, "api_version", p)
-        key = REPLAY_KEY if replay else env.get(cfg.api_key_env or "AZURE_OPENAI_API_KEY")
+        if cfg.api_key_env:
+            key: str | None = _key(env, cfg.api_key_env, p, replay)
+        else:
+            key = REPLAY_KEY if replay else env.get("AZURE_OPENAI_API_KEY")
         if key:
             client = openai.AzureOpenAI(
                 azure_endpoint=endpoint,
