@@ -14,7 +14,7 @@ def test_unclosed_comment_hides_the_rest_like_github_does() -> None:
 
 
 def test_invisible_characters_are_removed_and_listed_by_codepoint() -> None:
-    s = sanitize("ad​min ‮evil")
+    s = sanitize("ad\u200bmin \u202eevil")
     assert s.text == "admin evil"
     assert s.removed == ("2 invisible characters: U+200B, U+202E",)
 
