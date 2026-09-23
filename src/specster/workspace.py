@@ -26,7 +26,7 @@ class Workspace:
         gitignore = self.root / ".gitignore"
         if gitignore.is_file():
             patterns += gitignore.read_text(errors="replace").splitlines()
-        self._ignore = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+        self._ignore = pathspec.GitIgnoreSpec.from_lines(patterns)
         self.files_read: set[str] = set()
         self.truncations: list[str] = []
         self._files: list[str] | None = None
@@ -113,7 +113,7 @@ class Workspace:
             regex = re.compile(pattern)
         except re.error as e:
             raise ToolError(f"invalid pattern: {e}") from e
-        glob = pathspec.PathSpec.from_lines("gitwildmatch", [path_glob])
+        glob = pathspec.PathSpec.from_lines("gitignore", [path_glob])
         hits = []
         cut = 0
         for rel in self.files():
