@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512" role="img" aria-label="Specster">
+  <path d="M24 112V56A40 40 0 0 1 104 56V112q-5 10-10 0q-5-10-10 0q-5 10-10 0q-5-10-10 0q-5 10-10 0q-5-10-10 0q-5 10-10 0q-5-10-10 0Z" fill="#F7FAFF" stroke="#17223B" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="47" cy="56" r="11" fill="#DDEBFF" stroke="#17223B" stroke-width="4.5"/>
+  <circle cx="79" cy="56" r="11" fill="#DDEBFF" stroke="#17223B" stroke-width="4.5"/>
+  <path d="M58 54q5-4 10 0" fill="none" stroke="#17223B" stroke-width="4.5" stroke-linecap="round"/>
+  <circle cx="49" cy="59" r="4.5" fill="#17223B"/>
+  <circle cx="81" cy="59" r="4.5" fill="#17223B"/>
+  <circle cx="50.6" cy="57.4" r="1.4" fill="#FFFFFF"/>
+  <circle cx="82.6" cy="57.4" r="1.4" fill="#FFFFFF"/>
+  <ellipse cx="60" cy="80" rx="3.8" ry="4.8" fill="#17223B"/>
+  <g transform="rotate(-10 90 96)">
+    <rect x="72" y="76" width="34" height="40" rx="4" fill="#F2B84B" stroke="#17223B" stroke-width="4"/>
+    <rect x="77" y="83" width="24" height="28" rx="1.5" fill="#FFFFFF"/>
+    <rect x="82" y="71" width="14" height="9" rx="2.5" fill="#17223B"/>
+    <path d="M81 91l3 3 5-6M92 92h6M81 100h17M81 106h11" fill="none" stroke="#1E4F8C" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <ellipse cx="73" cy="100" rx="6.5" ry="5.5" fill="#F7FAFF" stroke="#17223B" stroke-width="4"/>
+</svg>
