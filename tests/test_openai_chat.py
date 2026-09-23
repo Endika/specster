@@ -87,3 +87,30 @@ def test_content_filter_is_a_refusal() -> None:
     chat = OpenAIChat(FakeOpenAI("content_filter").client(), "openai", "m", 100, "max_tokens")
     with pytest.raises(ModelRefusal):
         chat.start("s", "c", "u", TOOLS).send()
+
+
+def test_refusal_message_is_a_refusal() -> None:
+    def handle(_request: httpx2.Request) -> httpx2.Response:
+        msg = {"role": "assistant", "content": None, "refusal": "I can't help with that."}
+        return httpx2.Response(
+            200,
+            json={
+                "id": "x",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "m",
+                "choices": [{"index": 0, "message": msg, "finish_reason": "stop"}],
+            },
+        )
+
+    client = openai.OpenAI(
+        api_key="k",
+        base_url="http://fake/v1",
+        max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handle)),
+    )
+    session = OpenAIChat(client, "openai", "m", 100, "max_completion_tokens").start(
+        "s", "c", "u", TOOLS
+    )
+    with pytest.raises(ModelRefusal, match="help with that"):
+        session.send()
