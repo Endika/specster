@@ -107,6 +107,29 @@ def test_text_only_turn_is_nudged_once_then_fails(tmp_path: Path) -> None:
     assert model.nudges == ["Call submit_questions or submit_spec now."]
 
 
+def test_bad_start_argument_types_do_not_crash_the_loop(tmp_path: Path) -> None:
+    ws, skills = setup(tmp_path)
+    model = ScriptedModel(
+        [
+            [
+                ToolCall("1", "read_file", {"path": "app.py", "start": None}),
+                ToolCall("2", "read_file", {"path": "app.py", "start": [1]}),
+            ],
+            [
+                ToolCall(
+                    "3",
+                    "submit_questions",
+                    {"summary": "s", "questions": [{"question": "q", "why": "w"}]},
+                )
+            ],
+        ]
+    )
+    run_agent(model, "s", "c", "t", ws, skills, max_turns=5)
+    results = model.received[1]
+    assert results[0].is_error is False  # start: None falls back to the default
+    assert results[1].is_error is True  # start: [1] is a genuine type error, reported back
+
+
 def test_turn_cap_warns_on_last_turn_then_fails(tmp_path: Path) -> None:
     ws, skills = setup(tmp_path)
     model = ScriptedModel([[ToolCall(str(i), "list_dir", {})] for i in range(3)])
