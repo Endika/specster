@@ -26,6 +26,9 @@ from specster.llm.openai_chat import OpenAIChat
             ModelConfig(provider="azure-openai", base_url="https://a.openai.azure.com"),
             "api_version",
         ),
+        (ModelConfig(provider="gemini", model="gemini-flash-latest"), "GEMINI_API_KEY"),
+        (ModelConfig(provider="vertex-gemini", region="global"), "project"),
+        (ModelConfig(provider="vertex-gemini", project="p"), "region"),
     ],
 )
 def test_missing_required_settings_name_the_key(cfg: ModelConfig, missing: str) -> None:
@@ -46,6 +49,8 @@ def test_replay_needs_no_credentials() -> None:
             base_url="https://a.openai.azure.com",
             api_version="2024-10-21",
         ),
+        ModelConfig(provider="gemini", model="gemini-flash-latest"),
+        ModelConfig(provider="vertex-gemini", model="g", region="global", project="p"),
     ):
         model = build_chat_model(cfg, {}, replay=True)
         assert (model.provider, model.model) == (cfg.provider, cfg.model)
