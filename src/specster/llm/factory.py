@@ -10,6 +10,7 @@ from specster.llm.gemini_chat import GeminiChat
 from specster.llm.openai_chat import OpenAIChat
 
 REPLAY_KEY = "replay-placeholder"
+_NO_BASE_URL = frozenset({"bedrock", "vertex-anthropic", "gemini", "vertex-gemini"})
 
 
 class ProviderConfigError(Exception):
@@ -125,6 +126,8 @@ def _gemini(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel
 
 def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = False) -> ChatModel:
     p = cfg.provider
+    if cfg.base_url and p in _NO_BASE_URL:
+        raise ProviderConfigError(f"models.*.base_url is not supported for provider {p}")
     if p in ("anthropic", "bedrock", "vertex-anthropic"):
         return _anthropic(cfg, env, replay)
     if p in ("openai", "openai-compatible", "azure-openai"):
