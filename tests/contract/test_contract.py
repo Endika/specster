@@ -1,13 +1,11 @@
 import os
-from pathlib import Path
 
 import pytest
 
 from specster.config import ModelConfig
 from specster.llm.base import ToolResult, ToolSpec
 from specster.llm.factory import build_chat_model
-
-CASSETTES = Path(__file__).parent / "cassettes"
+from tests.contract.recording import CASSETTES
 
 # provider id -> ModelConfig used when recording; edit model ids to what the account has.
 PROVIDERS: dict[str, ModelConfig] = {
