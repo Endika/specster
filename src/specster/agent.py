@@ -102,7 +102,7 @@ def _dispatch(call: ToolCall, ws: Workspace, skills: SkillBook) -> str:
         "list_dir": lambda: ws.list_dir(str(a.get("path", "."))),
         "read_file": lambda: ws.read_file(
             str(a["path"]),
-            int(a.get("start", 1)),
+            int(a.get("start") or 1),
             int(a["end"]) if a.get("end") is not None else None,
         ),
         "grep": lambda: ws.grep(str(a["pattern"]), str(a.get("path_glob", "**/*"))),
@@ -158,7 +158,7 @@ def run_agent(
                 continue
             try:
                 out.append(ToolResult(call.id, _dispatch(call, ws, skills)))
-            except (ToolError, KeyError, ValueError) as e:
+            except (ToolError, KeyError, ValueError, TypeError, OSError) as e:
                 out.append(ToolResult(call.id, str(e), True))
         results = out
     raise AgentError(f"no submission after {max_turns} turns")
