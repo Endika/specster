@@ -85,3 +85,20 @@ def test_openai_token_parameter_defaults_per_provider(cfg: ModelConfig, param: s
     model = build_chat_model(cfg, {}, replay=True)
     assert isinstance(model, OpenAIChat)
     assert model.token_param == param
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        ModelConfig(provider="bedrock", region="eu-west-1"),
+        ModelConfig(provider="vertex-anthropic", region="global", project="p"),
+        ModelConfig(provider="gemini"),
+        ModelConfig(provider="vertex-gemini", region="global", project="p"),
+    ],
+)
+def test_base_url_is_rejected_where_the_provider_cannot_use_it(cfg: ModelConfig) -> None:
+    cfg = cfg.model_copy(update={"base_url": "https://proxy.example/v1"})
+    with pytest.raises(
+        ProviderConfigError, match=f"base_url is not supported for provider {cfg.provider}"
+    ):
+        build_chat_model(cfg, {}, replay=True)
