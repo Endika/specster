@@ -42,6 +42,7 @@ NO_CHECKOUT = "repository not checked out: add actions/checkout before Specster"
 PROVIDER_HINT = "Check the provider credentials and the model id in models.planner."
 UNEXPECTED_HINT = "See the workflow log for details, then add the label again."
 Outcome = Literal["questions", "spec", "error", "budget_exhausted"]
+StepOutcome = Outcome | Literal["skipped"]
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def _describe(e: BaseException) -> str:
     return f"{type(e).__name__}: {e}"
 
 
-def _write_outcome(env: Env, outcome: Outcome) -> None:
+def _write_outcome(env: Env, outcome: StepOutcome) -> None:
     if env.output_path is not None:
         with env.output_path.open("a") as out:
             out.write(f"outcome={outcome}\n")
@@ -229,6 +230,7 @@ def main(
     reason = skip_reason(trigger, cfg.labels)
     if reason:
         _log(f"skipped: {reason}")
+        _write_outcome(env, "skipped")
         return 0
     run = _Run(env, tracker, cfg, trigger.issue_number, started, timer)
     try:

@@ -86,6 +86,8 @@ Notes on the parts that matter:
 - The job-level `if` keeps other labels and other issue events from ever starting the container;
   the label is also checked again inside Specster against `labels.spec` in the config. If you
   rename `labels.spec`, change the label name in this `if:` too, or the job never starts.
+- The step's `outcome` output is `questions`, `spec`, `error` or `budget_exhausted`, or `skipped`
+  when the event was not for Specster (another label, a bot sender).
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see "Your own bot identity").
 

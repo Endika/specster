@@ -160,6 +160,7 @@ def test_other_label_does_nothing(tmp_path: Path) -> None:
     tr, model = tracker(), ScriptedModel([])
     assert run(env(tmp_path, label="bug"), tr, model) == 0
     assert tr.posted == [] and model.sessions_started == 0
+    assert outcome(tmp_path) == "outcome=skipped\n"
 
 
 def test_model_sees_only_trusted_snapshot_and_hidden_content_is_reported(tmp_path: Path) -> None:
@@ -273,7 +274,7 @@ def test_body_edited_after_label_is_refused(tmp_path: Path) -> None:
 def test_bot_sender_is_ignored(tmp_path: Path) -> None:
     tr, model = tracker(), ScriptedModel([])
     assert run(env(tmp_path, sender_type="Bot"), tr, model) == 0
-    assert tr.posted == []
+    assert tr.posted == [] and outcome(tmp_path) == "outcome=skipped\n"
 
 
 def test_unreadable_event_exits_without_posting(tmp_path: Path) -> None:
