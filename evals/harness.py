@@ -147,6 +147,7 @@ def run_spec_agent(
             ws,
             skills,
             MAX_TURNS,
+            cfg.persona.max_questions,
         )
         turns = outcome.turns
     except AgentError as e:

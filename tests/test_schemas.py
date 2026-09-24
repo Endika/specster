@@ -27,3 +27,10 @@ def test_questions_are_capped_at_five() -> None:
     q = {"question": "q", "why": "w"}
     with pytest.raises(ValidationError):
         QuestionsResult.model_validate({"summary": "s", "questions": [q] * 6})
+
+
+def test_runaway_text_is_rejected_so_the_model_gets_it_back() -> None:
+    with pytest.raises(ValidationError):
+        QuestionsResult.model_validate(
+            {"summary": "s", "questions": [{"question": "x" * 401, "why": "w"}]}
+        )

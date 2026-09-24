@@ -124,6 +124,7 @@ def run_agent(
     ws: Workspace,
     skills: SkillBook,
     max_turns: int,
+    max_questions: int = 5,
 ) -> AgentOutcome:
     usage = Usage()
     try:
@@ -157,8 +158,8 @@ def run_agent(
                 continue
             if call.name in (SUBMIT_QUESTIONS, SUBMIT_SPEC):
                 try:
-                    return _accept(call, usage, turn_no)
-                except (ValidationError, PlanError) as e:
+                    return _accept(call, usage, turn_no, max_questions)
+                except (ValidationError, PlanError, SubmissionError) as e:
                     bad_submissions += 1
                     if bad_submissions >= 2:
                         message = f"invalid submission twice: {e}"
@@ -174,9 +175,19 @@ def run_agent(
     raise AgentError(f"no submission after {max_turns} turns", usage, max_turns)
 
 
-def _accept(call: ToolCall, usage: Usage, turns: int) -> AgentOutcome:
+class SubmissionError(Exception):
+    pass
+
+
+def _accept(call: ToolCall, usage: Usage, turns: int, max_questions: int) -> AgentOutcome:
     if call.name == SUBMIT_QUESTIONS:
-        return AgentOutcome(QuestionsResult.model_validate(call.arguments), [], [], usage, turns)
+        result = QuestionsResult.model_validate(call.arguments)
+        if len(result.questions) > max_questions:
+            raise SubmissionError(
+                f"{len(result.questions)} questions; ask at most {max_questions}, the ones "
+                "that change the spec most"
+            )
+        return AgentOutcome(result, [], [], usage, turns)
     spec = SpecResult.model_validate(call.arguments)
     tasks, fixes = normalize_plan(spec.tasks)
     return AgentOutcome(spec, tasks, fixes, usage, turns)

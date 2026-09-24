@@ -98,6 +98,8 @@ class PersonaConfig(_Strict):
     closing_line: Literal["off", "generated", "fixed"] = "generated"
     closing_text: str = ""
     language: str = "en"
+    style: Literal["concise", "detailed"] = "concise"
+    max_questions: int = Field(default=3, ge=1, le=5)
 
     @model_validator(mode="after")
     def _fixed_needs_text(self) -> Self:

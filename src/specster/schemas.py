@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,38 +10,51 @@ class _Out(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# Hard caps are about twice the lengths the prompt asks for, so a slightly long answer still
+# validates while a runaway one is sent back to the model.
+def _text(max_chars: int, description: str = "") -> Any:
+    return Field(max_length=max_chars, description=description or None)
+
+
+Item = Annotated[str, Field(max_length=400)]
+
+
 class Question(_Out):
-    question: str = Field(description="One concrete question the spec depends on.")
-    why: str = Field(description="What changes in the spec depending on the answer.")
-    options: list[str] = Field(default=[], description="Likely answers, if there are a few.")
+    question: str = _text(400, "One concrete question the spec depends on, one sentence.")
+    why: str = _text(400, "What changes in the spec depending on the answer, one sentence.")
+    options: list[Annotated[str, Field(max_length=120)]] = Field(
+        default=[], max_length=6, description="Likely answers, if there are a few."
+    )
 
 
 class QuestionsResult(_Out):
-    summary: str = Field(description="What is already clear, in two or three sentences.")
+    summary: str = _text(800, "What is already clear, in one or two sentences.")
     questions: list[Question] = Field(min_length=1, max_length=5)
-    closing_line: str = Field(default="", description="The single closing sentence.")
+    closing_line: str = Field(default="", max_length=300, description="The closing sentence.")
 
 
 class PlanTask(_Out):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", description="Short slug, e.g. add-parser.")
-    title: str
-    description: str
+    title: str = _text(120)
+    description: str = _text(1500, "What to change, concretely.")
     files: list[str] = Field(min_length=1, description="Repo-relative paths this task touches.")
     depends_on: list[str] = Field(default=[], description="Ids of tasks that must finish first.")
-    acceptance: list[str] = Field(min_length=1, description="Observable, checkable criteria.")
+    acceptance: list[Annotated[str, Field(max_length=300)]] = Field(
+        min_length=1, description="Observable, checkable criteria."
+    )
 
 
 class SpecResult(_Out):
-    title: str
-    objective: str
-    in_scope: list[str]
-    out_of_scope: list[str]
+    title: str = _text(120)
+    objective: str = _text(1000)
+    in_scope: list[Item]
+    out_of_scope: list[Item]
     files: list[str] = Field(description="Every repo-relative path the change touches.")
-    approach: str
-    risks: list[str]
-    test_strategy: str
+    approach: str = _text(4000)
+    risks: list[Item]
+    test_strategy: str = _text(2000)
     tasks: list[PlanTask] = Field(min_length=1)
-    closing_line: str = Field(default="", description="The single closing sentence.")
+    closing_line: str = Field(default="", max_length=300, description="The closing sentence.")
 
 
 def _inline(node: Any, defs: dict[str, Any]) -> Any:

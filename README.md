@@ -148,6 +148,8 @@ persona:
   closing_line: generated          # off | generated | fixed
   closing_text: ""                  # required when closing_line: fixed
   language: en                      # language of questions and spec text
+  style: concise                    # concise | detailed: how much text the comments carry
+  max_questions: 3                  # 1-5 questions per round
 
 budget:
   max_usd_per_issue: 5.0             # null removes the cap

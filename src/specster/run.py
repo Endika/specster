@@ -297,6 +297,7 @@ def _call_agent(
             ws,
             skills,
             cfg.budget.max_turns,
+            cfg.persona.max_questions,
         )
     except AgentError as e:
         planner = cfg.models.planner
