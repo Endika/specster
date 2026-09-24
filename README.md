@@ -120,6 +120,7 @@ labels:
 
 trust:
   comments: collaborators       # all | collaborators | owner: who counts, by author_association
+  issue_author: true             # the issue author's comments count too, whatever their association
   snapshot_at_label: true        # only count comments that existed before the triggering label event
 
 skills:
@@ -328,7 +329,10 @@ unpriced model cannot silently exhaust, or silently dodge, the cap.
   in the metrics, not silently dropped.
 - **Trust filter:** `trust.comments` (`all` | `collaborators` | `owner`) checks each comment's
   `author_association`. The issue author's own body is always read; excluded commenters are named
-  in the comment.
+  in the comment. With `trust.issue_author` (default on), the issue author's comments are trusted
+  like the body, so an outside reporter on a public repository can answer Specster's questions;
+  the snapshot still drops the ones posted or edited after the label. Turn it off to hold the
+  author to `trust.comments` like everyone else.
 - **Hidden content shown, not just removed:** HTML comments and invisible/bidi characters are
   stripped from the issue body and comments before the model sees them, and shown verbatim (with a
   cap, and the cut reported) in a collapsed section of the reply.

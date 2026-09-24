@@ -54,6 +54,7 @@ class LabelsConfig(_Strict):
 
 class TrustConfig(_Strict):
     comments: Literal["all", "collaborators", "owner"] = "collaborators"
+    issue_author: bool = True
     snapshot_at_label: bool = True
 
 
