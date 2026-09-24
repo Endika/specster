@@ -8,6 +8,8 @@ from specster.plan import levels, mermaid, plan_payload
 from specster.schemas import PlanTask, QuestionsResult, SpecResult
 from specster.thread import FOOTER_OPEN, HIDDEN_OPEN, HiddenItem
 
+HIDDEN_ITEM_MAX = 2_000
+HIDDEN_SECTION_MAX = 20_000
 _DOT = " \u00b7 "
 _NONE = "\u2014"
 
@@ -98,18 +100,26 @@ def _closing(ctx: RenderContext, generated: str) -> list[str]:
     return [f"_{line.strip()}_", ""] if line.strip() else []
 
 
-def _hidden(ctx: RenderContext) -> list[str]:
+def _hidden(ctx: RenderContext) -> tuple[list[str], int]:
     out: list[str] = []
+    cut = 0
     if ctx.hidden:
         title = f"{_l(ctx)['hidden']} ({len(ctx.hidden)})"
         out += [f"{HIDDEN_OPEN}<summary>{title}</summary>", ""]
+        room = HIDDEN_SECTION_MAX
         for item in ctx.hidden:
-            out += [f"**{item.where}**", "", fence(item.content), ""]
+            keep = min(len(item.content), HIDDEN_ITEM_MAX, room)
+            cut += len(item.content) - keep
+            room -= keep
+            if keep:
+                out += [f"**{item.where}**", "", fence(item.content[:keep]), ""]
+        if cut:
+            out += [f"(cut: {cut} characters not shown)", ""]
         out += ["</details>", ""]
     if ctx.untrusted:
         names = ", ".join(sorted(set(ctx.untrusted)))
         out += [f"{_l(ctx)['untrusted']}: {names}", ""]
-    return out
+    return out, cut
 
 
 def _footer(ctx: RenderContext) -> list[str]:
@@ -149,7 +159,12 @@ def _footer(ctx: RenderContext) -> list[str]:
 
 
 def _wrap(ctx: RenderContext, body: list[str], closing: str) -> str:
-    lines = _header(ctx) + body + [""] + _hidden(ctx) + _closing(ctx, closing) + _footer(ctx)
+    hidden, cut = _hidden(ctx)
+    if cut:
+        note = f"hidden content: {cut} characters not shown"
+        m = ctx.metrics
+        ctx = replace(ctx, metrics=m.model_copy(update={"truncations": [*m.truncations, note]}))
+    lines = _header(ctx) + body + [""] + hidden + _closing(ctx, closing) + _footer(ctx)
     return "\n".join(lines)
 
 
