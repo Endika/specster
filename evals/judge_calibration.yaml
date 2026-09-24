@@ -1,0 +1,108 @@
+- id: good-spec
+  label: good
+  kind: spec
+  rubric: [spec_is_implementable, tasks_are_small_and_ordered]
+  thread: |
+    # Add CSV export next to JSON export
+
+    reports/export.py has to_json. Add to_csv(report) that writes the same rows as CSV with a
+    header row, comma separator, UTF-8. Add a test next to the JSON one.
+  output:
+    title: Add CSV export next to the JSON export
+    objective: Export a Report as CSV with the same rows to_json writes.
+    in_scope:
+      - to_csv(report) in reports/export.py
+      - A test for to_csv next to the JSON test
+    out_of_scope:
+      - Changing to_json
+      - Other formats
+    files: [reports/export.py, tests/test_export.py]
+    approach: >
+      Use csv.DictWriter over report.rows with the keys of the first row as the header,
+      writing to an io.StringIO with delimiter ",", and return the text. An empty report
+      returns an empty string.
+    risks:
+      - Rows with different keys; DictWriter raises on unknown keys, so the header is the union
+        of all keys in first-seen order.
+    test_strategy: >
+      Unit test in tests/test_export.py that parses the output with csv.reader and checks the
+      header row and one data row, including a non-ASCII value.
+    tasks:
+      - id: add-to-csv
+        title: Add to_csv to reports/export.py
+        description: >
+          Implement to_csv(report) with csv.DictWriter, header from the union of row keys,
+          comma separator, returned as a str.
+        files: [reports/export.py]
+        acceptance:
+          - The first line is the header row with every column name.
+          - Fields are separated by a comma separator.
+      - id: test-to-csv
+        title: Test to_csv
+        description: Add test_to_csv_writes_header_and_rows next to the JSON test.
+        files: [tests/test_export.py]
+        depends_on: [add-to-csv]
+        acceptance:
+          - The test fails without to_csv and passes with it.
+
+- id: bad-spec
+  label: bad
+  kind: spec
+  rubric: [spec_is_implementable, tasks_are_small_and_ordered]
+  thread: |
+    # Add CSV export next to JSON export
+
+    reports/export.py has to_json. Add to_csv(report) that writes the same rows as CSV with a
+    header row, comma separator, UTF-8. Add a test next to the JSON one.
+  output:
+    title: Improve exports
+    objective: Make exports better.
+    in_scope: [Exports]
+    out_of_scope: []
+    files: [src/utils/helpers.py]
+    approach: Improve the export helpers.
+    risks: []
+    test_strategy: Test it.
+    tasks:
+      - id: improve-exports
+        title: Improve exports
+        description: Improve the exports.
+        files: [src/utils/helpers.py]
+        acceptance:
+          - works well
+
+- id: good-questions
+  label: good
+  kind: questions
+  rubric: [questions_change_the_spec, questions_not_answerable_from_repo]
+  thread: |
+    # Exports are bad
+
+    The exports are bad, please improve them.
+  output:
+    summary: >
+      The repository has one export, to_json in reports/export.py, which dumps the report rows.
+      The issue does not say what is wrong with it or what "improve" means.
+    questions:
+      - question: "Which formats are bad: JSON only, or new ones missing?"
+        why: Fixing to_json and adding a new format (CSV, YAML) are different changes.
+        options: [JSON only, New formats are missing, Both]
+      - question: "Bad how: wrong data, encoding, or speed?"
+        why: Each one points to a different fix in to_json and a different test.
+        options: [Wrong data, Encoding, Speed]
+
+- id: bad-questions
+  label: bad
+  kind: questions
+  rubric: [questions_change_the_spec, questions_not_answerable_from_repo]
+  thread: |
+    # Exports are bad
+
+    The exports are bad, please improve them.
+  output:
+    summary: The exports need improving.
+    questions:
+      - question: What language is the repo in?
+        why: To know how to write the code.
+      - question: Where is the export code?
+        why: To know which file to change.

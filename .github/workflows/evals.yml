@@ -1,0 +1,42 @@
+name: Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider: { description: Provider under test, default: anthropic }
+      model: { description: Model under test, default: claude-haiku-4-5 }
+      k: { description: Runs per case, default: "3" }
+      max_usd: { description: Hard cap for this run, default: "2.0" }
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups --locked
+      - name: evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SPECSTER_EVAL_PROVIDER: ${{ inputs.provider }}
+          SPECSTER_EVAL_MODEL: ${{ inputs.model }}
+          EVAL_K: ${{ inputs.k }}
+          EVAL_MAX_USD: ${{ inputs.max_usd }}
+        run: >
+          uv run pytest evals -m eval -v
+          --eval-k "$EVAL_K" --eval-max-usd "$EVAL_MAX_USD"
+          --eval-out "$RUNNER_TEMP/specster-evals.jsonl"
+      - name: summary table
+        if: always()
+        run: uv run python -m evals.summary "$RUNNER_TEMP/specster-evals.jsonl" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: eval-results
+          path: ${{ runner.temp }}/specster-evals.jsonl
