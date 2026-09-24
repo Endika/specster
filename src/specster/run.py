@@ -356,6 +356,7 @@ def _spec_phase(
         files_read=sorted(ws.files_read),
         skills_available=[s.name for s in skills.inline + skills.on_demand],
         skills_read=sorted(skills.read),
+        skills_inlined=[s.name for s in skills.inline],
         plan_max_parallel=None if is_questions else max_parallel(outcome.tasks),
         truncations=([repo_map.truncation] if repo_map.truncation else []) + ws.truncations,
         warnings=warnings + budget_warnings,

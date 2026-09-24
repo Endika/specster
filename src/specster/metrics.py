@@ -34,6 +34,7 @@ class RunMetrics(BaseModel):
     hidden_removed: int = Field(default=0, ge=0)
     skills_available: list[str] = []
     skills_read: list[str] = []
+    skills_inlined: list[str] = []
     plan_max_parallel: int | None = Field(default=None, ge=0)
     truncations: list[str] = []
     warnings: list[str] = []

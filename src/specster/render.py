@@ -146,14 +146,16 @@ def _footer(ctx: RenderContext) -> list[str]:
     ]
     listed = [_prose(f) for f in m.files_read[:10]] + (["..."] if len(m.files_read) > 10 else [])
     shown = f" ({', '.join(listed)})" if listed else ""
-    read = ", ".join(m.skills_read) or "none"
+    inlined = ", ".join(_prose(n) for n in m.skills_inlined) or "none"
+    read = ", ".join(_prose(n) for n in m.skills_read) or "none"
     facts = [
         f"- Files read: {len(m.files_read)}{shown}",
         f"- Comments: {m.comments_included} read, {m.comments_untrusted} untrusted, "
         f"{m.comments_after_label} after the label, "
         f"{m.comments_edited_after_label} edited after it",
         f"- Hidden content removed: {m.hidden_removed}",
-        f"- Skills: {len(m.skills_available)} available, read: {read}",
+        f"- Skills: {len(m.skills_available)} available; loaded: {inlined}; "
+        f"read by the model: {read}",
     ]
     if m.plan_max_parallel is not None:
         facts.append(f"- Plan parallelism: up to {m.plan_max_parallel} tasks at once")
