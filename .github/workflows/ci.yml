@@ -43,9 +43,18 @@ jobs:
       - run: uv sync --all-groups
       - run: uv run pytest --block-network
 
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t specster:ci .
+      - name: self-check with no network (grammars and deps must be baked in)
+        run: docker run --rm --network none specster:ci --self-check
+
   all-green:
     name: all-green
-    needs: [quality, test]
+    needs: [quality, test, docker]
     if: always()
     runs-on: ubuntu-latest
     steps:

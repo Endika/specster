@@ -313,7 +313,7 @@ def test_env_from_reads_action_inputs_and_maps_secrets() -> None:
     assert e.api_url == "https://api.github.com"
 
 
-def test_self_check_passes_offline() -> None:
+def test_self_check_finds_main() -> None:
     out = subprocess.run(
         [sys.executable, "-m", "specster", "--self-check"],
         capture_output=True,
