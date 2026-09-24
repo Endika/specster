@@ -8,6 +8,11 @@ on:
       issue_number:
         description: Issue to process
         required: true
+      phase:
+        description: Phase to run
+        type: choice
+        options: [spec, build]
+        default: spec
 
 permissions:
   contents: read
@@ -19,7 +24,7 @@ concurrency:
 
 jobs:
   spec:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ai-spec'
+    if: (github.event_name == 'workflow_dispatch' && inputs.phase != 'build') || github.event.label.name == 'ai-spec'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,3 +45,39 @@ jobs:
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           INPUT_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: uv run --no-dev python -P -m specster
+
+  build:
+    if: (github.event_name == 'workflow_dispatch' && inputs.phase == 'build') || github.event.label.name == 'ai-build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/create-github-app-token@v3
+        id: app
+        if: vars.SPECSTER_APP_ID != ''
+        with:
+          app-id: ${{ vars.SPECSTER_APP_ID }}
+          private-key: ${{ secrets.SPECSTER_APP_KEY }}
+      - run: docker build -t specster:dogfood .
+      - name: run the image built from this checkout, as the action would
+        env:
+          INPUT_GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          INPUT_PHASE: ${{ inputs.phase || 'build' }}
+          INPUT_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: >-
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace
+          -v "$GITHUB_EVENT_PATH:/github/workflow/event.json:ro"
+          -v "$GITHUB_OUTPUT:/github/file_commands/output"
+          -e GITHUB_WORKSPACE=/github/workspace
+          -e GITHUB_EVENT_PATH=/github/workflow/event.json
+          -e GITHUB_OUTPUT=/github/file_commands/output
+          -e GITHUB_EVENT_NAME -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_REF -e GITHUB_SHA
+          -e GITHUB_SERVER_URL -e GITHUB_API_URL -e GITHUB_GRAPHQL_URL
+          -e INPUT_GITHUB_TOKEN -e INPUT_ISSUE_NUMBER -e INPUT_PHASE -e INPUT_ANTHROPIC_API_KEY
+          specster:dogfood

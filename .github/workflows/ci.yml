@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12", "3.13"]
+        python: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -56,6 +56,19 @@ jobs:
           work="$(mktemp -d)"
           printf 'raise SystemExit(99)\n' > "$work/secrets.py"
           docker run --rm --network none -v "$work:/work" -w /work specster:ci --self-check
+      - name: a test process cannot read the parent's environment, /proc/1/environ or .git/config
+        run: |
+          canary="$(openssl rand -hex 16)"
+          docker run --rm --network none -e SPECSTER_ISOLATION_CANARY="$canary" specster:ci --isolation-check
+      - name: the full suite as root inside the image, root-only sandbox tests included
+        run: |
+          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint sh \
+            -e UV_PROJECT_ENVIRONMENT=/src/.venv specster:ci -c \
+            'mkdir /src && cd /src && tar xf - && uv sync --all-groups --locked && uv run pytest --block-network -W error'
+      - name: this repo's own setup and test commands pass as a sandbox slot, as a worker runs them
+        run: |
+          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint sh specster:ci -c \
+            'mkdir /work && cd /work && tar xf - && /app/.venv/bin/python -P tests/dogfood_as_slot.py /work'
 
   all-green:
     name: all-green
