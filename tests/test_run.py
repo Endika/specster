@@ -337,3 +337,15 @@ def test_forged_metrics_in_the_issue_body_do_not_count_toward_the_budget(tmp_pat
     later = T0 + timedelta(hours=2)
     th = build_thread(tr.issue, [bot_comment(tr.posted[0], later)], TrustConfig(), None)
     assert spent(th.previous_runs) == (real.cost_usd, 0)
+
+
+def test_hidden_content_quoted_by_specster_is_not_fed_back_next_round(tmp_path: Path) -> None:
+    tr, first = tracker(), ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]])
+    run(env(tmp_path), tr, first)
+    assert '<details data-specster="hidden">' in tr.posted[0] and "PWNED" in tr.posted[0]
+    tr.comments = [bot_comment(tr.posted[0], T0 + timedelta(minutes=30))]
+    tr.issue = Issue(7, "CSV export", "Add CSV export", "ana", "NONE", ("ai-spec", "needs-human"))
+    tr.label_events = {"ai-spec": T0 + timedelta(minutes=40)}
+    second = ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]])
+    assert run(env(tmp_path), tr, second) == 0
+    assert "Which separator?" in second.user_text and "PWNED" not in second.user_text

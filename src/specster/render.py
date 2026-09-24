@@ -6,7 +6,7 @@ from specster.config import PersonaConfig
 from specster.metrics import RunMetrics, encode_marker
 from specster.plan import levels, mermaid, plan_payload
 from specster.schemas import PlanTask, QuestionsResult, SpecResult
-from specster.thread import HiddenItem
+from specster.thread import FOOTER_OPEN, HIDDEN_OPEN, HiddenItem
 
 _DOT = " \u00b7 "
 _NONE = "\u2014"
@@ -101,7 +101,8 @@ def _closing(ctx: RenderContext, generated: str) -> list[str]:
 def _hidden(ctx: RenderContext) -> list[str]:
     out: list[str] = []
     if ctx.hidden:
-        out += [f"<details><summary>{_l(ctx)['hidden']} ({len(ctx.hidden)})</summary>", ""]
+        title = f"{_l(ctx)['hidden']} ({len(ctx.hidden)})"
+        out += [f"{HIDDEN_OPEN}<summary>{title}</summary>", ""]
         for item in ctx.hidden:
             out += [f"**{item.where}**", "", fence(item.content), ""]
         out += ["</details>", ""]
@@ -136,7 +137,7 @@ def _footer(ctx: RenderContext) -> list[str]:
     facts += [f"- Warning: {w}" for w in m.warnings]
     summary = f"{cost}{_DOT}{m.duration_s:.0f}s{_DOT}{m.model}"
     return [
-        f'<details data-specster="metrics"><summary>{summary}</summary>',
+        f"{FOOTER_OPEN}<summary>{summary}</summary>",
         "",
         *rows,
         "",

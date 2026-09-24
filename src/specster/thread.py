@@ -15,6 +15,7 @@ TRUSTED: dict[str, frozenset[str]] = {
     "collaborators": frozenset({"OWNER", "MEMBER", "COLLABORATOR"}),
 }
 _OWN = "<!-- specster:"
+HIDDEN_OPEN = '<details data-specster="hidden">'
 FOOTER_OPEN = '<details data-specster="metrics">'
 
 
@@ -37,8 +38,10 @@ class Thread:
 
 
 def _own_text(body: str) -> str:
-    cut = body.rfind(FOOTER_OPEN)
-    text = strip_markers(body[:cut] if cut != -1 else body)
+    # The hidden section quotes what was removed from people's text and may hold a forged
+    # "</details>", so the comment is cut where that section (or the footer) starts.
+    cuts = [i for i in (body.find(HIDDEN_OPEN), body.rfind(FOOTER_OPEN)) if i != -1]
+    text = strip_markers(body[: min(cuts)] if cuts else body)
     return re.sub(r"<!-- specster:[^>]*-->", "", text, flags=re.DOTALL).strip()
 
 
