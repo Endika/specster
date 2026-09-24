@@ -77,10 +77,10 @@ def _l(ctx: RenderContext) -> dict[str, str]:
     return LABELS.get(ctx.persona.language, LABELS["en"])
 
 
-def fence(text: str) -> str:
+def fence(text: str, info: str = "") -> str:
     longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
     ticks = "`" * max(3, longest + 1)
-    return f"{ticks}\n{text}\n{ticks}"
+    return f"{ticks}{info}\n{text}\n{ticks}"
 
 
 def _header(ctx: RenderContext) -> list[str]:
@@ -229,7 +229,8 @@ def render_spec(
         body.append(f"| `{t.id}` | {files} | {deps} | {lv[t.id]} |")
     if fixes:
         body += ["", f"**{lab['reordered']}:**", *_bullets(fixes)]
-    body += ["", "```mermaid", mermaid(tasks), "```", "", f"**{lab['acceptance']}**"]
+    one_line = [t.model_copy(update={"title": " ".join(t.title.split())}) for t in tasks]
+    body += ["", fence(mermaid(one_line), "mermaid"), "", f"**{lab['acceptance']}**"]
     for t in tasks:
         body.append(f"- `{t.id}` {t.title}")
         body += [f"  - {a}" for a in t.acceptance]

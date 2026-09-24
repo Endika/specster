@@ -157,3 +157,12 @@ def test_hidden_content_is_capped_and_the_cut_is_reported() -> None:
         assert f"(cut: {cut} characters not shown)" in out
         m = extract_markers(out)[-1]
         assert m.truncations == [f"hidden content: {cut} characters not shown"]
+
+
+def test_mermaid_block_survives_backticks_and_newlines_in_titles() -> None:
+    spec, tasks = spec_and_tasks(title="Parse ``` blocks\nand more")
+    out = render_spec(spec, tasks, [], ctx())
+    start = out.index("````mermaid\ngraph TD\n")
+    block = out[start : out.index("\n````\n", start)]
+    assert '  a["Parse ``` blocks and more"]' in block.splitlines()
+    assert "  a --> b" in block.splitlines()
