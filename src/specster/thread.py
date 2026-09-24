@@ -7,7 +7,7 @@ from html import escape
 
 from specster.config import TrustConfig
 from specster.github import Comment, Issue
-from specster.metrics import RunMetrics, extract_markers, strip_markers
+from specster.metrics import RunMetrics, last_marker, strip_markers
 from specster.sanitize import sanitize
 
 TRUSTED: dict[str, frozenset[str]] = {
@@ -15,7 +15,7 @@ TRUSTED: dict[str, frozenset[str]] = {
     "collaborators": frozenset({"OWNER", "MEMBER", "COLLABORATOR"}),
 }
 _OWN = "<!-- specster:"
-_FOOTER = re.compile(r"<details data-specster=\"metrics\">.*?</details>", re.DOTALL)
+FOOTER_OPEN = '<details data-specster="metrics">'
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,12 @@ class Thread:
     hidden: tuple[HiddenItem, ...]
     previous_runs: tuple[RunMetrics, ...]
     nonce: str
+
+
+def _own_text(body: str) -> str:
+    cut = body.rfind(FOOTER_OPEN)
+    text = strip_markers(body[:cut] if cut != -1 else body)
+    return re.sub(r"<!-- specster:[^>]*-->", "", text, flags=re.DOTALL).strip()
 
 
 def _entry(author: str, role: str, at: str, body: str, nonce: str) -> str:
@@ -62,9 +68,10 @@ def build_thread(
 
     for comment in sorted(comments, key=lambda x: x.created_at):
         if comment.author_type == "Bot" and _OWN in comment.body:
-            previous += extract_markers(comment.body)
-            text = _FOOTER.sub("", strip_markers(comment.body))
-            text = re.sub(r"<!-- specster:[^>]*-->", "", text, flags=re.DOTALL).strip()
+            marker = last_marker(comment.body)
+            if marker is not None:
+                previous.append(marker)
+            text = _own_text(comment.body)
             entries.append(
                 _entry(comment.author, "specster", comment.created_at.isoformat(), text, nonce)
             )
