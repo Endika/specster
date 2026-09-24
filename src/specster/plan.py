@@ -77,13 +77,18 @@ def max_parallel(tasks: Sequence[PlanTask]) -> int:
     return max(counts.values(), default=0)
 
 
+def _node(task_id: str) -> str:
+    # Bare ids like "end" or "graph" are Mermaid keywords, and "--" in an id reads as an edge.
+    return "t_" + task_id.replace("-", "_")
+
+
 def mermaid(tasks: Sequence[PlanTask]) -> str:
     lines = ["graph TD"]
     for task in tasks:
         label = task.title.replace('"', "'")
-        lines.append(f'  {task.id}["{label}"]')
+        lines.append(f'  {_node(task.id)}["{label}"]')
     for task in tasks:
-        lines.extend(f"  {dep} --> {task.id}" for dep in task.depends_on)
+        lines.extend(f"  {_node(dep)} --> {_node(task.id)}" for dep in task.depends_on)
     return "\n".join(lines)
 
 

@@ -54,7 +54,18 @@ def test_fully_sequential_plan_has_parallelism_one() -> None:
 def test_mermaid_lists_every_edge() -> None:
     out = mermaid([t("a", ["1"]), t("b", ["2"], ["a"])])
     assert out.splitlines()[0] == "graph TD"
-    assert "  a --> b" in out
+    assert "  t_a --> t_b" in out
+
+
+def test_mermaid_node_ids_cannot_collide_with_keywords() -> None:
+    out = mermaid([t("end", ["1"]), t("graph", ["2"], ["end"]), t("a--b", ["3"], ["graph"])])
+    assert out.splitlines()[1:] == [
+        '  t_end["end"]',
+        '  t_graph["graph"]',
+        '  t_a__b["a--b"]',
+        "  t_end --> t_graph",
+        "  t_graph --> t_a__b",
+    ]
 
 
 def test_payload_hash_is_stable_across_calls() -> None:
