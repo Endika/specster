@@ -1,0 +1,42 @@
+name: Specster
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue to process
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: specster-issue-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  spec:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ai-spec'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/create-github-app-token@v3
+        id: app
+        if: vars.SPECSTER_APP_ID != ''
+        with:
+          app-id: ${{ vars.SPECSTER_APP_ID }}
+          private-key: ${{ secrets.SPECSTER_APP_KEY }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked --no-dev
+      - name: run specster from this checkout
+        env:
+          INPUT_GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          INPUT_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --no-dev python -m specster
