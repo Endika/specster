@@ -39,4 +39,4 @@ jobs:
           INPUT_GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           INPUT_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run --no-dev python -m specster
+        run: uv run --no-dev python -P -m specster
