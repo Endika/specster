@@ -220,3 +220,11 @@ def test_task_descriptions_are_shown_under_their_titles() -> None:
     spec, _ = spec_and_tasks()
     out = render_spec(spec.model_copy(update={"tasks": [task]}), [task], [], bare())
     assert "- `a` Parser\n  Split on the separator.\n  Keep quotes.\n  - ok" in out
+
+
+def test_footer_marks_files_read_beyond_the_first_ten() -> None:
+    many = M.model_copy(update={"files_read": [f"f{i:02d}.py" for i in range(12)]})
+    out = render_questions(Q, RenderContext(PersonaConfig(), many, [], []))
+    assert "- Files read: 12 (f00.py, f01.py, " in out and "f09.py, ...)" in out
+    ten = M.model_copy(update={"files_read": [f"f{i:02d}.py" for i in range(10)]})
+    assert "f09.py)" in render_questions(Q, RenderContext(PersonaConfig(), ten, [], []))
