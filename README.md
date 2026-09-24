@@ -199,7 +199,9 @@ an env var named in `api_key_env` that is not one of those (e.g. `DEEPSEEK_API_K
 
 **azure-openai** - `base_url` (the resource endpoint) and `api_version` are required. With a key,
 reads `AZURE_OPENAI_API_KEY` or `api_key_env`; without one, it authenticates with
-`DefaultAzureCredential`, picking up the OIDC login below.
+`DefaultAzureCredential`. In v0.1 that means an API key or service-principal environment
+variables (see "Azure" below): the `azure/login` az CLI session is not visible inside the
+Specster container.
 
 **bedrock** - `region` is required, `base_url` is rejected. `model` takes the `anthropic.` prefix
 (e.g. `anthropic.claude-haiku-4-5`). No API key: it authenticates from the environment, normally
@@ -218,7 +220,8 @@ Default Credentials, normally the GCP OIDC login below.
 ### Cloud OIDC logins
 
 Add these before the Specster step, in the same job, with `id-token: write` added to
-`permissions`. No long-lived cloud credentials are needed.
+`permissions`. No long-lived cloud credentials are needed for AWS and GCP; Azure is the
+exception, below.
 
 AWS (for `bedrock`):
 
@@ -248,15 +251,21 @@ GCP (for `vertex-anthropic` and `vertex-gemini`):
       service_account: specster@my-project.iam.gserviceaccount.com
 ```
 
-Azure (for `azure-openai` without a key):
+Azure (for `azure-openai` without a key): there is no OIDC login in v0.1. `azure/login` stores an
+az CLI session on the runner, and the Specster container cannot see it. Pass a service principal
+as environment variables on the Specster step instead; `DefaultAzureCredential` reads them:
 
 ```yaml
-  - uses: azure/login@v2
+  - uses: Endika/specster@v0
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     with:
-      client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+That is a long-lived secret; an `azure_openai_api_key` is the simpler equivalent.
 
 ## Your own bot identity
 
