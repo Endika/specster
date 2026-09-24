@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from specster.workspace import FILE_MAX_BYTES, ToolError, Workspace
+from specster.workspace import FILE_MAX_BYTES, LIST_MAX_ENTRIES, ToolError, Workspace
 
 
 @pytest.fixture
@@ -122,3 +122,14 @@ def test_cloud_credentials_and_git_stay_hidden_even_when_gitignore_negates_them(
         with pytest.raises(ToolError, match="ignored"):
             ws.read_file(path)
     assert "gha-creds" not in ws.list_dir() and "gha-creds" not in ws.grep("external_account")
+
+
+def test_list_dir_is_capped_and_says_so(tmp_path: Path) -> None:
+    (tmp_path / "many").mkdir()
+    for i in range(LIST_MAX_ENTRIES + 20):
+        (tmp_path / "many" / f"f{i:04d}.txt").write_text("x")
+    ws = Workspace(tmp_path)
+    lines = ws.list_dir("many").splitlines()
+    assert len(lines) == LIST_MAX_ENTRIES + 1 and lines[0] == "f0000.txt"
+    note = f"list many: {LIST_MAX_ENTRIES} of {LIST_MAX_ENTRIES + 20} entries shown"
+    assert lines[-1] == f"[truncated: {note}]" and ws.truncations == [note]

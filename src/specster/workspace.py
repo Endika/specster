@@ -6,6 +6,7 @@ import pathspec
 
 READ_MAX_LINES = 400
 GREP_MAX_MATCHES = 200
+LIST_MAX_ENTRIES = 500
 LINE_MAX_CHARS = 300
 FILE_MAX_BYTES = 2_000_000
 # google-github-actions/auth writes gha-creds-*.json into the workspace. Kept apart from the
@@ -82,6 +83,11 @@ class Workspace:
                 if f.startswith(prefix)
             }
         )
+        if len(entries) > LIST_MAX_ENTRIES:
+            where = prefix.rstrip("/") or "."
+            note = f"list {where}: {LIST_MAX_ENTRIES} of {len(entries)} entries shown"
+            self.truncations.append(note)
+            return "\n".join([*entries[:LIST_MAX_ENTRIES], f"[truncated: {note}]"])
         return "\n".join(entries) or "(empty)"
 
     def read_file(self, path: str, start: int = 1, end: int | None = None) -> str:
