@@ -48,3 +48,8 @@ def test_phases_all_expands(tmp_path: Path) -> None:
 def test_not_a_mapping_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="mapping"):
         load_config(write(tmp_path, "- a\n- b\n"))
+
+
+def test_question_cap_is_bounded(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match=r"persona\.max_questions"):
+        load_config(write(tmp_path, "persona:\n  max_questions: 9\n"))

@@ -154,3 +154,19 @@ def test_provider_failure_mid_run_keeps_the_usage_so_far(tmp_path: Path) -> None
         run_agent(model, "s", "c", "t", ws, skills, max_turns=5)
     assert isinstance(err.value.__cause__, ModelRefusal)
     assert err.value.usage == Usage(100, 50, 0, 20) and err.value.turns == 1
+
+
+def test_more_questions_than_allowed_are_sent_back_once(tmp_path: Path) -> None:
+    ws, skills = setup(tmp_path)
+    q = {"question": "q", "why": "w"}
+    too_many = {"summary": "s", "questions": [q, q, q, q]}
+    model = ScriptedModel(
+        [
+            [ToolCall("1", "submit_questions", too_many)],
+            [ToolCall("2", "submit_questions", {"summary": "s", "questions": [q, q]})],
+        ]
+    )
+    out = run_agent(model, "s", "c", "t", ws, skills, max_turns=5, max_questions=3)
+    sent_back = model.received[1][0]
+    assert sent_back.is_error and "ask at most 3" in sent_back.content
+    assert len(out.result.questions) == 2  # type: ignore[union-attr]
