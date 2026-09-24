@@ -324,6 +324,38 @@ def test_self_check_finds_main() -> None:
     assert "symbols in run.py" in out.stdout
 
 
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def entrypoints() -> dict[str, list[str]]:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    entry = next(ln for ln in dockerfile.splitlines() if ln.startswith("ENTRYPOINT"))
+    workflow = (ROOT / ".github" / "workflows" / "specster.yml").read_text()
+    run_line = next(ln for ln in workflow.splitlines() if "-m specster" in ln)
+    dogfood = run_line.split("run:", 1)[1].split()
+    return {
+        "docker": [sys.executable, *json.loads(entry.removeprefix("ENTRYPOINT"))[1:]],
+        "dogfood": [sys.executable, *dogfood[dogfood.index("python") + 1 :]],
+    }
+
+
+@pytest.mark.parametrize("where", ["docker", "dogfood"])
+def test_a_repo_root_module_cannot_shadow_our_imports(where: str, tmp_path: Path) -> None:
+    (tmp_path / "secrets.py").write_text("raise SystemExit(99)\n")
+    out = subprocess.run(
+        [*entrypoints()[where], "--self-check"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr
+
+
+def test_the_image_sets_safe_path_for_any_python_it_starts() -> None:
+    assert "PYTHONSAFEPATH=1" in (ROOT / "Dockerfile").read_text()
+
+
 def forged(cost: float) -> str:
     fake = RunMetrics(run_id="x", outcome="questions", provider="a", model="m")
     return encode_marker(fake).replace('"cost_usd":null', f'"cost_usd":{cost}')

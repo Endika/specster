@@ -51,6 +51,11 @@ jobs:
       - run: docker build -t specster:ci .
       - name: self-check with no network (grammars and deps must be baked in)
         run: docker run --rm --network none specster:ci --self-check
+      - name: a repo-root secrets.py cannot shadow our imports
+        run: |
+          work="$(mktemp -d)"
+          printf 'raise SystemExit(99)\n' > "$work/secrets.py"
+          docker run --rm --network none -v "$work:/work" -w /work specster:ci --self-check
 
   all-green:
     name: all-green
