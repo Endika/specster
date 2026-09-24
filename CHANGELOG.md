@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/Endika/specster/compare/specster-v0.3.2...specster-v0.4.0) (2026-09-24)
+
+
+### Features
+
+* add the ai-build phase that builds the approved plan into a pull request ([00fc023](https://github.com/Endika/specster/commit/00fc023a22fe8d52ba145d99c72c94b7c093c01a))
+
+
+### Documentation
+
+* document the build phase, its isolation, permissions and refusals ([b1cf486](https://github.com/Endika/specster/commit/b1cf48672291253f838593a688c96190c24090eb))
+
 ## [0.3.2](https://github.com/Endika/specster/compare/specster-v0.3.1...specster-v0.3.2) (2026-09-24)
 
 
