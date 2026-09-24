@@ -3,6 +3,17 @@ from typing import Any
 
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
 
+_BREAKPOINT = {"type": "ephemeral"}
+
+
+def _with_breakpoint(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # A cache breakpoint on the newest message lets the next turn read the whole conversation
+    # from cache; the stored history stays unmarked so only one message breakpoint is ever sent.
+    last = messages[-1]
+    blocks = list(last["content"])
+    blocks[-1] = {**blocks[-1], "cache_control": _BREAKPOINT}
+    return [*messages[:-1], {**last, "content": blocks}]
+
 
 class _Session:
     def __init__(
@@ -11,13 +22,15 @@ class _Session:
         self._chat = chat
         self._system = [
             {"type": "text", "text": system},
-            {"type": "text", "text": context, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": context, "cache_control": _BREAKPOINT},
         ]
         self._tools = [
             {"name": t.name, "description": t.description, "input_schema": t.parameters}
             for t in tools
         ]
-        self._messages: list[dict[str, Any]] = [{"role": "user", "content": user}]
+        self._messages: list[dict[str, Any]] = [
+            {"role": "user", "content": [{"type": "text", "text": user}]}
+        ]
 
     def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
         if results or user_text:
@@ -41,7 +54,7 @@ class _Session:
             max_tokens=self._chat.max_tokens,
             system=self._system,
             tools=self._tools,
-            messages=self._messages,
+            messages=_with_breakpoint(self._messages),
             **extra,
         ) as stream:
             message = stream.get_final_message()

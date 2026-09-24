@@ -120,7 +120,7 @@ def test_tool_round_trip_replays_assistant_content_verbatim() -> None:
         "role": "user",
         "content": [
             {"type": "tool_result", "tool_use_id": "toolu_1", "content": "blue", "is_error": False},
-            {"type": "text", "text": "now submit"},
+            {"type": "text", "text": "now submit", "cache_control": {"type": "ephemeral"}},
         ],
     }
 
@@ -171,3 +171,44 @@ def test_refusal_raises_with_the_stop_details() -> None:
     session = AnthropicChat(server.client(), "anthropic", "m", 256, None).start("s", "c", "u", [])
     with pytest.raises(ModelRefusal, match="not this one"):
         session.send()
+
+
+def test_only_the_newest_message_carries_a_cache_breakpoint() -> None:
+    reply = {"content": [TOOL_USE], "stop_reason": "tool_use", "usage": USAGE}
+    server = FakeAnthropic([reply, reply, reply])
+    session = AnthropicChat(server.client(), "anthropic", "claude-test", 256, None).start(
+        "sys", "ctx", "hi", TOOLS
+    )
+    session.send()
+    session.send([ToolResult("toolu_1", "a")])
+    session.send([ToolResult("toolu_1", "b")])
+
+    first, *_, last = server.requests
+    assert first["messages"][0]["content"] == [
+        {"type": "text", "text": "hi", "cache_control": {"type": "ephemeral"}}
+    ]
+    marked = [
+        i
+        for i, message in enumerate(last["messages"])
+        if isinstance(message["content"], list)
+        and any("cache_control" in block for block in message["content"])
+    ]
+    assert marked == [len(last["messages"]) - 1]
+    assert json.dumps(last).count("cache_control") == 2  # context block + newest message
+
+
+def test_history_keeps_the_same_shape_across_turns_apart_from_the_breakpoint() -> None:
+    reply = {"content": [TOOL_USE], "stop_reason": "tool_use", "usage": USAGE}
+    server = FakeAnthropic([reply, reply])
+    session = AnthropicChat(server.client(), "anthropic", "claude-test", 256, None).start(
+        "sys", "ctx", "hi", TOOLS
+    )
+    session.send()
+    session.send([ToolResult("toolu_1", "a")])
+
+    def unmarked(message: dict[str, Any]) -> dict[str, Any]:
+        blocks = [{k: v for k, v in b.items() if k != "cache_control"} for b in message["content"]]
+        return {**message, "content": blocks}
+
+    first_turn, second_turn = server.requests
+    assert unmarked(first_turn["messages"][0]) == unmarked(second_turn["messages"][0])
