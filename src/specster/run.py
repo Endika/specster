@@ -157,11 +157,14 @@ class _Run:
             ctx = self.context(
                 self.metrics("error", failure.cost, turns=failure.turns, **_usage(failure.usage))
             )
-            body = render_error(failure.message, failure.hint, ctx)
-            self.finish("error", body, [self.cfg.labels.spec])
+            self.tracker.post_comment(self.number, render_error(failure.message, failure.hint, ctx))
         except Exception:
             traceback.print_exc()
-            _write_outcome(self.env, "error")
+        try:
+            self.tracker.remove_label(self.number, self.cfg.labels.spec)
+        except Exception:
+            traceback.print_exc()
+        _write_outcome(self.env, "error")
         return 1
 
 
@@ -204,6 +207,7 @@ def main(
         default_skip = skip_reason(trigger, LabelsConfig())
         if default_skip:
             _log(f"{e} (not reported on the issue: {default_skip})")
+            _write_outcome(env, "error")
             return 1
         run = _Run(env, tracker, Config(), trigger.issue_number, started, timer)
         return run.fail(_Failure(str(e), f"Fix {env.config_path} and add the label again."))

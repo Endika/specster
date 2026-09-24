@@ -5,6 +5,8 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from specster.config import ModelConfig, TrustConfig
 from specster.github import Comment, Issue
 from specster.llm.base import ChatModel, ToolCall, ToolResult, ToolSpec, Turn
@@ -250,6 +252,7 @@ def test_invalid_config_on_an_unrelated_event_posts_nothing(tmp_path: Path) -> N
     e = env(tmp_path, label="bug", config="trust:\n  comments: everyone\n")
     assert run(e, tr, model) == 1
     assert tr.posted == [] and tr.issue.labels == ("ai-spec",)
+    assert outcome(tmp_path) == "outcome=error\n"
 
 
 def test_body_edited_after_label_is_refused(tmp_path: Path) -> None:
@@ -368,3 +371,18 @@ def test_a_failed_model_run_is_billed_and_counts_toward_the_next_budget(tmp_path
     assert second.sessions_started == 0
     exhausted = last_marker(tr.posted[1])
     assert exhausted is not None and exhausted.outcome == "budget_exhausted"
+
+
+class CannotComment(FakeTracker):
+    def post_comment(self, number: int, body: str) -> None:
+        raise RuntimeError("GitHub is down")
+
+
+def test_a_failed_error_comment_still_clears_the_trigger_label(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = tracker()
+    tr = CannotComment(issue=base.issue, label_events=base.label_events)
+    assert run(env(tmp_path), tr, ScriptedModel(["no tools", "still no tools"])) == 1
+    assert tr.issue.labels == () and outcome(tmp_path) == "outcome=error\n"
+    assert "GitHub is down" in capsys.readouterr().err
