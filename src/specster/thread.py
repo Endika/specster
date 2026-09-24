@@ -61,9 +61,10 @@ def build_thread(
 ) -> Thread:
     nonce = nonce or secrets.token_hex(8)
     hidden: list[HiddenItem] = []
-    body = sanitize(issue.body)
+    title, body = sanitize(issue.title), sanitize(issue.body)
+    hidden += [HiddenItem("issue title", h) for h in title.removed]
     hidden += [HiddenItem("issue body", h) for h in body.removed]
-    entries = [_entry(issue.author, "author", "issue", f"# {issue.title}\n\n{body.text}", nonce)]
+    entries = [_entry(issue.author, "author", "issue", f"# {title.text}\n\n{body.text}", nonce)]
     untrusted: list[str] = []
     after = edited = included = 0
     previous: list[RunMetrics] = []
