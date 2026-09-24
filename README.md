@@ -84,7 +84,8 @@ Notes on the parts that matter:
 - `permissions` is the minimum: `contents: read` to explore the repo, `issues: write` to comment
   and change labels.
 - The job-level `if` keeps other labels and other issue events from ever starting the container;
-  the label is also checked again inside Specster against `labels.spec` in the config.
+  the label is also checked again inside Specster against `labels.spec` in the config. If you
+  rename `labels.spec`, change the label name in this `if:` too, or the job never starts.
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see "Your own bot identity").
 
@@ -194,7 +195,7 @@ model: llama3.1
 base_url: http://localhost:11434/v1
 ```
 
-Since `github_token` and the five `*_api_key` inputs are the only secrets `action.yml` forwards,
+Since `github_token` and the four `*_api_key` inputs are the only secrets `action.yml` forwards,
 an env var named in `api_key_env` that is not one of those (e.g. `DEEPSEEK_API_KEY`) needs its own
 `env:` entry on the workflow step; Docker actions pass through any `env:` set there.
 
