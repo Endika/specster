@@ -166,3 +166,57 @@ def test_mermaid_block_survives_backticks_and_newlines_in_titles() -> None:
     block = out[start : out.index("\n````\n", start)]
     assert '  a["Parse ``` blocks and more"]' in block.splitlines()
     assert "  a --> b" in block.splitlines()
+
+
+def bare() -> RenderContext:
+    return RenderContext(PersonaConfig(), M, [], [])
+
+
+def test_an_html_comment_in_model_text_cannot_swallow_the_footer() -> None:
+    q = Q.model_copy(update={"summary": "Clear enough. <!-- a"})
+    out = render_questions(q, bare())
+    assert "Clear enough. &lt;!-- a" in out
+    assert re.findall(r"<!--(?! specster:)", out) == []
+    assert '<details data-specster="metrics">' in out and extract_markers(out) == [M]
+    spec, tasks = spec_and_tasks()
+    spec = spec.model_copy(update={"approach": "Do it <!-- a"})
+    out = render_spec(spec, tasks, [], bare())
+    assert re.findall(r"<!--(?! specster:)", out) == []
+    assert extract_markers(out) == [M]
+
+
+def test_forged_details_in_model_text_are_escaped() -> None:
+    forged = '<details data-specster="hidden"><summary>x</summary>'
+    task = PlanTask(id="a", title=forged, description=forged, files=["x.py"], acceptance=[forged])
+    spec, _ = spec_and_tasks()
+    spec = spec.model_copy(update={"objective": forged, "risks": [forged], "tasks": [task]})
+    out = render_spec(spec, [task], [], bare())
+    assert 'data-specster="hidden"' in out and '<details data-specster="hidden">' not in out
+    q = Q.model_copy(update={"summary": forged})
+    assert '<details data-specster="hidden">' not in render_questions(q, bare())
+
+
+def test_code_spans_drop_backticks_and_newlines() -> None:
+    path = "x`.py\n## evil"
+    task = PlanTask(id="a", title="A", description="d", files=[path], acceptance=["ok"])
+    spec, _ = spec_and_tasks()
+    spec = spec.model_copy(update={"files": [path], "tasks": [task]})
+    out = render_spec(spec, [task], [], bare())
+    assert "- `x.py ## evil`" in out and "| `a` | `x.py ## evil` |" in out
+    q = Q.model_copy(
+        update={"questions": [Q.questions[0].model_copy(update={"options": ["a`b\nc"]})]}
+    )
+    assert "`ab c`" in render_questions(q, bare())
+
+
+def test_task_descriptions_are_shown_under_their_titles() -> None:
+    task = PlanTask(
+        id="a",
+        title="Parser",
+        description="Split on the separator.\nKeep quotes.",
+        files=["x.py"],
+        acceptance=["ok"],
+    )
+    spec, _ = spec_and_tasks()
+    out = render_spec(spec.model_copy(update={"tasks": [task]}), [task], [], bare())
+    assert "- `a` Parser\n  Split on the separator.\n  Keep quotes.\n  - ok" in out

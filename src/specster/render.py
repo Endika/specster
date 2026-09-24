@@ -83,6 +83,19 @@ def fence(text: str, info: str = "") -> str:
     return f"{ticks}{info}\n{text}\n{ticks}"
 
 
+def _prose(text: str) -> str:
+    # Model-written text: a "<!--" would hide the footer and "<details" could forge our sections.
+    return text.replace("<", "&lt;")
+
+
+def _code(text: str) -> str:
+    return " ".join(text.replace("`", "").split())
+
+
+def _indent(text: str) -> list[str]:
+    return [f"  {line}" if line else "" for line in _prose(text).splitlines()]
+
+
 def _header(ctx: RenderContext) -> list[str]:
     if not ctx.persona.header:
         return []
@@ -97,7 +110,7 @@ def _header(ctx: RenderContext) -> list[str]:
 def _closing(ctx: RenderContext, generated: str) -> list[str]:
     mode = ctx.persona.closing_line
     line = ctx.persona.closing_text if mode == "fixed" else generated if mode == "generated" else ""
-    return [f"_{line.strip()}_", ""] if line.strip() else []
+    return [f"_{_prose(line.strip())}_", ""] if line.strip() else []
 
 
 def _hidden(ctx: RenderContext) -> tuple[list[str], int]:
@@ -174,18 +187,18 @@ def _no_closing(ctx: RenderContext) -> RenderContext:
 
 def render_questions(result: QuestionsResult, ctx: RenderContext) -> str:
     lab = _l(ctx)
-    body = [f"**{lab['questions']}**", "", result.summary, ""]
+    body = [f"**{lab['questions']}**", "", _prose(result.summary), ""]
     for i, q in enumerate(result.questions, 1):
-        body.append(f"{i}. **{q.question}**")
-        body.append(f"   {q.why}")
+        body.append(f"{i}. **{_prose(q.question)}**")
+        body.append(f"   {_prose(q.why)}")
         if q.options:
-            body.append("   " + _DOT.join(f"`{o}`" for o in q.options))
+            body.append("   " + _DOT.join(f"`{_code(o)}`" for o in q.options))
     body += ["", lab["next_questions"].format(label=ctx.spec_label)]
     return _wrap(ctx, body, result.closing_line)
 
 
 def _bullets(items: Sequence[str]) -> list[str]:
-    return [f"- {i}" for i in items] or [f"- {_NONE}"]
+    return [f"- {_prose(i)}" for i in items] or [f"- {_NONE}"]
 
 
 def render_spec(
@@ -194,9 +207,9 @@ def render_spec(
     lab = _l(ctx)
     lv = levels(tasks)
     body = [
-        f"### {result.title}",
+        f"### {_prose(' '.join(result.title.split()))}",
         "",
-        f"**{lab['objective']}.** {result.objective}",
+        f"**{lab['objective']}.** {_prose(result.objective)}",
         "",
         f"**{lab['in_scope']}**",
         *_bullets(result.in_scope),
@@ -205,18 +218,18 @@ def render_spec(
         *_bullets(result.out_of_scope),
         "",
         f"**{lab['files']}**",
-        *_bullets([f"`{f}`" for f in result.files]),
+        *([f"- `{_code(f)}`" for f in result.files] or [f"- {_NONE}"]),
         "",
         f"**{lab['approach']}**",
         "",
-        result.approach,
+        _prose(result.approach),
         "",
         f"**{lab['risks']}**",
         *_bullets(result.risks),
         "",
         f"**{lab['tests']}**",
         "",
-        result.test_strategy,
+        _prose(result.test_strategy),
         "",
         f"#### {lab['plan']}",
         "",
@@ -224,16 +237,17 @@ def render_spec(
         "|---|---|---|---|",
     ]
     for t in tasks:
-        files = ", ".join(f"`{f}`" for f in t.files)
-        deps = ", ".join(f"`{d}`" for d in t.depends_on) or _NONE
-        body.append(f"| `{t.id}` | {files} | {deps} | {lv[t.id]} |")
+        files = ", ".join(f"`{_code(f)}`" for f in t.files)
+        deps = ", ".join(f"`{_code(d)}`" for d in t.depends_on) or _NONE
+        body.append(f"| `{_code(t.id)}` | {files} | {deps} | {lv[t.id]} |")
     if fixes:
         body += ["", f"**{lab['reordered']}:**", *_bullets(fixes)]
     one_line = [t.model_copy(update={"title": " ".join(t.title.split())}) for t in tasks]
     body += ["", fence(mermaid(one_line), "mermaid"), "", f"**{lab['acceptance']}**"]
     for t in tasks:
-        body.append(f"- `{t.id}` {t.title}")
-        body += [f"  - {a}" for a in t.acceptance]
+        body.append(f"- `{_code(t.id)}` {_prose(' '.join(t.title.split()))}")
+        body += _indent(t.description)
+        body += [f"  - {_prose(a)}" for a in t.acceptance]
     body += ["", lab["next_spec"].format(label=ctx.build_label)]
     payload, digest = plan_payload(tasks)
     safe = payload.replace("<", "\\u003c").replace(">", "\\u003e")
