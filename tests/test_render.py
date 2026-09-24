@@ -164,8 +164,8 @@ def test_mermaid_block_survives_backticks_and_newlines_in_titles() -> None:
     out = render_spec(spec, tasks, [], ctx())
     start = out.index("````mermaid\ngraph TD\n")
     block = out[start : out.index("\n````\n", start)]
-    assert '  a["Parse ``` blocks and more"]' in block.splitlines()
-    assert "  a --> b" in block.splitlines()
+    assert '  t_a["Parse ``` blocks and more"]' in block.splitlines()
+    assert "  t_a --> t_b" in block.splitlines()
 
 
 def bare() -> RenderContext:
