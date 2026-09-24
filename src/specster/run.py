@@ -362,10 +362,17 @@ def _spec_phase(
         **thread_fields,
     )
     ctx = run.context(m, thread)
-    if isinstance(outcome.result, QuestionsResult):
-        body = render_questions(outcome.result, ctx)
-        run.finish("questions", body, [labels.spec, labels.ready], [labels.needs_human])
-    else:
-        body = render_spec(outcome.result, outcome.tasks, outcome.plan_fixes, ctx)
-        run.finish("spec", body, [labels.spec, labels.needs_human], [labels.ready])
+    try:
+        if isinstance(outcome.result, QuestionsResult):
+            body = render_questions(outcome.result, ctx)
+            run.finish("questions", body, [labels.spec, labels.ready], [labels.needs_human])
+        else:
+            body = render_spec(outcome.result, outcome.tasks, outcome.plan_fixes, ctx)
+            run.finish("spec", body, [labels.spec, labels.needs_human], [labels.ready])
+    except Exception as e:
+        # The model was paid for even if the reply or a label call fails, so bill it.
+        traceback.print_exc()
+        raise _Failure(
+            _describe(e), UNEXPECTED_HINT, m.cost_usd, outcome.usage, outcome.turns
+        ) from e
     return 0

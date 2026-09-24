@@ -455,3 +455,21 @@ def test_google_credentials_that_exist_or_have_no_copy_are_left_alone(tmp_path: 
         e = env_from({"GITHUB_WORKSPACE": str(tmp_path), "GOOGLE_APPLICATION_CREDENTIALS": gac})
         assert e.process_env == {} and e.secrets["GOOGLE_APPLICATION_CREDENTIALS"] == gac
     assert env_from({"GITHUB_WORKSPACE": str(tmp_path)}).process_env == {}
+
+
+class CannotLabel(FakeTracker):
+    def add_labels(self, number: int, labels: Sequence[str]) -> None:
+        raise RuntimeError("label API down")
+
+
+def test_a_label_failure_after_the_reply_still_bills_the_real_cost(tmp_path: Path) -> None:
+    base = tracker()
+    tr = CannotLabel(issue=base.issue, label_events=base.label_events)
+    model = ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]])
+    e = env(tmp_path)
+    assert main(e, tr, lambda _cfg: model, lambda _u, _h: b"", timer=lambda: 0.0) == 1
+    assert len(tr.posted) == 2 and "label API down" in tr.posted[1]
+    done, failed = last_marker(tr.posted[0]), last_marker(tr.posted[1])
+    assert done is not None and failed is not None and failed.outcome == "error"
+    assert done.cost_usd is not None and done.cost_usd > 0 and failed.cost_usd == done.cost_usd
+    assert (failed.input_tokens, failed.output_tokens, failed.turns) == (100, 20, 1)
