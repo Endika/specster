@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/Endika/specster/compare/specster-v0.3.1...specster-v0.3.2) (2026-09-24)
+
+
+### Documentation
+
+* add a full reference of the action's inputs, output and keyless providers ([0ba84cd](https://github.com/Endika/specster/commit/0ba84cdb23997a7cdafcfe97ca995e25155562f9))
+
 ## [0.3.1](https://github.com/Endika/specster/compare/specster-v0.3.0...specster-v0.3.1) (2026-09-24)
 
 
