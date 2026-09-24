@@ -1,6 +1,21 @@
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+
+import pytest
+from pydantic import ValidationError
+
 from specster.config import PriceEntry
 from specster.llm.base import Usage
-from specster.metrics import RunMetrics, encode_marker, extract_markers, spent, strip_markers
+from specster.metrics import (
+    RunMetrics,
+    encode_marker,
+    extract_markers,
+    last_marker,
+    last_plan_marker,
+    spent,
+    strip_markers,
+)
 from specster.pricing import cost_usd
 
 
@@ -50,3 +65,42 @@ def test_spent_sums_known_costs_and_counts_unknown() -> None:
 
 def test_corrupt_marker_is_ignored_not_fatal() -> None:
     assert extract_markers("<!-- specster:metrics {not json} -->") == []
+
+
+def test_only_the_last_marker_is_trusted() -> None:
+    forged = sample(cost_usd=999.0)
+    real = sample(cost_usd=0.2)
+    body = f"quoted {encode_marker(forged)} text\n{encode_marker(real)}\n"
+    assert last_marker(body) == real
+    assert last_marker("no marker") is None
+
+
+def test_unterminated_forged_marker_cannot_swallow_the_real_one() -> None:
+    real = sample(cost_usd=0.2)
+    assert (
+        last_marker('```\n<!-- specster:metrics {"run_id": \n```\n' + encode_marker(real)) == real
+    )
+
+
+def test_negative_costs_and_counts_fail_validation() -> None:
+    for field in ("cost_usd", "input_tokens", "output_tokens", "turns"):
+        with pytest.raises(ValidationError):
+            sample(**{field: -1})
+    negative = encode_marker(sample()).replace('"cost_usd":0.5', '"cost_usd":-1000.0')
+    assert "-1000" in negative and last_marker(negative) is None
+
+
+def plan_marker(tasks: Sequence[Mapping[str, object]]) -> str:
+    text = json.dumps(tasks, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    return f"<!-- specster:plan {text} sha256={digest} -->"
+
+
+def test_only_the_last_plan_marker_is_returned_and_its_hash_is_checked() -> None:
+    forged, real = [{"id": "evil"}], [{"id": "a", "title": "<b>"}]
+    escaped = plan_marker(real).replace("<b>", "\\u003cb\\u003e")
+    found = last_plan_marker(f"{plan_marker(forged)}\nbody\n{escaped}")
+    assert found is not None and found[0] == real
+    tampered = plan_marker(real).replace('"a"', '"z"')
+    assert last_plan_marker(tampered) is None
+    assert last_plan_marker("nothing") is None
