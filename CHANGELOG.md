@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/Endika/specster/compare/specster-v0.2.0...specster-v0.3.0) (2026-09-24)
+
+
+### Features
+
+* **skills:** load every skill of the phase by default ([9bc7708](https://github.com/Endika/specster/commit/9bc7708fbbb0468a3421a66106ac07602a907742))
+
 ## [0.2.0](https://github.com/Endika/specster/compare/specster-v0.1.2...specster-v0.2.0) (2026-09-24)
 
 
