@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/Endika/specster/compare/specster-v0.3.0...specster-v0.3.1) (2026-09-24)
+
+
+### Performance Improvements
+
+* **llm:** cache the whole conversation with a breakpoint on the newest message ([7e30663](https://github.com/Endika/specster/commit/7e306633057e93d12834efc8fedde11b003aa635))
+
 ## [0.3.0](https://github.com/Endika/specster/compare/specster-v0.2.0...specster-v0.3.0) (2026-09-24)
 
 
