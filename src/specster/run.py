@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from specster.agent import AgentOutcome, run_agent
+from specster.agent import AgentError, AgentOutcome, run_agent
 from specster.config import Config, ConfigError, LabelsConfig, ModelConfig, load_config
 from specster.event import EventError, Trigger, parse_event, skip_reason
 from specster.github import IssueTracker
-from specster.llm.base import ChatModel
+from specster.llm.base import ChatModel, Usage
 from specster.llm.factory import ProviderConfigError
 from specster.metrics import RunMetrics, spent
 from specster.plan import max_parallel
@@ -85,9 +85,17 @@ def env_from(environ: Mapping[str, str]) -> Env:
 
 
 class _Failure(Exception):
-    def __init__(self, message: str, hint: str, cost: float | None = 0.0) -> None:
+    def __init__(
+        self,
+        message: str,
+        hint: str,
+        cost: float | None = 0.0,
+        usage: Usage | None = None,
+        turns: int = 0,
+    ) -> None:
         super().__init__(message)
         self.message, self.hint, self.cost = message, hint, cost
+        self.usage, self.turns = usage or Usage(), turns
 
 
 def _describe(e: BaseException) -> str:
@@ -146,13 +154,24 @@ class _Run:
     def fail(self, failure: _Failure) -> int:
         _log(failure.message)
         try:
-            ctx = self.context(self.metrics("error", failure.cost))
+            ctx = self.context(
+                self.metrics("error", failure.cost, turns=failure.turns, **_usage(failure.usage))
+            )
             body = render_error(failure.message, failure.hint, ctx)
             self.finish("error", body, [self.cfg.labels.spec])
         except Exception:
             traceback.print_exc()
             _write_outcome(self.env, "error")
         return 1
+
+
+def _usage(usage: Usage) -> dict[str, int]:
+    return {
+        "input_tokens": usage.input_tokens,
+        "cache_read_tokens": usage.cache_read_tokens,
+        "cache_write_tokens": usage.cache_write_tokens,
+        "output_tokens": usage.output_tokens,
+    }
 
 
 def _read_trigger(env: Env) -> Trigger | None:
@@ -258,6 +277,10 @@ def _call_agent(
             skills,
             cfg.budget.max_turns,
         )
+    except AgentError as e:
+        planner = cfg.models.planner
+        cost = cost_usd(planner.provider, planner.model, e.usage, cfg.pricing)
+        raise _Failure(_describe(e), PROVIDER_HINT, cost, e.usage, e.turns) from e
     except Exception as e:
         raise _Failure(_describe(e), PROVIDER_HINT, None) from e
 
@@ -307,10 +330,6 @@ def _spec_phase(
     m = run.metrics(
         "questions" if is_questions else "spec",
         cost_usd(planner.provider, planner.model, outcome.usage, cfg.pricing),
-        input_tokens=outcome.usage.input_tokens,
-        cache_read_tokens=outcome.usage.cache_read_tokens,
-        cache_write_tokens=outcome.usage.cache_write_tokens,
-        output_tokens=outcome.usage.output_tokens,
         turns=outcome.turns,
         files_read=sorted(ws.files_read),
         skills_available=[s.name for s in skills.inline + skills.on_demand],
@@ -318,6 +337,7 @@ def _spec_phase(
         plan_max_parallel=None if is_questions else max_parallel(outcome.tasks),
         truncations=([repo_map.truncation] if repo_map.truncation else []) + ws.truncations,
         warnings=warnings + budget_warnings,
+        **_usage(outcome.usage),
         **thread_fields,
     )
     ctx = run.context(m, thread)

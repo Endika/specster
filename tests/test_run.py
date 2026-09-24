@@ -349,3 +349,22 @@ def test_hidden_content_quoted_by_specster_is_not_fed_back_next_round(tmp_path: 
     second = ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]])
     assert run(env(tmp_path), tr, second) == 0
     assert "Which separator?" in second.user_text and "PWNED" not in second.user_text
+
+
+def test_a_failed_model_run_is_billed_and_counts_toward_the_next_budget(tmp_path: Path) -> None:
+    looping = ScriptedModel([[ToolCall(str(i), "list_dir", {})] for i in range(2)])
+    config = "budget:\n  max_turns: 2\n  max_usd_per_issue: 0.001\n"
+    tr = tracker()
+    assert run(env(tmp_path, config=config), tr, looping) == 1
+    failed = last_marker(tr.posted[0])
+    assert failed is not None and failed.outcome == "error" and failed.turns == 2
+    assert failed.cost_usd is not None and failed.cost_usd > 0.001
+    assert failed.input_tokens == 200 and "no submission after 2 turns" in tr.posted[0]
+    tr.comments = [bot_comment(tr.posted[0], T0 + timedelta(minutes=30))]
+    tr.label_events = {"ai-spec": T0 + timedelta(minutes=40)}
+    tr.issue = Issue(7, "CSV export", "b", "ana", "NONE", ("ai-spec",))
+    second = ScriptedModel([])
+    assert run(env(tmp_path, config=config), tr, second) == 0
+    assert second.sessions_started == 0
+    exhausted = last_marker(tr.posted[1])
+    assert exhausted is not None and exhausted.outcome == "budget_exhausted"

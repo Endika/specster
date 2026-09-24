@@ -22,7 +22,10 @@ LAST = "Last turn: submit now."
 
 
 class AgentError(Exception):
-    pass
+    def __init__(self, message: str, usage: Usage | None = None, turns: int = 0) -> None:
+        super().__init__(message)
+        self.usage = usage or Usage()
+        self.turns = turns
 
 
 @dataclass(frozen=True)
@@ -122,8 +125,11 @@ def run_agent(
     skills: SkillBook,
     max_turns: int,
 ) -> AgentOutcome:
-    session = model.start(system, context, thread_text, tool_specs(bool(skills.on_demand)))
     usage = Usage()
+    try:
+        session = model.start(system, context, thread_text, tool_specs(bool(skills.on_demand)))
+    except Exception as e:
+        raise AgentError(f"{type(e).__name__}: {e}") from e
     results: Sequence[ToolResult] = ()
     nudge: str | None = None
     text_only = 0
@@ -131,13 +137,16 @@ def run_agent(
     for turn_no in range(1, max_turns + 1):
         if turn_no == max_turns and nudge is None and turn_no > 1:
             nudge = LAST
-        turn = session.send(results, nudge)
+        try:
+            turn = session.send(results, nudge)
+        except Exception as e:
+            raise AgentError(f"{type(e).__name__}: {e}", usage, turn_no - 1) from e
         usage = usage + turn.usage
         nudge = None
         if not turn.tool_calls:
             text_only += 1
             if text_only >= 2:
-                raise AgentError("model stopped without submitting")
+                raise AgentError("model stopped without submitting", usage, turn_no)
             results, nudge = (), NUDGE
             continue
         text_only = 0
@@ -152,7 +161,8 @@ def run_agent(
                 except (ValidationError, PlanError) as e:
                     bad_submissions += 1
                     if bad_submissions >= 2:
-                        raise AgentError(f"invalid submission twice: {e}") from e
+                        message = f"invalid submission twice: {e}"
+                        raise AgentError(message, usage, turn_no) from e
                     message = f"Invalid submission: {e}. Fix it and submit again."
                     out.append(ToolResult(call.id, message, True))
                 continue
@@ -161,7 +171,7 @@ def run_agent(
             except (ToolError, KeyError, ValueError, TypeError, OSError) as e:
                 out.append(ToolResult(call.id, str(e), True))
         results = out
-    raise AgentError(f"no submission after {max_turns} turns")
+    raise AgentError(f"no submission after {max_turns} turns", usage, max_turns)
 
 
 def _accept(call: ToolCall, usage: Usage, turns: int) -> AgentOutcome:
