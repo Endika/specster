@@ -144,7 +144,8 @@ def _footer(ctx: RenderContext) -> list[str]:
         f"| {m.provider} | {m.model} | {m.input_tokens} | {m.cache_read_tokens} | "
         f"{m.cache_write_tokens} | {m.output_tokens} | {m.turns} |",
     ]
-    shown = f" ({', '.join(m.files_read[:10])})" if m.files_read else ""
+    listed = [_prose(f) for f in m.files_read[:10]] + (["..."] if len(m.files_read) > 10 else [])
+    shown = f" ({', '.join(listed)})" if listed else ""
     read = ", ".join(m.skills_read) or "none"
     facts = [
         f"- Files read: {len(m.files_read)}{shown}",
