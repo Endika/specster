@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "specster"
-version = "0.1.1"
+version = "0.1.2"
 description = "Haunts your issues until they're clear."
 readme = "README.md"
 requires-python = ">=3.12"
