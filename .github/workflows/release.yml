@@ -19,6 +19,7 @@ jobs:
       released: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
       major: ${{ steps.release.outputs.major }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
@@ -47,12 +48,17 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/endika/specster:${{ needs.please.outputs.tag }}
+            ghcr.io/endika/specster:v${{ needs.please.outputs.version }}
             ghcr.io/endika/specster:v${{ needs.please.outputs.major }}
-      - name: "point v<major> at this release so `uses: Endika/specster@v0` follows it"
+      # release-please tags as specster-vX.Y.Z (component prefix); action.yml and users
+      # reference vX.Y.Z and vMAJOR, so both git tags and image tags use that form.
+      - name: "tag vX.Y.Z and point vMAJOR at this release"
         env:
           TAG: ${{ needs.please.outputs.tag }}
+          VERSION: v${{ needs.please.outputs.version }}
           MAJOR: v${{ needs.please.outputs.major }}
         run: |
+          git tag "$VERSION" "$TAG"
           git tag -f "$MAJOR" "$TAG"
+          git push origin "refs/tags/$VERSION"
           git push -f origin "refs/tags/$MAJOR"
