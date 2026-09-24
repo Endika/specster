@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/Endika/specster/compare/specster-v0.1.0...specster-v0.1.1) (2026-09-24)
+
+
+### Documentation
+
+* shrink the mascot to sit next to the title ([6b653b8](https://github.com/Endika/specster/commit/6b653b8aede296aad7b986d8e6786c4076074f26))
+
 ## 0.1.0 (2026-09-24)
 
 
