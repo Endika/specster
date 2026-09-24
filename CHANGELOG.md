@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/Endika/specster/compare/specster-v0.1.2...specster-v0.2.0) (2026-09-24)
+
+
+### Features
+
+* **persona:** add a concise style and a question cap for shorter comments ([2006a39](https://github.com/Endika/specster/commit/2006a39cacfb955ef310a97e40fd67f14b839b13))
+
 ## [0.1.2](https://github.com/Endika/specster/compare/specster-v0.1.1...specster-v0.1.2) (2026-09-24)
 
 
