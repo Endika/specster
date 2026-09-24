@@ -362,7 +362,7 @@ def _spec_phase(
     ctx = run.context(m, thread)
     if isinstance(outcome.result, QuestionsResult):
         body = render_questions(outcome.result, ctx)
-        run.finish("questions", body, [labels.spec], [labels.needs_human])
+        run.finish("questions", body, [labels.spec, labels.ready], [labels.needs_human])
     else:
         body = render_spec(outcome.result, outcome.tasks, outcome.plan_fixes, ctx)
         run.finish("spec", body, [labels.spec, labels.needs_human], [labels.ready])

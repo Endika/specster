@@ -127,6 +127,13 @@ def test_questions_round_posts_questions_and_moves_to_needs_human(tmp_path: Path
     assert outcome(tmp_path) == "outcome=questions\n"
 
 
+def test_questions_on_a_spec_ready_issue_takes_the_ready_label_off(tmp_path: Path) -> None:
+    tr, model = tracker(), ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]])
+    tr.issue = Issue(7, "CSV export", "b", "ana", "NONE", ("ai-spec", "spec-ready"))
+    assert run(env(tmp_path), tr, model) == 0
+    assert tr.issue.labels == ("needs-human",)
+
+
 def test_spec_round_posts_plan_and_moves_to_spec_ready(tmp_path: Path) -> None:
     tr, model = tracker(), ScriptedModel([[ToolCall("1", "submit_spec", SPEC)]])
     tr.issue = Issue(7, "CSV export", "b", "ana", "NONE", ("ai-spec", "needs-human"))
