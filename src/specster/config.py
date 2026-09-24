@@ -81,7 +81,8 @@ class SkillSource(_Strict):
 class SkillsConfig(_Strict):
     autodiscover: bool = True
     sources: list[SkillSource] = []
-    load: Literal["always", "on_demand"] = "on_demand"
+    # "on_demand" is the pre-0.3 name of "model_decides", still accepted.
+    load: Literal["always", "model_decides", "on_demand"] = "always"
     max_tokens: int = Field(default=20000, gt=0)
 
 

@@ -13,7 +13,6 @@ persona:
 budget:
   max_usd_per_issue: 3.0
 skills:
-  load: on_demand
   sources:
     - url: https://raw.githubusercontent.com/Endika/eskills/8657203dd1224c826148df4ebd325c6e0be66c48/skills/spec-intake/SKILL.md
       sha256: 287fff4ffcde6dc2e7183c69a39de727c10bfbb04e653fcf43e61d62a2929d0f

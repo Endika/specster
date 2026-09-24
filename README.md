@@ -1,4 +1,4 @@
-# <img src="assets/specster-mascot.png" alt="Specster mascot" width="44" align="center"> Specster
+# <img src="assets/specster-mascot.png" alt="Specster mascot" width="144" align="center"> Specster
 
 Haunts your issues until they're clear.
 
@@ -133,7 +133,8 @@ skills:
                                   #   - url: https://raw.githubusercontent.com/org/repo/main/skill.md
                                   #     sha256: "<64 hex chars>"
                                   #     phases: [spec]
-  load: on_demand                 # always (inlined, up to max_tokens) | on_demand (model calls read_skill)
+  load: always                    # always: every skill of the phase is loaded (up to max_tokens)
+                                  # model_decides: the model sees names only and may read none
   max_tokens: 20000                # token budget for skills inlined when load: always
 
 repo_map:

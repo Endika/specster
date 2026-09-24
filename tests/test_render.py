@@ -228,3 +228,11 @@ def test_footer_marks_files_read_beyond_the_first_ten() -> None:
     assert "- Files read: 12 (f00.py, f01.py, " in out and "f09.py, ...)" in out
     ten = M.model_copy(update={"files_read": [f"f{i:02d}.py" for i in range(10)]})
     assert "f09.py)" in render_questions(Q, RenderContext(PersonaConfig(), ten, [], []))
+
+
+def test_footer_separates_loaded_skills_from_skills_the_model_read() -> None:
+    m = M.model_copy(
+        update={"skills_available": ["a", "b"], "skills_inlined": ["a"], "skills_read": ["b"]}
+    )
+    out = render_questions(Q, RenderContext(PersonaConfig(), m, [], []))
+    assert "- Skills: 2 available; loaded: a; read by the model: b" in out
