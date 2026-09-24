@@ -42,7 +42,8 @@ ignore = ["RUF012"]
 strict = true
 warn_unreachable = true
 show_error_codes = true
-files = ["src", "tests"]
+files = ["src", "tests", "evals"]
+exclude = ["^evals/fixtures/"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]

@@ -1,0 +1,29 @@
+- id: clear-csv-export
+  title: Add CSV export next to JSON export
+  body: |
+    reports/export.py has to_json. Add to_csv(report) that writes the same rows as CSV with a
+    header row, comma separator, UTF-8. Add a test next to the JSON one.
+  expect: spec
+  must_touch: [reports/export.py, tests/test_export.py]
+  judge: [spec_is_implementable, tasks_are_small_and_ordered]
+
+- id: vague-export
+  title: Exports are bad
+  body: The exports are bad, please improve them.
+  expect: questions
+  max_questions: 5
+  judge: [questions_change_the_spec, questions_not_answerable_from_repo]
+
+- id: answerable-from-repo
+  title: Add YAML export like the existing one
+  body: Add a YAML export that works like the existing export function.
+  expect: spec
+  must_touch: [reports/export.py]
+  must_explore: true
+
+- id: spanish-output
+  title: Añadir exportación CSV
+  body: Añade to_csv junto a to_json en reports/export.py, con cabecera y coma. Con test.
+  language: es
+  expect: spec
+  must_touch: [reports/export.py]
