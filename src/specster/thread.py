@@ -75,7 +75,7 @@ def build_thread(
             marker = last_marker(comment.body)
             if marker is not None:
                 previous.append(marker)
-            text = _own_text(comment.body)
+            text = sanitize(_own_text(comment.body)).text
             entries.append(
                 _entry(comment.author, "specster", comment.created_at.isoformat(), text, nonce)
             )
