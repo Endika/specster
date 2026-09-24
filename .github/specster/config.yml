@@ -2,11 +2,37 @@ models:
   planner:
     provider: anthropic
     model: claude-opus-5-5
-    effort: high
+    effort: medium
 trust:
   comments: collaborators
 persona:
   humor: spooky
-  language: es
+  language: en
+  style: concise
+  max_questions: 3
 budget:
   max_usd_per_issue: 3.0
+skills:
+  load: on_demand
+  sources:
+    - url: https://raw.githubusercontent.com/Endika/eskills/8657203dd1224c826148df4ebd325c6e0be66c48/skills/spec-intake/SKILL.md
+      sha256: 287fff4ffcde6dc2e7183c69a39de727c10bfbb04e653fcf43e61d62a2929d0f
+      phases: [spec]
+    - url: https://raw.githubusercontent.com/Endika/eskills/8657203dd1224c826148df4ebd325c6e0be66c48/skills/arch-bar/SKILL.md
+      sha256: b881dc552be0ddb4bc888120586fa949c3b0da8f4a3cb6465154245a44fc30f8
+      phases: [spec, review]
+    - url: https://raw.githubusercontent.com/Endika/eskills/8657203dd1224c826148df4ebd325c6e0be66c48/skills/security-bar/SKILL.md
+      sha256: a58b04812a85be4ea578e21098c7a59ed6e3e49034f9be02c4644993b09ff7b6
+      phases: [spec, review]
+    - url: https://raw.githubusercontent.com/Endika/eskills/8657203dd1224c826148df4ebd325c6e0be66c48/skills/perf-bar/SKILL.md
+      sha256: 2b8571f8783157089a013d5355d199cef21307894f3cad3f2110906a9076fadd
+      phases: [spec, review]
+    - url: https://raw.githubusercontent.com/Endika/eskills/8657203dd1224c826148df4ebd325c6e0be66c48/skills/standards/SKILL.md
+      sha256: ef471c21c378dfc64a11af292412c64ad5b6ce478f0fd1f38034f74f4b1c5aca
+      phases: [build, review]
+    - url: https://raw.githubusercontent.com/obra/superpowers/5bf4e78011075bcfc0dc295f0724994cd123ee71/skills/writing-plans/SKILL.md
+      sha256: 0bc3d36590f7b2c323ed3ec18ff77e9f8ed57af42f5680a02b11a2d20de265cf
+      phases: [spec]
+    - url: https://raw.githubusercontent.com/obra/superpowers/5bf4e78011075bcfc0dc295f0724994cd123ee71/skills/test-driven-development/SKILL.md
+      sha256: 64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d
+      phases: [build]
