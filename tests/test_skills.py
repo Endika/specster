@@ -145,7 +145,7 @@ def test_default_loads_every_skill_of_the_phase(tmp_path: Path) -> None:
     assert book.on_demand == []
 
 
-def test_model_decides_and_its_old_name_leave_reading_to_the_model(tmp_path: Path) -> None:
+def test_model_decides_and_on_demand_both_leave_reading_to_the_model(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("Use uv.")
     for mode in ("model_decides", "on_demand"):
         book = load_skills(tmp_path, SkillsConfig(load=mode), "spec", FakeWeb({}), None)

@@ -1,11 +1,12 @@
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from specster.agent import AgentError, run_agent
+from specster.agent import AgentError, NotYet, SubmissionError, run_agent, run_loop
 from specster.config import SkillsConfig
-from specster.llm.base import ModelRefusal, ToolCall, ToolResult, Turn, Usage
+from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
 from specster.skills import SkillBook, load_skills
 from specster.workspace import Workspace
 from tests.fakes import ScriptedModel
@@ -170,3 +171,52 @@ def test_more_questions_than_allowed_are_sent_back_once(tmp_path: Path) -> None:
     sent_back = model.received[1][0]
     assert sent_back.is_error and "ask at most 3" in sent_back.content
     assert len(out.result.questions) == 2  # type: ignore[union-attr]
+
+
+SUBMIT_X = [ToolSpec("submit_x", "Submit.", {"type": "object", "properties": {}})]
+
+
+def test_not_yet_is_sent_back_without_counting_as_an_invalid_submission() -> None:
+    calls: list[dict[str, Any]] = []
+
+    def submit(args: dict[str, Any]) -> str:
+        calls.append(args)
+        if len(calls) < 3:
+            raise NotYet("tests fail: exit 1")
+        return "done"
+
+    model = ScriptedModel([[ToolCall(str(i), "submit_x", {})] for i in range(3)])
+    out = run_loop(
+        model, "s", "c", "u", SUBMIT_X, {}, {"submit_x": submit}, 5, "Call submit_x now."
+    )
+    assert (out.value, out.turns, out.usage.input_tokens) == ("done", 3, 300)
+    assert [(r.content, r.is_error) for r in model.received[1]] == [("tests fail: exit 1", True)]
+
+
+def test_two_invalid_submissions_end_the_loop() -> None:
+    def submit(_args: dict[str, Any]) -> str:
+        raise SubmissionError("bad subject")
+
+    model = ScriptedModel([[ToolCall(str(i), "submit_x", {})] for i in range(2)])
+    with pytest.raises(AgentError, match="invalid submission twice: bad subject"):
+        run_loop(model, "s", "c", "u", SUBMIT_X, {}, {"submit_x": submit}, 5, "n")
+
+
+def test_the_nudge_is_the_callers_and_handlers_answer_other_tools() -> None:
+    model = ScriptedModel(
+        ["thinking", [ToolCall("1", "echo", {"v": "hi"})], [ToolCall("2", "submit_x", {})]]
+    )
+    handlers = {"echo": lambda a: str(a["v"])}
+    out = run_loop(
+        model,
+        "s",
+        "c",
+        "u",
+        SUBMIT_X,
+        handlers,
+        {"submit_x": lambda _a: 1},
+        5,
+        "Call submit_x now.",
+    )
+    assert out.value == 1 and model.nudges == ["Call submit_x now."]
+    assert model.received[2][0].content == "hi"

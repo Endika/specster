@@ -1,9 +1,11 @@
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -190,7 +192,7 @@ def test_dispatch_snapshots_at_the_run_instead_of_the_label(tmp_path: Path) -> N
 
 
 def test_spent_budget_stops_before_calling_the_model(tmp_path: Path) -> None:
-    old = RunMetrics(run_id="1", outcome="questions", provider="anthropic", model="m", cost_usd=5.0)
+    old = RunMetrics(run_id="1", outcome="questions", provider="anthropic", model="m", cost_usd=8.0)
     unknown = RunMetrics(run_id="2", outcome="error", provider="bedrock", model="m")
     day = T0 - timedelta(days=1)
     bots = [bot_comment(f"q\n{encode_marker(m)}", day) for m in (old, unknown)]
@@ -200,7 +202,7 @@ def test_spent_budget_stops_before_calling_the_model(tmp_path: Path) -> None:
     m = extract_markers(tr.posted[0])[-1]
     assert m.outcome == "budget_exhausted" and m.cost_usd == 0.0
     assert any("unknown cost" in w for w in m.warnings)
-    assert "$5.00 (+1 runs with unknown cost) of $5.00." in tr.posted[0]
+    assert "$8.00 (+1 runs with unknown cost) of $8.00." in tr.posted[0]
     assert "ai-spec" not in tr.issue.labels
     assert outcome(tmp_path) == "outcome=budget_exhausted\n"
 
@@ -473,3 +475,37 @@ def test_a_label_failure_after_the_reply_still_bills_the_real_cost(tmp_path: Pat
     assert done is not None and failed is not None and failed.outcome == "error"
     assert done.cost_usd is not None and done.cost_usd > 0 and failed.cost_usd == done.cost_usd
     assert (failed.input_tokens, failed.output_tokens, failed.turns) == (100, 20, 1)
+
+
+def test_the_spec_phase_warns_when_the_token_is_not_the_configured_bot(tmp_path: Path) -> None:
+    tr = tracker()
+    tr.login = "other[bot]"
+    model = ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]])
+    assert run(env(tmp_path, config="identity:\n  bot_login: specster[bot]\n"), tr, model) == 0
+    warnings = extract_markers(tr.posted[0])[0].warnings
+    assert (
+        "identity.bot_login is specster[bot] but the token acts as other[bot]; "
+        "Specster won't recognise its own comments"
+    ) in warnings
+
+
+class Recording(dict[str, str]):
+    """An empty environment that remembers every name asked of it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.asked: set[str] = set()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        self.asked.add(key)
+        return super().get(key, default)
+
+
+def test_the_dogfood_build_passes_every_github_variable_specster_reads() -> None:
+    environ = Recording()
+    env_from(environ)
+    wanted = {n for n in environ.asked if n.startswith("GITHUB_")} - {"GITHUB_TOKEN"}
+    workflow = (ROOT / ".github" / "workflows" / "specster.yml").read_text()
+    build = workflow.split("docker run", 1)[1]
+    passed = set(re.findall(r"-e (GITHUB_[A-Z_]+)", build))
+    assert "GITHUB_SHA" in wanted and wanted <= passed, sorted(wanted - passed)

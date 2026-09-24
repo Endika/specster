@@ -37,12 +37,31 @@ class Thread:
     nonce: str
 
 
-def _own_text(body: str) -> str:
+def own_text(body: str) -> str:
     # The hidden section quotes what was removed from people's text and may hold a forged
     # "</details>", so the comment is cut where that section (or the footer) starts.
     cuts = [i for i in (body.find(HIDDEN_OPEN), body.rfind(FOOTER_OPEN)) if i != -1]
     text = strip_markers(body[: min(cuts)] if cuts else body)
     return re.sub(r"<!-- specster:[^>]*-->", "", text, flags=re.DOTALL).strip()
+
+
+def is_specster(comment: Comment, login: str | None = None) -> bool:
+    """With Specster's login unknown, any bot comment carrying a Specster marker counts."""
+    by_bot = comment.author == login if login is not None else comment.author_type == "Bot"
+    return by_bot and _OWN in comment.body
+
+
+def is_trusted(comment: Comment, issue: Issue, trust: TrustConfig) -> bool:
+    allowed = TRUSTED.get(trust.comments)
+    # The author already controls the body, so their answers to the questions are no riskier.
+    by_author = trust.issue_author and comment.author == issue.author
+    return allowed is None or comment.association in allowed or by_author
+
+
+def previous_runs(comments: Sequence[Comment], login: str | None = None) -> tuple[RunMetrics, ...]:
+    ordered = sorted(comments, key=lambda x: x.created_at)
+    markers = (last_marker(c.body) for c in ordered if is_specster(c, login))
+    return tuple(m for m in markers if m is not None)
 
 
 def _entry(author: str, role: str, at: str, body: str, nonce: str) -> str:
@@ -58,6 +77,8 @@ def build_thread(
     trust: TrustConfig,
     snapshot_at: datetime | None,
     nonce: str | None = None,
+    *,
+    login: str | None = None,
 ) -> Thread:
     nonce = nonce or secrets.token_hex(8)
     hidden: list[HiddenItem] = []
@@ -67,15 +88,10 @@ def build_thread(
     entries = [_entry(issue.author, "author", "issue", f"# {title.text}\n\n{body.text}", nonce)]
     untrusted: list[str] = []
     after = edited = included = 0
-    previous: list[RunMetrics] = []
-    allowed = TRUSTED.get(trust.comments)
 
     for comment in sorted(comments, key=lambda x: x.created_at):
-        if comment.author_type == "Bot" and _OWN in comment.body:
-            marker = last_marker(comment.body)
-            if marker is not None:
-                previous.append(marker)
-            text = sanitize(_own_text(comment.body)).text
+        if is_specster(comment, login):
+            text = sanitize(own_text(comment.body)).text
             entries.append(
                 _entry(comment.author, "specster", comment.created_at.isoformat(), text, nonce)
             )
@@ -86,9 +102,7 @@ def build_thread(
         if snapshot_at is not None and comment.updated_at > snapshot_at:
             edited += 1
             continue
-        # The author already controls the body, so their answers to the questions are no riskier.
-        by_author = trust.issue_author and comment.author == issue.author
-        if allowed is not None and comment.association not in allowed and not by_author:
+        if not is_trusted(comment, issue, trust):
             untrusted.append(comment.author)
             continue
         clean = sanitize(comment.body)
@@ -107,5 +121,12 @@ def build_thread(
         f"<issue_thread-{nonce}>\n{preamble}\n" + "\n".join(entries) + f"\n</issue_thread-{nonce}>"
     )
     return Thread(
-        text, included, tuple(untrusted), after, edited, tuple(hidden), tuple(previous), nonce
+        text,
+        included,
+        tuple(untrusted),
+        after,
+        edited,
+        tuple(hidden),
+        previous_runs(comments, login),
+        nonce,
     )

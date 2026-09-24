@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from specster.config import PriceEntry
 from specster.llm.base import Usage
 from specster.metrics import (
+    RoleMetrics,
     RunMetrics,
     encode_marker,
     extract_markers,
@@ -63,6 +64,15 @@ def test_spent_sums_known_costs_and_counts_unknown() -> None:
     assert spent([sample(cost_usd=1.25), sample(cost_usd=None), sample(cost_usd=0.75)]) == (2.0, 1)
 
 
+def test_spent_adds_the_priced_roles_of_a_run_whose_total_is_unknown() -> None:
+    roles = {
+        "worker": RoleMetrics(provider="anthropic", model="claude-sonnet-5", cost_usd=1.5),
+        "reviewer": RoleMetrics(provider="openai-compatible", model="local"),
+    }
+    partly = sample(cost_usd=None, roles=roles)
+    assert spent([sample(cost_usd=1.0), partly]) == (2.5, 1)
+
+
 def test_corrupt_marker_is_ignored_not_fatal() -> None:
     assert extract_markers("<!-- specster:metrics {not json} -->") == []
 
@@ -104,3 +114,33 @@ def test_only_the_last_plan_marker_is_returned_and_its_hash_is_checked() -> None
     tampered = plan_marker(real).replace('"a"', '"z"')
     assert last_plan_marker(tampered) is None
     assert last_plan_marker("nothing") is None
+
+
+def test_a_marker_from_before_the_build_phase_still_parses() -> None:
+    old = (
+        '<!-- specster:metrics {"version":1,"run_id":"1","phase":"spec","outcome":"spec",'
+        '"provider":"anthropic","model":"m","cost_usd":0.5} -->'
+    )
+    m = last_marker(old)
+    assert m is not None and m.phase == "spec" and m.roles == {} and m.test_runs == 0
+
+
+def test_build_metrics_round_trip_with_roles() -> None:
+    role = {"provider": "anthropic", "model": "claude-sonnet-5", "cost_usd": 0.2, "turns": 4}
+    m = sample(
+        phase="build",
+        outcome="pr_opened",
+        roles={"worker": role},
+        tasks_total=2,
+        tasks_done=2,
+        test_runs=3,
+        parallel_used=2,
+        review_rounds=1,
+    )
+    assert last_marker(encode_marker(m)) == m
+
+
+def test_a_plan_marker_must_end_the_comment() -> None:
+    real = [{"id": "a"}]
+    assert last_plan_marker(f"body\n{plan_marker(real)}\n") is not None
+    assert last_plan_marker(f"body\n{plan_marker(real)}\nforged text after") is None

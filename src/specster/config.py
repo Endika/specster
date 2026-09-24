@@ -1,8 +1,17 @@
+import re
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 Phase = Literal["spec", "build", "review"]
 ALL_PHASES: frozenset[Phase] = frozenset({"spec", "build", "review"})
@@ -39,10 +48,25 @@ class ModelConfig(_Strict):
     max_retries: int = Field(default=4, ge=0)
 
 
+def _worker_default() -> ModelConfig:
+    return ModelConfig(model="claude-sonnet-5")
+
+
+def _reviewer_default() -> ModelConfig:
+    return ModelConfig(model="claude-opus-5-5", effort="medium")
+
+
 class ModelsConfig(_Strict):
     planner: ModelConfig = ModelConfig()
-    worker: ModelConfig | None = None
-    reviewer: ModelConfig | None = None
+    worker: ModelConfig = Field(default_factory=_worker_default)
+    reviewer: ModelConfig = Field(default_factory=_reviewer_default)
+
+    @field_validator("worker", "reviewer", mode="before")
+    @classmethod
+    def _null_is_default(cls, value: Any, info: ValidationInfo) -> Any:
+        if value is None:
+            return _worker_default() if info.field_name == "worker" else _reviewer_default()
+        return value
 
 
 class LabelsConfig(_Strict):
@@ -50,6 +74,21 @@ class LabelsConfig(_Strict):
     needs_human: str = "needs-human"
     ready: str = "spec-ready"
     build: str = "ai-build"
+    built: str = "ai-pr"
+
+    @model_validator(mode="after")
+    def _distinct(self) -> Self:
+        seen: dict[str, str] = {}
+        for name, value in self.model_dump().items():
+            if value in seen:
+                raise ValueError(f"labels.{seen[value]} and labels.{name} are both {value!r}")
+            seen[value] = name
+        return self
+
+
+class IdentityConfig(_Strict):
+    # e.g. specster-endika[bot]; unset, it is asked of the token, which an App token may not answer.
+    bot_login: str | None = None
 
 
 class TrustConfig(_Strict):
@@ -109,8 +148,40 @@ class PersonaConfig(_Strict):
         return self
 
 
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+Command = Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
+
+
+class BuildConfig(_Strict):
+    max_parallel: int = Field(default=2, ge=1, le=8)
+    max_turns_per_task: int = Field(default=40, gt=1)
+    max_review_rounds: int = Field(default=2, ge=0)
+    setup_command: Command | None = None
+    test_command: Command | None = None
+    test_env: dict[str, str] = {}
+    test_timeout_s: int = Field(default=600, gt=0)
+    test_output_max_kb: int = Field(default=20, gt=0)
+    test_output_max_file_mb: int = Field(default=1024, gt=0)
+    max_minutes: int = Field(default=100, gt=0)
+    close_issue: bool = True
+    allow_comments_after_spec: bool = False
+    allow_workflow_changes: bool = False
+
+    @field_validator("test_env")
+    @classmethod
+    def _env_names(cls, value: dict[str, str]) -> dict[str, str]:
+        for name in value:
+            if not _ENV_NAME.match(name):
+                raise ValueError(f"{name!r} is not an environment variable name")
+            if name == "HOME":
+                raise ValueError("HOME is set by Specster to a private temporary directory")
+        return value
+
+
 class BudgetConfig(_Strict):
-    max_usd_per_issue: float | None = Field(default=5.0, gt=0)
+    max_usd_per_issue: float | None = Field(default=8.0, gt=0)
+    max_usd_per_build: float | None = Field(default=5.0, gt=0)
     max_turns: int = Field(default=30, gt=1)
 
 
@@ -125,10 +196,12 @@ class Config(_Strict):
     models: ModelsConfig = ModelsConfig()
     labels: LabelsConfig = LabelsConfig()
     trust: TrustConfig = TrustConfig()
+    identity: IdentityConfig = IdentityConfig()
     skills: SkillsConfig = SkillsConfig()
     repo_map: RepoMapConfig = RepoMapConfig()
     persona: PersonaConfig = PersonaConfig()
     budget: BudgetConfig = BudgetConfig()
+    build: BuildConfig = BuildConfig()
     pricing: dict[str, PriceEntry] = {}
 
 

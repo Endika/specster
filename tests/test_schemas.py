@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from specster.schemas import PlanTask, QuestionsResult, SpecResult, json_schema
+from specster.schemas import PlanTask, QuestionsResult, ReviewResult, SpecResult, json_schema
 
 
 def test_schema_has_no_refs_so_every_provider_can_read_it() -> None:
@@ -34,3 +34,16 @@ def test_runaway_text_is_rejected_so_the_model_gets_it_back() -> None:
         QuestionsResult.model_validate(
             {"summary": "s", "questions": [{"question": "x" * 401, "why": "w"}]}
         )
+
+
+def test_a_review_carries_at_most_thirty_findings() -> None:
+    finding = {"task_id": "a", "file": "app.py", "severity": "minor", "description": "d"}
+    assert (
+        len(
+            ReviewResult.model_validate({"verdict": "approve", "findings": [finding] * 30}).findings
+        )
+        == 30
+    )
+    with pytest.raises(ValidationError, match="at most 30 items"):
+        ReviewResult.model_validate({"verdict": "approve", "findings": [finding] * 31})
+    assert json_schema(ReviewResult)["properties"]["findings"]["maxItems"] == 30
