@@ -1,0 +1,12 @@
+models:
+  planner:
+    provider: anthropic
+    model: claude-opus-5-5
+    effort: high
+trust:
+  comments: collaborators
+persona:
+  humor: spooky
+  language: es
+budget:
+  max_usd_per_issue: 3.0
