@@ -386,3 +386,12 @@ def test_a_failed_error_comment_still_clears_the_trigger_label(
     assert run(env(tmp_path), tr, ScriptedModel(["no tools", "still no tools"])) == 1
     assert tr.issue.labels == () and outcome(tmp_path) == "outcome=error\n"
     assert "GitHub is down" in capsys.readouterr().err
+
+
+def test_a_huge_hidden_comment_keeps_the_posted_comment_small(tmp_path: Path) -> None:
+    huge = comment(1, "bea", "MEMBER", "<!--" + "a" * 70_000 + "-->", T0 - timedelta(hours=1))
+    tr = tracker([huge])
+    run(env(tmp_path), tr, ScriptedModel([[ToolCall("1", "submit_questions", QUESTIONS)]]))
+    assert len(tr.posted[0]) < 60_000
+    marker = last_marker(tr.posted[0])
+    assert marker is not None and any("characters not shown" in t for t in marker.truncations)

@@ -146,3 +146,14 @@ def test_unknown_cost_footer() -> None:
 def test_fence_outgrows_backticks_inside() -> None:
     assert fence("a ``` b").startswith("````\n")
     assert fence("plain").startswith("```\n")
+
+
+def test_hidden_content_is_capped_and_the_cut_is_reported() -> None:
+    huge = HiddenItem("comment by mallory", "<!--" + "a" * 70_000 + "-->")
+    many = [HiddenItem(f"comment by u{i}", "b" * 3_000) for i in range(40)]
+    for hidden, cut in (([huge], 70_007 - 2_000), ([huge, *many], 70_007 + 120_000 - 20_000)):
+        out = render_questions(Q, RenderContext(PersonaConfig(), M, hidden, []))
+        assert len(out) < 60_000
+        assert f"(cut: {cut} characters not shown)" in out
+        m = extract_markers(out)[-1]
+        assert m.truncations == [f"hidden content: {cut} characters not shown"]
