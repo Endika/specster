@@ -8,6 +8,9 @@ READ_MAX_LINES = 400
 GREP_MAX_MATCHES = 200
 LINE_MAX_CHARS = 300
 FILE_MAX_BYTES = 2_000_000
+# google-github-actions/auth writes gha-creds-*.json into the workspace. Kept apart from the
+# repo's .gitignore so a "!" line there cannot bring these back.
+HARD_EXCLUDE = (".git/", "gha-creds-*.json")
 
 
 class ToolError(Exception):
@@ -22,14 +25,18 @@ def _is_binary(path: Path) -> bool:
 class Workspace:
     def __init__(self, root: Path, exclude: Sequence[str] = ()) -> None:
         self.root = root.resolve()
-        patterns = [".git/", *exclude]
+        patterns = list(exclude)
         gitignore = self.root / ".gitignore"
         if gitignore.is_file():
             patterns += gitignore.read_text(errors="replace").splitlines()
-        self._ignore = pathspec.GitIgnoreSpec.from_lines(patterns)
+        self._repo_ignore = pathspec.GitIgnoreSpec.from_lines(patterns)
+        self._hard_ignore = pathspec.GitIgnoreSpec.from_lines(HARD_EXCLUDE)
         self.files_read: set[str] = set()
         self.truncations: list[str] = []
         self._files: list[str] | None = None
+
+    def _ignored(self, rel_posix: str) -> bool:
+        return self._hard_ignore.match_file(rel_posix) or self._repo_ignore.match_file(rel_posix)
 
     def _resolve(self, rel: str) -> Path:
         if Path(rel).is_absolute():
@@ -38,7 +45,7 @@ class Workspace:
         if not path.is_relative_to(self.root):
             raise ToolError(f"{rel}: outside the repository")
         rel_posix = path.relative_to(self.root).as_posix()
-        if rel_posix != "." and self._ignore.match_file(rel_posix + ("/" if path.is_dir() else "")):
+        if rel_posix != "." and self._ignored(rel_posix + ("/" if path.is_dir() else "")):
             raise ToolError(f"{rel}: ignored path")
         return path
 
@@ -48,7 +55,7 @@ class Workspace:
             skipped_large = []
             for path in self.root.rglob("*"):
                 rel = path.relative_to(self.root).as_posix()
-                if path.is_symlink() or not path.is_file() or self._ignore.match_file(rel):
+                if path.is_symlink() or not path.is_file() or self._ignored(rel):
                     continue
                 if path.stat().st_size > FILE_MAX_BYTES:
                     skipped_large.append(rel)

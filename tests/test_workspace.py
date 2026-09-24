@@ -104,3 +104,21 @@ def test_symlinked_dir_escape_is_refused(ws: Workspace, tmp_path: Path) -> None:
         ws.read_file("linked_dir/secret.txt")
     with pytest.raises(ToolError, match="outside"):
         ws.list_dir("linked_dir")
+
+
+def test_cloud_credentials_and_git_stay_hidden_even_when_gitignore_negates_them(
+    tmp_path: Path,
+) -> None:
+    creds = '{"type": "external_account"}\n'
+    (tmp_path / "gha-creds-1a2b.json").write_text(creds)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "gha-creds-3c4d.json").write_text(creds)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("secret")
+    (tmp_path / ".gitignore").write_text("!gha-creds-*.json\n!.git/\n")
+    ws = Workspace(tmp_path)
+    assert ws.files() == [".gitignore"]
+    for path in ("gha-creds-1a2b.json", "sub/gha-creds-3c4d.json", ".git/config"):
+        with pytest.raises(ToolError, match="ignored"):
+            ws.read_file(path)
+    assert "gha-creds" not in ws.list_dir() and "gha-creds" not in ws.grep("external_account")

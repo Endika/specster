@@ -3,7 +3,7 @@ import sys
 import time
 import traceback
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -59,6 +59,18 @@ class Env:
     skills_token: str | None
     secrets: Mapping[str, str]
     output_path: Path | None
+    process_env: Mapping[str, str] = field(default_factory=dict)
+
+
+def _google_credentials(environ: Mapping[str, str]) -> dict[str, str]:
+    # In a Docker action GOOGLE_APPLICATION_CREDENTIALS still names the runner's host path;
+    # the file google-github-actions/auth wrote is mounted under GITHUB_WORKSPACE instead.
+    host = environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    workspace = environ.get("GITHUB_WORKSPACE")
+    if not host or not workspace or Path(host).exists():
+        return {}
+    local = Path(workspace) / Path(host).name
+    return {"GOOGLE_APPLICATION_CREDENTIALS": str(local)} if local.is_file() else {}
 
 
 def env_from(environ: Mapping[str, str]) -> Env:
@@ -66,6 +78,8 @@ def env_from(environ: Mapping[str, str]) -> Env:
     for src, dst in _SECRET_INPUTS.items():
         if environ.get(src):
             secrets[dst] = environ[src]
+    process_env = _google_credentials(environ)
+    secrets.update(process_env)
     out = environ.get("GITHUB_OUTPUT")
     return Env(
         workspace=Path(environ.get("GITHUB_WORKSPACE", ".")),
@@ -81,6 +95,7 @@ def env_from(environ: Mapping[str, str]) -> Env:
         skills_token=environ.get("INPUT_SKILLS_AUTH_TOKEN") or None,
         secrets=secrets,
         output_path=Path(out) if out else None,
+        process_env=process_env,
     )
 
 
