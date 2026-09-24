@@ -1,5 +1,6 @@
 import hashlib
 import json
+import posixpath
 from collections.abc import Sequence
 
 from specster.schemas import PlanTask
@@ -7,6 +8,11 @@ from specster.schemas import PlanTask
 
 class PlanError(Exception):
     pass
+
+
+def norm_path(path: str) -> str:
+    """The one spelling of a task path: TaskWorkspace writes by it, the plan orders by it."""
+    return posixpath.normpath(path)
 
 
 def _check(tasks: Sequence[PlanTask]) -> None:
@@ -40,7 +46,9 @@ def normalize_plan(tasks: Sequence[PlanTask]) -> tuple[list[PlanTask], list[str]
     fixes = []
     for i, earlier in enumerate(tasks):
         for later in tasks[i + 1 :]:
-            shared = sorted(set(earlier.files) & set(later.files))
+            shared = sorted(
+                {norm_path(f) for f in earlier.files} & {norm_path(f) for f in later.files}
+            )
             if not shared:
                 continue
             ordered = _reaches(deps, later.id, earlier.id) or _reaches(deps, earlier.id, later.id)

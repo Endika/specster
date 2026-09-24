@@ -5,6 +5,7 @@ from specster import __version__
 from specster.github import GitHubRest
 from specster.llm.factory import build_chat_model
 from specster.run import env_from, main
+from specster.sandbox import slot_identity
 from specster.skills import http_fetch
 
 
@@ -21,10 +22,29 @@ def cli(argv: list[str]) -> int:
         found = symbols_for("run.py", source)
         print(f"specster {__version__}: {len(found)} symbols in run.py")
         return 0 if any(s.startswith("def main(") for s in found) else 1
+    if argv[:1] == ["--isolation-check"]:
+        import shutil
+
+        from specster.isolation import isolation_check
+        from specster.sandbox import scratch_dir
+
+        scratch = scratch_dir()
+        try:
+            failures = isolation_check(scratch)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        print("\n".join(failures) if failures else "isolation: ok")
+        return 1 if failures else 0
     env = env_from(os.environ)
     os.environ.update(env.process_env)
     tracker = GitHubRest(env.repo, env.token, env.api_url, env.graphql_url)
-    return main(env, tracker, lambda cfg: build_chat_model(cfg, env.secrets), http_fetch)
+    return main(
+        env,
+        tracker,
+        lambda cfg: build_chat_model(cfg, env.secrets),
+        http_fetch,
+        identity=slot_identity,
+    )
 
 
 if __name__ == "__main__":

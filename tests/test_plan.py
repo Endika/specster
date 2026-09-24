@@ -1,6 +1,14 @@
 import pytest
 
-from specster.plan import PlanError, levels, max_parallel, mermaid, normalize_plan, plan_payload
+from specster.plan import (
+    PlanError,
+    levels,
+    max_parallel,
+    mermaid,
+    norm_path,
+    normalize_plan,
+    plan_payload,
+)
 from specster.schemas import PlanTask
 
 
@@ -71,3 +79,10 @@ def test_mermaid_node_ids_cannot_collide_with_keywords() -> None:
 def test_payload_hash_is_stable_across_calls() -> None:
     tasks = [t("a", ["1"])]
     assert plan_payload(tasks) == plan_payload(list(tasks))
+
+
+@pytest.mark.parametrize("other", ["./app.py", "app.py/", ".//app.py", "src/../app.py"])
+def test_spellings_of_one_path_are_the_same_file(other: str) -> None:
+    tasks, fixes = normalize_plan([t("a", ["app.py"]), t("b", [other])])
+    assert tasks[1].depends_on == ["a"] and fixes == ["b now runs after a: both touch app.py"]
+    assert norm_path(other) == "app.py"

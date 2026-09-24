@@ -28,6 +28,18 @@ class Comment:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class PullRequest:
+    number: int
+    url: str
+
+
+class GitHubError(Exception):
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
 class IssueTracker(Protocol):
     def get_issue(self, number: int) -> Issue: ...
     def list_comments(self, number: int) -> list[Comment]: ...
@@ -37,6 +49,10 @@ class IssueTracker(Protocol):
     def add_labels(self, number: int, labels: Sequence[str]) -> None: ...
     def remove_label(self, number: int, label: str) -> None: ...
     def post_comment(self, number: int, body: str) -> None: ...
+    def own_login(self) -> str | None: ...
+    def default_branch(self) -> str: ...
+    def branch_exists(self, branch: str) -> bool: ...
+    def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest: ...
 
 
 def _ts(value: str) -> datetime:
@@ -58,6 +74,7 @@ class GitHubRest:
             base_url=api_url,
             transport=transport,
             timeout=30,
+            follow_redirects=True,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
@@ -148,3 +165,68 @@ class GitHubRest:
         self._http.post(
             f"/repos/{self._repo}/issues/{number}/comments", json={"body": body}
         ).raise_for_status()
+
+    def own_login(self) -> str | None:
+        try:
+            resp = self._http.post(
+                self._graphql_url, json={"query": "query { viewer { login __typename } }"}
+            )
+            resp.raise_for_status()
+            viewer = resp.json()["data"]["viewer"]
+            login = str(viewer["login"])
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            return None
+        # GraphQL names an App "name"; its comments, over REST, are by "name[bot]".
+        if viewer.get("__typename") == "Bot" and not login.endswith("[bot]"):
+            login += "[bot]"
+        return login
+
+    def default_branch(self) -> str:
+        resp = self._http.get(f"/repos/{self._repo}")
+        resp.raise_for_status()
+        return str(resp.json()["default_branch"])
+
+    def branch_exists(self, branch: str) -> bool:
+        resp = self._http.get(f"/repos/{self._repo}/git/ref/heads/{quote(branch, safe='/')}")
+        if resp.status_code == 200:
+            return True
+        if resp.status_code == 404:
+            return False
+        resp.raise_for_status()
+        raise GitHubError(f"check branch {branch}: HTTP {resp.status_code}")
+
+    def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest:
+        resp = self._http.post(
+            f"/repos/{self._repo}/pulls",
+            json={
+                "title": title,
+                "body": body,
+                "head": head,
+                "base": base,
+                "maintainer_can_modify": False,
+            },
+        )
+        if resp.status_code == 201:
+            try:
+                d = resp.json()
+                return PullRequest(int(d["number"]), str(d["html_url"]))
+            except (ValueError, KeyError, TypeError) as e:
+                raise GitHubError(
+                    f"create pull request: HTTP 201 without a number and url: {e!r}"
+                ) from e
+        raise GitHubError(
+            f"create pull request: HTTP {resp.status_code}: {_error_message(resp)}",
+            resp.status_code,
+        )
+
+
+def _error_message(resp: httpx.Response) -> str:
+    try:
+        d = resp.json()
+        message = str(d.get("message", ""))
+        errors = d.get("errors") or []
+        if errors and isinstance(errors[0], dict) and errors[0].get("message"):
+            message += f" ({errors[0]['message']})"
+    except (ValueError, AttributeError):
+        return resp.text[:500]
+    return message

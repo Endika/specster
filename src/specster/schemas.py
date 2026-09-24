@@ -1,9 +1,11 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 SUBMIT_QUESTIONS = "submit_questions"
 SUBMIT_SPEC = "submit_spec"
+SUBMIT_TASK = "submit_task"
+SUBMIT_REVIEW = "submit_review"
 
 
 class _Out(BaseModel):
@@ -33,8 +35,16 @@ class QuestionsResult(_Out):
     closing_line: str = Field(default="", max_length=300, description="The closing sentence.")
 
 
+# 40 keeps "fix(<id>): address review findings" within a 72-character commit subject.
+TASK_ID_MAX = 40
+
+
 class PlanTask(_Out):
-    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", description="Short slug, e.g. add-parser.")
+    id: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+        max_length=TASK_ID_MAX,
+        description="Short slug, e.g. add-parser.",
+    )
     title: str = _text(120)
     description: str = _text(1500, "What to change, concretely.")
     files: list[str] = Field(min_length=1, description="Repo-relative paths this task touches.")
@@ -54,7 +64,34 @@ class SpecResult(_Out):
     risks: list[Item]
     test_strategy: str = _text(2000)
     tasks: list[PlanTask] = Field(min_length=1)
+    changes: list[Item] = Field(
+        default=[],
+        max_length=20,
+        description="Only in revision mode: each change from the previous spec, one line each.",
+    )
     closing_line: str = Field(default="", max_length=300, description="The closing sentence.")
+
+
+class TaskSubmission(_Out):
+    summary: str = _text(1500, "What you changed and how you checked it, in a few sentences.")
+    commit_subject: str = _text(200, "One-line Conventional Commit subject, at most 72 chars.")
+
+
+class Finding(_Out):
+    task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", description="The plan task at fault.")
+    file: str = Field(
+        min_length=1,
+        max_length=300,
+        pattern=r"^[^\s#`]+$",
+        description="Repo-relative path the finding is about.",
+    )
+    severity: Literal["critical", "important", "minor"]
+    description: str = _text(800, "What is wrong and what to change, concretely.")
+
+
+class ReviewResult(_Out):
+    verdict: Literal["approve", "changes"]
+    findings: list[Finding] = Field(default=[], max_length=30)
 
 
 def _inline(node: Any, defs: dict[str, Any]) -> Any:

@@ -12,11 +12,31 @@ _MARKER = re.compile(r"<!-- specster:metrics (\{.*?\}) -->", re.DOTALL)
 _PLAN_MARKER = re.compile(r"<!-- specster:plan (\[.*?\]) sha256=([0-9a-f]{64}) -->", re.DOTALL)
 
 
+class RoleMetrics(BaseModel):
+    provider: str
+    model: str
+    input_tokens: int = Field(default=0, ge=0)
+    cache_read_tokens: int = Field(default=0, ge=0)
+    cache_write_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    cost_usd: float | None = Field(default=None, ge=0)
+    turns: int = Field(default=0, ge=0)
+
+
 class RunMetrics(BaseModel):
     version: int = 1
     run_id: str
-    phase: Literal["spec"] = "spec"
-    outcome: Literal["questions", "spec", "error", "budget_exhausted"]
+    phase: Literal["spec", "build"] = "spec"
+    outcome: Literal[
+        "questions",
+        "spec",
+        "error",
+        "budget_exhausted",
+        "refused",
+        "pr_opened",
+        "not_approved",
+        "build_failed",
+    ]
     provider: str
     model: str
     input_tokens: int = Field(default=0, ge=0)
@@ -38,6 +58,13 @@ class RunMetrics(BaseModel):
     plan_max_parallel: int | None = Field(default=None, ge=0)
     truncations: list[str] = []
     warnings: list[str] = []
+    roles: dict[str, RoleMetrics] = {}
+    revision: bool = False
+    tasks_total: int = Field(default=0, ge=0)
+    tasks_done: int = Field(default=0, ge=0)
+    test_runs: int = Field(default=0, ge=0)
+    parallel_used: int = Field(default=0, ge=0)
+    review_rounds: int = Field(default=0, ge=0)
 
 
 def encode_marker(m: RunMetrics) -> str:
@@ -75,6 +102,8 @@ def last_plan_marker(body: str) -> tuple[list[dict[str, Any]], str] | None:
     match = _PLAN_MARKER.match(body, start) if start != -1 else None
     if match is None:
         return None
+    if body[match.end() :].strip():
+        return None
     try:
         tasks = json.loads(match.group(1))
     except json.JSONDecodeError:
@@ -91,6 +120,13 @@ def strip_markers(body: str) -> str:
 
 
 def spent(previous: Sequence[RunMetrics]) -> tuple[float, int]:
-    known = sum(m.cost_usd for m in previous if m.cost_usd is not None)
-    unknown = sum(1 for m in previous if m.cost_usd is None)
+    """Known spend and the count of unpriced runs; such a run still adds the roles it did price."""
+    known = 0.0
+    unknown = 0
+    for m in previous:
+        if m.cost_usd is not None:
+            known += m.cost_usd
+            continue
+        unknown += 1
+        known += sum(r.cost_usd for r in m.roles.values() if r.cost_usd is not None)
     return round(known, 6), unknown
