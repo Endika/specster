@@ -1,0 +1,37 @@
+name: Specster
+description: Haunts your issues until they're clear. Turns labeled issues into questions or a technical spec.
+author: Endika Iglesias
+branding:
+  icon: file-text
+  color: blue
+inputs:
+  github_token:
+    description: Token used to read the issue and comment. Pass a GitHub App token to comment as your bot.
+    required: true
+  config_path:
+    description: Path to the Specster config in the repository.
+    default: .github/specster/config.yml
+  issue_number:
+    description: Issue to process when triggered by workflow_dispatch.
+    required: false
+  anthropic_api_key:
+    description: API key for the Anthropic provider.
+    required: false
+  openai_api_key:
+    description: API key for the OpenAI provider.
+    required: false
+  gemini_api_key:
+    description: API key for the Gemini provider.
+    required: false
+  azure_openai_api_key:
+    description: API key for the Azure OpenAI provider.
+    required: false
+  skills_auth_token:
+    description: Token for skills stored in private GitHub repositories.
+    required: false
+outputs:
+  outcome:
+    description: questions, spec, error or budget_exhausted
+runs:
+  using: docker
+  image: docker://ghcr.io/endika/specster:v0.0.0 # x-release-please-version
