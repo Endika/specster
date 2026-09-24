@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/Endika/specster/compare/specster-v0.1.1...specster-v0.1.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **release:** publish vX.Y.Z image and git tags that action.yml points to ([2332b99](https://github.com/Endika/specster/commit/2332b99f6a3c80055d547b749030346bcdf475d6))
+
 ## [0.1.1](https://github.com/Endika/specster/compare/specster-v0.1.0...specster-v0.1.1) (2026-09-24)
 
 
