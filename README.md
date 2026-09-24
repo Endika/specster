@@ -392,6 +392,10 @@ actually accept. To record a new cassette against a real account:
 uv run pytest 'tests/contract/test_contract.py::test_tool_round_trip[anthropic]' --record-mode=once
 ```
 
+A provider with no cassette is skipped. `SPECSTER_REQUIRE_CASSETTES=1` turns that skip into a
+failure, so a deleted cassette cannot go unnoticed; CI does not set it yet, as no cassette is
+recorded so far.
+
 **Evals** (`evals/`) call real models and cost real money, so they never run by default
 (`-m 'not eval'` is the default in `pyproject.toml`) and require an output path outside the repo:
 

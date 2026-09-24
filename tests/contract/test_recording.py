@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from vcr.request import Request
 
-from tests.contract.recording import CASSETTES, record_provider_hosts_only
+from tests.contract.recording import CASSETTES, missing_cassette, record_provider_hosts_only
 
 SECRET = re.compile(r"sk-ant|authorization|x-api-key|ya29\.|AKIA|ASIA|eyJ|AIza", re.IGNORECASE)
 
@@ -54,3 +54,12 @@ def test_committed_cassettes_hold_no_secrets() -> None:
         if SECRET.search(p.read_text(encoding="utf-8"))
     ]
     assert leaks == [], f"cassettes contain credentials: {leaks}"
+
+
+def test_a_missing_cassette_skips_unless_cassettes_are_required() -> None:
+    with pytest.raises(pytest.skip.Exception, match="no cassette"):
+        missing_cassette("no cassette", {})
+    with pytest.raises(pytest.skip.Exception):
+        missing_cassette("no cassette", {"SPECSTER_REQUIRE_CASSETTES": "0"})
+    with pytest.raises(pytest.fail.Exception, match="no cassette"):
+        missing_cassette("no cassette", {"SPECSTER_REQUIRE_CASSETTES": "1"})

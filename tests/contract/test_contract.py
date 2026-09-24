@@ -5,7 +5,7 @@ import pytest
 from specster.config import ModelConfig
 from specster.llm.base import ToolResult, ToolSpec
 from specster.llm.factory import build_chat_model
-from tests.contract.recording import CASSETTES
+from tests.contract.recording import CASSETTES, missing_cassette
 
 # provider id -> ModelConfig used when recording; edit model ids to what the account has.
 PROVIDERS: dict[str, ModelConfig] = {
@@ -79,10 +79,11 @@ def test_tool_round_trip(provider: str, request: pytest.FixtureRequest) -> None:
     cassette = CASSETTES / f"test_tool_round_trip[{provider}].yaml"
     recording = request.config.getoption("--record-mode") not in (None, "none")
     if not cassette.exists() and not recording:
-        pytest.skip(
+        missing_cassette(
             f"no cassette for {provider}: record with "
             f"`uv run pytest 'tests/contract/test_contract.py::test_tool_round_trip[{provider}]' "
-            "--record-mode=once`"
+            "--record-mode=once`",
+            os.environ,
         )
     model = build_chat_model(PROVIDERS[provider], dict(os.environ), replay=not recording)
     session = model.start("You are a test harness.", "Context padding. " * 200, PROMPT, TOOLS)
