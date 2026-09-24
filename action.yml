@@ -34,4 +34,4 @@ outputs:
     description: questions, spec, error, budget_exhausted, or skipped when the event is not for Specster
 runs:
   using: docker
-  image: docker://ghcr.io/endika/specster:v0.0.0 # x-release-please-version
+  image: docker://ghcr.io/endika/specster:v0.1.0 # x-release-please-version
