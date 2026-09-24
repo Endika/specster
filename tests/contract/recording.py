@@ -1,8 +1,20 @@
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 CASSETTES = Path(__file__).parent / "cassettes"
+REQUIRE_CASSETTES = "SPECSTER_REQUIRE_CASSETTES"
+
+
+def missing_cassette(message: str, environ: Mapping[str, str]) -> None:
+    # A skip hides a deleted cassette; once every provider is recorded, CI sets this to fail.
+    if environ.get(REQUIRE_CASSETTES) == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
 
 # An allowlist, not a denylist: token endpoints (iamcredentials, STS, metadata servers) answer
 # with live credentials, and this repository is public.
