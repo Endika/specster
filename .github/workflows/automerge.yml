@@ -1,0 +1,53 @@
+name: Auto-merge
+
+on: pull_request_target
+
+permissions:
+  contents: read
+
+# Neither job ever checks out the pull request's code, so running with
+# `pull_request_target` (and therefore with access to secrets) stays safe.
+
+jobs:
+  dependabot:
+    name: auto-merge dependabot
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Majors stay manual: they are where a breaking change actually lives.
+      # The token MUST be a PAT here too, for the reason spelled out in the release
+      # job below: a merge signed by GITHUB_TOKEN triggers no workflow at all, so
+      # nothing would run for the bump it just landed on main.
+      - name: queue the merge behind the required checks
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --rebase "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+  release:
+    name: auto-merge release-please
+    if: startsWith(github.event.pull_request.head.ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      # The token MUST be a PAT, not GITHUB_TOKEN. A merge signed by GITHUB_TOKEN
+      # produces a push that triggers no workflows at all, so Release would never
+      # run, no tag would be cut, and no image would reach GHCR: silently.
+      - name: queue the merge behind the required checks
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::RELEASE_PLEASE_TOKEN is not set: leaving this release to be merged by hand."
+            exit 0
+          fi
+          gh pr merge --auto --rebase "$PR_URL"
