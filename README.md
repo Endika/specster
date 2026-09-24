@@ -89,6 +89,37 @@ Notes on the parts that matter:
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see "Your own bot identity").
 
+## Action reference
+
+Everything `Endika/specster@v0` accepts. Pass only the key of the provider set in
+`models.planner.provider`; the other key inputs stay empty.
+
+| Input | Required | Default | What it is |
+|---|---|---|---|
+| `github_token` | yes | | Reads the issue and comments. `GITHUB_TOKEN` comments as github-actions[bot]; a GitHub App token comments as your bot. |
+| `config_path` | no | `.github/specster/config.yml` | Path of the config file in the repository. |
+| `issue_number` | no | | Issue to process when the workflow runs from `workflow_dispatch`. |
+| `anthropic_api_key` | no | | Key for provider `anthropic`. |
+| `openai_api_key` | no | | Key for provider `openai`. |
+| `gemini_api_key` | no | | Key for provider `gemini` (and for `openai-compatible` pointed at Gemini with `api_key_env: GEMINI_API_KEY`). |
+| `azure_openai_api_key` | no | | Key for provider `azure-openai`. |
+| `skills_auth_token` | no | | Token for skills stored in private GitHub repositories; only sent to GitHub hosts. |
+
+| Output | Values |
+|---|---|
+| `outcome` | `questions`, `spec`, `error`, `budget_exhausted`, or `skipped` when the event was not for Specster |
+
+Providers that take no key input:
+
+| Provider | How it authenticates |
+|---|---|
+| `bedrock`, `vertex-anthropic`, `vertex-gemini` | OIDC: log in with the cloud's official action before Specster (see "Cloud OIDC logins"). |
+| `openai-compatible` (DeepSeek, Ollama, vLLM, ...) | The environment variable named in `api_key_env`, passed with `env:` on the Specster step; none for local servers. |
+| `azure-openai` without a key | Service-principal environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`. |
+
+Every model, label, trust, skill, persona and budget option lives in the config file:
+see "Configuration" for the full list with defaults.
+
 ## Configuration
 
 Optional file at `.github/specster/config.yml` (path set by the `config_path` input). A missing
