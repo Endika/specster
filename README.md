@@ -1,6 +1,4 @@
-![Specster mascot](assets/specster-mascot.png)
-
-# Specster
+# <img src="assets/specster-mascot.png" alt="Specster mascot" width="44" align="center"> Specster
 
 Haunts your issues until they're clear.
 
