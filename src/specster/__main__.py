@@ -22,6 +22,7 @@ def cli(argv: list[str]) -> int:
         print(f"specster {__version__}: {len(found)} symbols in run.py")
         return 0 if any(s.startswith("def main(") for s in found) else 1
     env = env_from(os.environ)
+    os.environ.update(env.process_env)
     tracker = GitHubRest(env.repo, env.token, env.api_url, env.graphql_url)
     return main(env, tracker, lambda cfg: build_chat_model(cfg, env.secrets), http_fetch)
 

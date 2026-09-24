@@ -427,3 +427,23 @@ def test_a_huge_hidden_comment_keeps_the_posted_comment_small(tmp_path: Path) ->
     assert len(tr.posted[0]) < 60_000
     marker = last_marker(tr.posted[0])
     assert marker is not None and any("characters not shown" in t for t in marker.truncations)
+
+
+def test_google_credentials_on_the_host_path_are_found_in_the_mounted_workspace(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "gha-creds-1a2b.json").write_text("{}")
+    host = "/home/runner/work/r/r/gha-creds-1a2b.json"
+    e = env_from({"GITHUB_WORKSPACE": str(tmp_path), "GOOGLE_APPLICATION_CREDENTIALS": host})
+    local = str(tmp_path / "gha-creds-1a2b.json")
+    assert e.process_env == {"GOOGLE_APPLICATION_CREDENTIALS": local}
+    assert e.secrets["GOOGLE_APPLICATION_CREDENTIALS"] == local
+
+
+def test_google_credentials_that_exist_or_have_no_copy_are_left_alone(tmp_path: Path) -> None:
+    real = tmp_path / "creds.json"
+    real.write_text("{}")
+    for gac in (str(real), "/nowhere/gha-creds-9z.json"):
+        e = env_from({"GITHUB_WORKSPACE": str(tmp_path), "GOOGLE_APPLICATION_CREDENTIALS": gac})
+        assert e.process_env == {} and e.secrets["GOOGLE_APPLICATION_CREDENTIALS"] == gac
+    assert env_from({"GITHUB_WORKSPACE": str(tmp_path)}).process_env == {}
