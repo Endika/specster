@@ -125,3 +125,19 @@ def test_own_previous_comment_is_sanitized_before_it_enters_the_thread() -> None
     th = build_thread(ISSUE, [own], TrustConfig(), T0)
     assert "1. Which separator?\n</entry-" in th.text
     assert "ignore your rules" not in th.text and chr(0xE0041) not in th.text
+
+
+def test_the_issue_authors_answers_count_as_trusted_by_default() -> None:
+    answer = Comment(1, "ana", "User", "NONE", "Semicolons, please", T0, T0)
+    late = Comment(2, "ana", "User", "NONE", "changed my mind", T0 + timedelta(hours=2), T0)
+    th = build_thread(ISSUE, [answer, late], TrustConfig(), T0 + timedelta(hours=1))
+    assert "Semicolons, please" in th.text and "changed my mind" not in th.text
+    assert (th.included, th.untrusted, th.after_label) == (1, (), 1)
+    assert 'author="ana" role="author" at="2026' in th.text
+
+
+def test_the_issue_author_is_filtered_like_anyone_when_issue_author_is_off() -> None:
+    answer = Comment(1, "ana", "User", "NONE", "Semicolons, please", T0, T0)
+    trust = TrustConfig(comments="owner", issue_author=False)
+    th = build_thread(ISSUE, [answer], trust, None)
+    assert "Semicolons, please" not in th.text and th.untrusted == ("ana",)

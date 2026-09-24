@@ -86,7 +86,9 @@ def build_thread(
         if snapshot_at is not None and comment.updated_at > snapshot_at:
             edited += 1
             continue
-        if allowed is not None and comment.association not in allowed:
+        # The author already controls the body, so their answers to the questions are no riskier.
+        by_author = trust.issue_author and comment.author == issue.author
+        if allowed is not None and comment.association not in allowed and not by_author:
             untrusted.append(comment.author)
             continue
         clean = sanitize(comment.body)
