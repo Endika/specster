@@ -164,7 +164,8 @@ The details and the known limits: [Security model](docs/security.md).
 ## Roadmap
 
 - **0.4 - build phase (done).** `ai-build` turns an approved plan into a reviewed pull request.
-- **Next - other languages.** One image with `mise` installs the toolchains a repository declares,
-  so projects in other or mixed languages can build.
-- **Then - cost and quality benchmark, and model escalation**, so every model choice above comes
+- **Other languages (done).** mise installs the toolchains a repository declares, or
+  `build.tools` names, so projects in other or mixed languages build: see
+  [Toolchains](docs/build.md#toolchains-for-other-languages).
+- **Next - cost and quality benchmark, and model escalation**, so every model choice above comes
   with a measured quality score next to its price.

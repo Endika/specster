@@ -192,6 +192,7 @@ build:
   setup_command: null                  # argv list run once before test_command, as the sandbox uid; null skips it
   test_command: null                   # argv list run as the sandbox uid; null means no tests ever run
   test_env: {}                         # extra environment variables for setup_command and test_command (not HOME or TMPDIR)
+  tools: {}                            # toolchains mise installs, e.g. {node: "22", java: "21"}; see docs/build.md
   test_timeout_s: 600                  # wall-clock limit per invocation of either command
   test_output_max_kb: 20               # tail kept of each command's combined stdout+stderr
   test_output_max_file_mb: 1024        # RLIMIT_FSIZE per process; a file over this kills the command
