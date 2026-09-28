@@ -20,6 +20,8 @@ def vcr_config() -> dict[str, Any]:
             "anthropic-organization-id",
         ],
         "filter_query_parameters": ["key"],
+        # Replay drops content-encoding with the other headers, so store the body decoded.
+        "decode_compressed_response": True,
         "before_record_response": drop_response_headers,
         "before_record_request": record_provider_hosts_only,
         "match_on": ["method", "scheme", "host", "path"],
