@@ -25,8 +25,12 @@ budget:
 build:
   max_parallel: 2
   max_turns_per_task: 80
-  setup_command: [uv, sync, --locked, --all-groups]
-  test_command: [uv, run, --locked, pytest, --block-network, -W, error, -q]
+  # This repo's own tests parse with tree-sitter: copy the image's grammars into the slot's HOME
+  # (the library refuses a cache another uid owns) rather than download them on every run.
+  setup_command:
+    [sh, -c, 'uv sync --locked --all-groups && cp -r /app/.cache/tree-sitter-language-pack "$HOME/tslp"']
+  test_command:
+    [sh, -c, 'TREE_SITTER_LANGUAGE_PACK_CACHE_DIR="$HOME/tslp" exec uv run --locked pytest --block-network -W error -q']
   test_timeout_s: 900
 skills:
   sources:
