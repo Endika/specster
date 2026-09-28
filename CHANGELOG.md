@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/Endika/specster/compare/specster-v0.4.4...specster-v0.5.0) (2026-09-28)
+
+
+### Features
+
+* author build commits with the bot's noreply email so GitHub shows its avatar ([4979929](https://github.com/Endika/specster/commit/4979929b2a7e4a541c415eba19ca46412d109f2c))
+
+
+### Documentation
+
+* explain the build commits' author email ([54d0639](https://github.com/Endika/specster/commit/54d063959d8a22dc4cdac3c32f5e962ff5b31374))
+
 ## [0.4.4](https://github.com/Endika/specster/compare/specster-v0.4.3...specster-v0.4.4) (2026-09-28)
 
 
