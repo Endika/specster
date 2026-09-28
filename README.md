@@ -267,6 +267,7 @@ build:
   max_minutes: 100                     # wall-clock limit on the whole build; keep it below the job's timeout-minutes
   close_issue: true                    # the pull request body carries "Closes #<issue>"
   allow_comments_after_spec: false     # true lets a build run despite trusted comments posted after the spec
+  allow_failing_base: false            # true builds even when test_command already fails before any task
   allow_workflow_changes: false        # true lets a task change .github/workflows/** and .github/actions/**
   allow_config_changes: false          # true lets a task change .github/specster/** and the config_path file
 
@@ -452,6 +453,11 @@ hash still matches its own JSON. Everything else about "approved" is a build ref
 
 Each refusal posts why and removes the `ai-build` label, without touching `spec-ready`, so the
 issue is ready to try again once the cause is fixed.
+
+**A red base.** With a `test_command`, the build first runs the tests on the base commit, in the
+final-tests slot. If they already fail there, no worker could make them pass, so the build stops
+before any model call and posts the output, `needs-human`. Set `build.allow_failing_base: true`
+for an issue that is about fixing those tests.
 
 **Errors.** A few problems only surface once Specster has already started acting, so they are
 reported as an error comment ("Specster could not finish this run") rather than a refusal: the
