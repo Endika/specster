@@ -460,6 +460,7 @@ def test_a_process_that_survives_the_kill_fails_the_run(
     sandbox_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(sandbox, "_KILL_SIGNAL", signal.SIGCONT)
+    monkeypatch.setattr(sandbox, "_DYING_GRACE_S", 0.5)
     with pytest.raises(SandboxError, match="survived"):
         _slot_run(sandbox_dir, 5, [PY, "-c", DAEMON])
     monkeypatch.undo()

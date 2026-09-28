@@ -18,7 +18,9 @@ DEFAULT_MAX_PROCS = 512
 _REAP_ROUNDS = 100
 _REAP_BUDGET_S = 5.0
 _REAP_PAUSE_S = 0.005
-_DYING_GRACE_S = 2.0
+# A killed process still needs the CPU to exit, and a starved runner can keep one in R for
+# seconds; it cannot fork meanwhile, so waiting for it is safe.
+_DYING_GRACE_S = 30.0
 _KILL_SIGNAL = signal.SIGKILL
 
 
