@@ -221,6 +221,24 @@ class Git:
         self.run("commit", "-q", "--no-verify", "-m", subject, cwd=tree)
         return self.head(tree)
 
+    def export_tree(self, commit: str, into: Path, index: Path) -> None:
+        """Write the commit's files into `into` through a throwaway index, with no worktree."""
+        env = {"GIT_INDEX_FILE": str(index)}
+        self.run("read-tree", "--end-of-options", commit, extra_env=env)
+        self.run("checkout-index", "-a", "-q", extra_env=env | {"GIT_WORK_TREE": str(into)})
+        index.unlink()
+
+    def seed(self, message: str) -> None:
+        """Make this tree a repository of its own, with one commit of everything in it."""
+        self.run("init", "-q", "--template=", "--initial-branch=specster")
+        self.run("add", "-A", "-f", "--", ".")
+        self.run("commit", "-q", "--no-verify", "--allow-empty", "-m", message)
+
+    def files_in(self, sha: str, tree: Path | None = None) -> set[str]:
+        """The paths a commit changed."""
+        listing = self.run("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", sha, cwd=tree)
+        return set(listing.split("\0")) - {""}
+
     def diff(self, base: str, head: str) -> str:
         return self.run(
             "diff",

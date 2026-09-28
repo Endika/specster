@@ -278,3 +278,23 @@ def test_the_noreply_email_links_commits_to_the_account_so_github_shows_its_avat
     email = noreply_email("specster-endika[bot]", 333103899)
     assert email == "333103899+specster-endika[bot]@users.noreply.github.com"
     assert noreply_email(None, 333103899) == noreply_email("x[bot]", None) == BOT_EMAIL
+
+
+def test_a_tree_exported_from_a_commit_becomes_a_repo_of_its_own(tmp_path: Path) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "A = 0\n", "pkg/util.py": "B = 0\n"})
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    git.export_tree(git.head(), tree, tmp_path / "index")
+    assert (tree / "pkg" / "util.py").read_text() == "B = 0\n" and not (tree / ".git").exists()
+    assert not (tmp_path / "index").exists()
+    local = Git(tree, Author("t", BOT_EMAIL), tmp_path / "local-home")
+    local.seed("specster: base")
+    assert local.run("log", "--format=%s").strip() == "specster: base"
+    assert local.run("status", "--porcelain") == ""
+
+
+def test_files_in_names_only_what_a_commit_changed(tmp_path: Path) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "A = 0\n", "util.py": "B = 0\n"})
+    (tmp_path / "repo" / "util.py").write_text("B = 1\n")
+    sha = git.commit_paths(tmp_path / "repo", ["util.py"], "feat: b")
+    assert sha is not None and git.files_in(sha) == {"util.py"}

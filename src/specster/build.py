@@ -172,8 +172,7 @@ def commit_changes(
     expected = {p for p in paths if changes[p].encode() != originals[p]}
     committed: set[str] = set()
     if sha is not None:
-        listing = git.run("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", sha, cwd=tree)
-        committed = set(listing.split("\0")) - {""}
+        committed = git.files_in(sha, tree)
     missing = sorted(expected - committed)
     if missing:
         raise BuildConflict(f"commit dropped paths: {', '.join(missing)}")
@@ -248,15 +247,10 @@ class _Build:
             os.chown(enclosure, -1, sandbox.identity.gid, follow_symlinks=False)
         tree = enclosure / "tree"
         tree.mkdir()
-        index = {"GIT_INDEX_FILE": str(enclosure / "index")}
-        self.git.run("read-tree", "--end-of-options", commit, extra_env=index)
-        into = index | {"GIT_WORK_TREE": str(tree)}
-        self.git.run("checkout-index", "-a", "-q", extra_env=into)
-        (enclosure / "index").unlink()
-        local = Git(tree, Author(self.s.persona.name, BOT_EMAIL), enclosure / "git-home")
-        local.run("init", "-q", "--template=", "--initial-branch=specster")
-        local.run("add", "-A", "-f", "--", ".")
-        local.run("commit", "-q", "--no-verify", "--allow-empty", "-m", f"specster: {commit}")
+        self.git.export_tree(commit, tree, enclosure / "index")
+        Git(tree, Author(self.s.persona.name, BOT_EMAIL), enclosure / "git-home").seed(
+            f"specster: {commit}"
+        )
         return tree
 
     def _work(
