@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/Endika/specster/compare/specster-v0.5.6...specster-v0.5.7) (2026-09-28)
+
+
+### Bug Fixes
+
+* stop running workers at their next turn once another hits a fatal error ([8f9cc3e](https://github.com/Endika/specster/commit/8f9cc3e207a1dfc60cf35a4b8db0bd80d6d1a166))
+
 ## [0.5.6](https://github.com/Endika/specster/compare/specster-v0.5.5...specster-v0.5.6) (2026-09-28)
 
 
