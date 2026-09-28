@@ -77,8 +77,7 @@ LABELS: dict[str, dict[str, str]] = {
             "again. Specster never overwrites a branch."
         ),
         "hint_root": (
-            "Run the build phase with the Docker action (it starts as root); see the "
-            "README's build section."
+            "Run the build phase with the Docker action (it starts as root); see docs/build.md."
         ),
         "hint_pull_403": (
             "The branch was pushed. With GITHUB_TOKEN, enable 'Allow GitHub Actions to "
@@ -172,7 +171,7 @@ LABELS: dict[str, dict[str, str]] = {
         ),
         "hint_root": (
             "Lanza la fase de construcci\u00f3n con la acci\u00f3n de Docker (arranca "
-            "como root); mira la secci\u00f3n de construcci\u00f3n del README."
+            "como root); mira docs/build.md."
         ),
         "hint_pull_403": (
             "La rama se ha subido. Con GITHUB_TOKEN, activa 'Allow GitHub Actions to "
