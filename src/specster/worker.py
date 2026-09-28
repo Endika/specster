@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from specster.agent import (
+    TIME_UP,
     AgentError,
     Handler,
     NotYet,
     Submit,
+    TimeUp,
     read_handlers,
     read_tool_specs,
     run_loop,
@@ -25,7 +27,6 @@ from specster.workspace import TaskWorkspace, ToolError
 NUDGE = "Call submit_task now."
 ONE_RUN = "one test run per turn; call run_tests again next turn"
 CHANGED_SINCE = "tests already ran this turn and files changed since; call submit_task next turn"
-TIME_UP = "the build reached its time limit (build.max_minutes)"
 NO_TESTS = "No test command is configured (build.test_command), so nothing runs your code."
 SUBJECT_MAX = 72
 _SUBJECT = re.compile(
@@ -55,10 +56,6 @@ def _tool_text(res: RunResult) -> str:
     timed_out = " (timed out)" if res.timed_out else ""
     note = f"[{res.truncation}]\n" if res.truncation else ""
     return f"exit {res.exit_code}{timed_out}\n{note}{res.output}"
-
-
-class TimeUp(Exception):
-    """The build's wall-clock limit passed: the worker stops before another paid turn."""
 
 
 class TaskTools:

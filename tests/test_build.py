@@ -18,7 +18,7 @@ from specster.build import (
 from specster.config import BudgetConfig, BuildConfig, Config, ModelConfig, SkillsConfig
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
-from specster.llm.base import ChatModel, ToolCall, Usage
+from specster.llm.base import ChatModel, ToolCall, ToolResult, Turn, Usage
 from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
 from specster.schemas import PlanTask
@@ -642,6 +642,37 @@ def test_the_time_limit_stops_a_worker_before_its_next_paid_turn(tmp_path: Path)
     assert report.reason == "build time limit reached: build.max_minutes is 1"
     assert "build.max_minutes" in report.tasks[0].reason
     assert s.ledger.turns() == 2
+
+
+class LateReviewer(ScriptedModel):
+    """Reads a file on its first turn, and the build's time runs out while it does."""
+
+    def __init__(self, clock: Clock) -> None:
+        super().__init__([[ToolCall("r", "read_file", {"path": "app.py"})], *[verdict("approve")]])
+        self.clock = clock
+
+    def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+        turn = super().send(results, user_text)
+        self.clock.left = 0.0
+        return turn
+
+
+def test_the_time_limit_stops_the_reviewer_before_its_next_paid_turn(tmp_path: Path) -> None:
+    clock = Clock("never")
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    reviewer = LateReviewer(clock)
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        reviewer,
+        build=BuildConfig(max_minutes=1),
+        time_left=clock.time_left,
+    )
+    report = run_build(s)
+    assert report.status == "budget_exhausted" and report.out_of_time and report.commits == 1
+    assert report.reason == "build time limit reached: build.max_minutes is 1"
+    assert len(reviewer.received) == 1 and s.ledger.roles()["reviewer"].turns == 1
 
 
 def test_the_time_limit_stops_after_the_final_tests(tmp_path: Path) -> None:
