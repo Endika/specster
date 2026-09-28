@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/Endika/specster/compare/specster-v0.4.0...specster-v0.4.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* show a failed task's last test run in the build comment ([b3e5708](https://github.com/Endika/specster/commit/b3e5708484af49a02c2c6bd57ba897eca59216b9))
+
 ## [0.4.0](https://github.com/Endika/specster/compare/specster-v0.3.2...specster-v0.4.0) (2026-09-24)
 
 
