@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/Endika/specster/compare/specster-v0.8.1...specster-v0.9.0) (2026-09-28)
+
+
+### Features
+
+* install the toolchains a repository declares with mise, as an unprivileged slot ([c1a4921](https://github.com/Endika/specster/commit/c1a49219e60830bb55927720e9b9b29003829168))
+
+
+### Documentation
+
+* document the toolchain step and build.tools ([b348093](https://github.com/Endika/specster/commit/b34809354fa62c624428e187a811079e5f4f40e8))
+
 ## [0.8.1](https://github.com/Endika/specster/compare/specster-v0.8.0...specster-v0.8.1) (2026-09-28)
 
 
