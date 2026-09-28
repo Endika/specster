@@ -399,7 +399,10 @@ Specster comment as its own bot:
    requests (read and write) too - see "Permissions". Never grant the App the Workflows
    permission: without it GitHub refuses any push from Specster that changes a workflow file,
    whatever the model wrote. Use `assets/specster-avatar.png` as the App logo and
-   `assets/specster-mascot.png` if you want it elsewhere.
+   `assets/specster-mascot.png` if you want it elsewhere. Build commits are authored with the
+   token's own noreply address (`<id>+<login>@users.noreply.github.com`), so GitHub shows the
+   App's logo on them; when the account cannot be looked up they fall back to
+   `specster@users.noreply.github.com`, which has no avatar.
 2. Generate a private key and install the App on the repository.
 3. Store the App ID as a repository or organization variable (e.g. `SPECSTER_APP_ID`) and the
    private key as a secret (e.g. `SPECSTER_APP_KEY`).
