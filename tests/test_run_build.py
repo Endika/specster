@@ -32,8 +32,12 @@ from tests.test_sandbox import ROOT_ONLY
 CHECK = json.dumps([sys.executable, "-c", "import app; assert app.A == 1"])
 
 
-def world(tmp_path: Path, config: str = "") -> tuple[Env, FakeTracker, Path]:
-    text = f"build:\n  test_command: {CHECK}\n{config}"
+def world(
+    tmp_path: Path, config: str = "", gate_base: bool = False
+) -> tuple[Env, FakeTracker, Path]:
+    # CHECK fails on the base on purpose, so only the base-gate tests gate.
+    allow = "" if gate_base else "  allow_failing_base: true\n"
+    text = f"build:\n  test_command: {CHECK}\n{allow}{config}"
     make_repo(tmp_path / "repo", {"app.py": "A = 0\n", ".github/specster/config.yml": text})
     remote = make_remote(tmp_path / "remote" / "o" / "r.git")
     event = tmp_path / "event.json"
@@ -141,6 +145,16 @@ def test_build_commits_carry_the_bot_accounts_noreply_email(tmp_path: Path) -> N
     git = Git(remote, Author("Specster", BOT_EMAIL), tmp_path / "log-home")
     emails = git.run(f"--git-dir={remote}", "log", "--format=%ae", "-1", "specster/issue-7")
     assert emails.strip() == "42+specster[bot]@users.noreply.github.com"
+
+
+def test_a_red_base_is_reported_with_its_test_output_and_no_model_cost(tmp_path: Path) -> None:
+    e, tr, remote = world(tmp_path, gate_base=True)
+    assert go(e, tr, ScriptBook({}), ScriptedModel([])) == 0
+    body = tr.posted[-1]
+    assert "the tests fail on the base commit" in body and "AssertionError" in body
+    m = last_marker(body)
+    assert m is not None and m.outcome == "build_failed" and m.cost_usd == 0
+    assert "needs-human" in tr.issue.labels and not list((remote / "refs" / "heads").iterdir())
 
 
 def test_a_build_without_approval_pushes_the_branch_and_asks_for_a_human(tmp_path: Path) -> None:

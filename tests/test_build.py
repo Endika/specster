@@ -68,10 +68,13 @@ def setup(
     budget: BudgetConfig | None = None,
     sandboxes: Callable[[int], Sandbox] | None = None,
     time_left: Callable[[], float] | None = None,
+    gate_base: bool = False,
 ) -> BuildSetup:
     repo = tmp_path / "repo"
     git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n"})
-    cfg = Config(build=build or BuildConfig(), budget=budget or BudgetConfig())
+    # The fixtures' test commands fail on the base on purpose, so only the base-gate tests gate.
+    build = (build or BuildConfig()).model_copy(update={"allow_failing_base": not gate_base})
+    cfg = Config(build=build, budget=budget or BudgetConfig())
     skills = load_skills(repo, SkillsConfig(), "build", lambda *_: b"", None)
     spec = ApprovedSpec(human(1, T0), tasks, "0" * 64, "The spec text.")
     scratch = tmp_path / "scratch"
@@ -155,6 +158,34 @@ def test_a_failed_task_keeps_its_last_test_run_for_the_comment(tmp_path: Path) -
     report = run_build(setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([]), build))
     last = report.tasks[0].last_tests
     assert report.tasks[0].status == "failed" and last is not None and last.exit_code == 3
+
+
+def test_a_red_base_stops_the_build_before_any_worker_is_paid(tmp_path: Path) -> None:
+    fail = [sys.executable, "-c", "raise SystemExit(4)"]
+    book = ScriptBook({'id="a"': [[done("feat(a): set A")]]})
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([]),
+        BuildConfig(test_command=fail),
+        gate_base=True,
+    )
+    report = run_build(s)
+    assert report.status == "failed" and "the tests fail on the base commit" in report.reason
+    assert "build.allow_failing_base: true" in report.reason
+    assert report.final_tests is not None and report.final_tests.exit_code == 4
+    assert book.sessions == {} and s.ledger.turns() == 0 and report.test_runs == 1
+
+
+def test_a_green_base_is_checked_once_and_the_build_goes_on(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    reviewer = ScriptedModel([verdict("approve")])
+    build = BuildConfig(test_command=PASS)
+    report = run_build(
+        setup(tmp_path, [task("a", "app.py")], book, reviewer, build, gate_base=True)
+    )
+    assert report.status == "approved" and report.test_runs == 3
 
 
 def test_blocking_findings_go_back_to_their_task_for_a_correction_round(tmp_path: Path) -> None:

@@ -404,7 +404,7 @@ class _Build:
                     return outcome, f"{r.task.id}: {r.reason}"
         return None
 
-    def _final_tests(self, round_no: int) -> tuple[RunResult, bool]:
+    def _final_tests(self, tag: str) -> tuple[RunResult, bool]:
         """The integrated branch's test result and whether it is the failed setup's."""
         if self._final is None:
             self._final = self.s.make_sandbox(FINAL_SLOT)
@@ -412,7 +412,7 @@ class _Build:
         build = self.cfg.build
         assert build.test_command is not None
         head = self.git.head(self.integration)
-        enclosure = self.s.scratch / f"final{round_no}"
+        enclosure = self.s.scratch / f"final-{tag}"
         try:
             tree = self._enclose(sandbox, enclosure, head)
             sandbox.hand_over(tree)
@@ -509,6 +509,18 @@ class _Build:
                 status == "budget_exhausted" and self._out_of_time,
             )
 
+        build = self.cfg.build
+        if build.test_command is not None and not build.allow_failing_base:
+            # A red base would fail every task's tests whatever its worker writes.
+            final, setup_failed = self._final_tests("base")
+            if not final.ok:
+                what = "setup_command fails" if setup_failed else "tests fail"
+                return report(
+                    "failed",
+                    f"the {what} on the base commit, before any task ran: fix that first, or set "
+                    "build.allow_failing_base: true if this issue is about fixing it",
+                )
+            final = None
         self._run_tasks(self.tasks, 0, {})
         stopped = self._unfinished_or_late()
         if stopped is not None:
@@ -522,7 +534,7 @@ class _Build:
                 return report("budget_exhausted", stop)
             setup_failed = False
             if self.cfg.build.test_command is not None:
-                final, setup_failed = self._final_tests(round_no)
+                final, setup_failed = self._final_tests(str(round_no))
                 stop = self._stop()
                 if stop is not None:
                     return report("budget_exhausted", stop)
