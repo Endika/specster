@@ -70,6 +70,11 @@ jobs:
           git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint /usr/bin/tini \
             specster:ci -- sh -c \
             'mkdir /work && cd /work && tar xf - && /app/.venv/bin/python -P tests/dogfood_as_slot.py /work'
+      - name: a Node project builds as a sandbox slot, with mise installing its node
+        run: |
+          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint /usr/bin/tini \
+            -e UV_PROJECT_ENVIRONMENT=/work/.venv -e PYTHONPATH=/work specster:ci -- sh -c \
+            'mkdir /work && cd /work && tar xf - && uv sync --all-groups --locked && uv run python -P tests/toolchains_as_slot.py'
 
   all-green:
     name: all-green
