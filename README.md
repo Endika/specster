@@ -260,7 +260,7 @@ build:
   max_review_rounds: 2                 # correction rounds after a blocked review before giving up
   setup_command: null                  # argv list run once before test_command, as the sandbox uid; null skips it
   test_command: null                   # argv list run as the sandbox uid; null means no tests ever run
-  test_env: {}                         # extra environment variables for setup_command and test_command
+  test_env: {}                         # extra environment variables for setup_command and test_command (not HOME or TMPDIR)
   test_timeout_s: 600                  # wall-clock limit per invocation of either command
   test_output_max_kb: 20               # tail kept of each command's combined stdout+stderr
   test_output_max_file_mb: 1024        # RLIMIT_FSIZE per process; a file over this kills the command
@@ -570,9 +570,10 @@ whatever else in the container any user may read (the image's own files, the eve
 `/github/workflow/event.json`) is in reach and could leave over the network; do not add secrets
 to `build.test_env`, which the tests receive by design. A `setup_command` that fetches and runs
 arbitrary code still runs as that code chooses. `/tmp` and `/dev/shm` are shared between sandbox
-slots (only `TMPDIR`, under each command's own `HOME`, is private to that run), so do not write
-secrets there. Only Python, `uv`
-and git are baked into the image; any other toolchain a project needs has to come from
+slots (only `TMPDIR`, under each command's own `HOME`, is private to that run, and
+`build.test_env` cannot point it back at `/tmp`), so do not write secrets there. Isolating them
+would take a mount namespace, which the action's unprivileged container cannot create. Only
+Python, `uv` and git are baked into the image; any other toolchain a project needs has to come from
 `build.setup_command`, unprivileged, with no `apt`/`sudo` available. And the reap loop's real
 purpose - a process wedged in uninterruptible (D) sleep - is not exercised by automated CI; it is
 covered by review and by the `--isolation-check` canary's coverage of the common cases.
