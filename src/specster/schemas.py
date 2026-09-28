@@ -38,6 +38,9 @@ class QuestionsResult(_Out):
 
 # 40 keeps "fix(<id>): address review findings" within a 72-character commit subject.
 TASK_ID_MAX = 40
+# A soft cap: a task over it still validates, but its worker reads and edits every file in the
+# turns of one task.
+TASK_FILES_MAX = 5
 
 
 class PlanTask(_Out):

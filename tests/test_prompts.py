@@ -63,3 +63,8 @@ def test_the_review_block_frames_only_the_diff_and_the_tests_with_the_nonce() ->
 
 def test_the_planner_is_told_to_write_fields_as_plain_text_not_json_escapes() -> None:
     assert "never JSON escapes" in system_prompt(PersonaConfig(), [])
+
+
+def test_the_planner_is_told_how_big_a_task_may_be() -> None:
+    prompt = system_prompt(PersonaConfig(), [])
+    assert "at most 5 files" in prompt and "a rename" in prompt
