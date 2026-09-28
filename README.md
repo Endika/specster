@@ -574,9 +574,10 @@ slots (only `TMPDIR`, under each command's own `HOME`, is private to that run, a
 `build.test_env` cannot point it back at `/tmp`), so do not write secrets there. Isolating them
 would take a mount namespace, which the action's unprivileged container cannot create. Only
 Python, `uv` and git are baked into the image; any other toolchain a project needs has to come from
-`build.setup_command`, unprivileged, with no `apt`/`sudo` available. And the reap loop's real
-purpose - a process wedged in uninterruptible (D) sleep - is not exercised by automated CI; it is
-covered by review and by the `--isolation-check` canary's coverage of the common cases.
+`build.setup_command`, unprivileged, with no `apt`/`sudo` available. The reap loop kills a
+process in D sleep without waiting for it to stop: CI checks it with a `vfork` parent, which waits
+in D until its child is gone. A process wedged in D for good (a hung network filesystem) cannot be
+staged without privileges; if one outlives the kill, the build stops with an error.
 
 ## Permissions
 
