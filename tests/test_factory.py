@@ -1,7 +1,9 @@
+from typing import get_args
+
 import pytest
 
-from specster.config import ModelConfig
-from specster.llm.factory import ProviderConfigError, build_chat_model
+from specster.config import ModelConfig, Provider
+from specster.llm.factory import _ADAPTERS, ProviderConfigError, build_chat_model
 from specster.llm.openai_chat import OpenAIChat
 
 
@@ -102,3 +104,7 @@ def test_base_url_is_rejected_where_the_provider_cannot_use_it(cfg: ModelConfig)
         ProviderConfigError, match=f"base_url is not supported for provider {cfg.provider}"
     ):
         build_chat_model(cfg, {}, replay=True)
+
+
+def test_every_configurable_provider_has_an_adapter() -> None:
+    assert set(_ADAPTERS) == set(get_args(Provider))
