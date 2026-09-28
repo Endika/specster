@@ -59,3 +59,7 @@ def test_the_review_block_frames_only_the_diff_and_the_tests_with_the_nonce() ->
     assert "The spec." in outside and "feat(a): set A" in outside and "n0nce" not in outside
     bare = review_block("S", [task], [], "", None, "t", "n")
     assert "Commits:\n(none)\n" in bare and "<diff-n>\n" in bare
+
+
+def test_the_planner_is_told_to_write_fields_as_plain_text_not_json_escapes() -> None:
+    assert "never JSON escapes" in system_prompt(PersonaConfig(), [])

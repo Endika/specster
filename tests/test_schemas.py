@@ -47,3 +47,9 @@ def test_a_review_carries_at_most_thirty_findings() -> None:
     with pytest.raises(ValidationError, match="at most 30 items"):
         ReviewResult.model_validate({"verdict": "approve", "findings": [finding] * 31})
     assert json_schema(ReviewResult)["properties"]["findings"]["maxItems"] == 30
+
+
+def test_the_long_markdown_fields_ask_for_real_line_breaks_not_json_escapes() -> None:
+    props = json_schema(SpecResult)["properties"]
+    for name in ("approach", "test_strategy"):
+        assert "real line breaks" in props[name]["description"], name
