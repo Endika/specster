@@ -8,6 +8,9 @@ from specster.run import env_from, main
 from specster.sandbox import slot_identity
 from specster.skills import http_fetch
 
+SUPPORTED_FLAGS = ("--version", "--self-check", "--isolation-check")
+USAGE = f"usage: python -m specster [{' | '.join(SUPPORTED_FLAGS)}]"
+
 
 def cli(argv: list[str]) -> int:
     if argv[:1] == ["--version"]:
@@ -35,6 +38,9 @@ def cli(argv: list[str]) -> int:
             shutil.rmtree(scratch, ignore_errors=True)
         print("\n".join(failures) if failures else "isolation: ok")
         return 1 if failures else 0
+    if argv[:1] and argv[0].startswith("--") and argv[0] not in SUPPORTED_FLAGS:
+        print(USAGE, file=sys.stderr)
+        return 2
     env = env_from(os.environ)
     os.environ.update(env.process_env)
     tracker = GitHubRest(env.repo, env.token, env.api_url, env.graphql_url)
