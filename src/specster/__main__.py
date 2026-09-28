@@ -8,11 +8,14 @@ from specster.run import env_from, main
 from specster.sandbox import slot_identity
 from specster.skills import http_fetch
 
-SUPPORTED_FLAGS = ("--version", "--self-check", "--isolation-check")
+SUPPORTED_FLAGS = ("--version", "--self-check", "--isolation-check", "--help")
 USAGE = f"usage: python -m specster [{' | '.join(SUPPORTED_FLAGS)}]"
 
 
 def cli(argv: list[str]) -> int:
+    if argv[:1] == ["--help"]:
+        print(USAGE)
+        return 0
     if argv[:1] == ["--version"]:
         print(f"specster {__version__}")
         return 0
