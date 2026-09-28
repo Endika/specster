@@ -69,6 +69,7 @@ def system_prompt(
         *_STYLE[persona.style],
         "",
         f"Write every field in this language: {persona.language}.",
+        "Fields are plain text: use real line breaks and quotes, never JSON escapes like \\n.",
         _HUMOR[persona.humor],
         "Humor appears only in closing_line, never in questions, summaries or the spec itself.",
     ]

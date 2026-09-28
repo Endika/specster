@@ -19,6 +19,7 @@ def _text(max_chars: int, description: str = "") -> Any:
 
 
 Item = Annotated[str, Field(max_length=400)]
+_MARKDOWN = 'Markdown with real line breaks and quotes, not JSON escapes such as \\n or \\".'
 
 
 class Question(_Out):
@@ -60,9 +61,9 @@ class SpecResult(_Out):
     in_scope: list[Item]
     out_of_scope: list[Item]
     files: list[str] = Field(description="Every repo-relative path the change touches.")
-    approach: str = _text(4000)
+    approach: str = _text(4000, _MARKDOWN)
     risks: list[Item]
-    test_strategy: str = _text(2000)
+    test_strategy: str = _text(2000, _MARKDOWN)
     tasks: list[PlanTask] = Field(min_length=1)
     changes: list[Item] = Field(
         default=[],
