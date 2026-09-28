@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/Endika/specster/compare/specster-v0.4.1...specster-v0.4.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* run the image under tini so killed orphans are reaped during a build ([087aff1](https://github.com/Endika/specster/commit/087aff1add0f82b0d9e2879653194380629755d9))
+
 ## [0.4.1](https://github.com/Endika/specster/compare/specster-v0.4.0...specster-v0.4.1) (2026-09-28)
 
 
