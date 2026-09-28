@@ -272,6 +272,7 @@ def test_a_sandbox_error_bills_the_run_asks_for_a_human_and_pushes_nothing(
     m = last_marker(tr.posted[-1])
     assert m is not None and m.phase == "build" and m.outcome == "error"
     assert "worker" in m.roles and m.turns > 0
+    assert m.tasks_total == 1 and m.tasks_done == 0
     assert (remote / "refs" / "heads").exists() and not list((remote / "refs" / "heads").iterdir())
 
 
@@ -291,6 +292,7 @@ def test_a_sandbox_error_mid_task_bills_the_worker_turns_paid_so_far(
     m = last_marker(tr.posted[-1])
     assert m is not None and m.outcome == "error" and m.roles["worker"].turns == 2
     assert m.cost_usd is not None and m.cost_usd > 0 and m.cost_usd == m.roles["worker"].cost_usd
+    assert m.tasks_total == 1 and "0 of 1 tasks" in tr.posted[-1]
 
 
 def test_a_refused_pull_request_says_the_branch_was_pushed(tmp_path: Path) -> None:
@@ -328,6 +330,8 @@ def test_a_failed_push_after_a_paid_build_asks_for_a_human(tmp_path: Path) -> No
     assert "ai-build" not in tr.issue.labels and "needs-human" in tr.issue.labels
     m = last_marker(tr.posted[-1])
     assert m is not None and m.outcome == "error" and set(m.roles) == {"worker", "reviewer"}
+    assert (m.tasks_total, m.tasks_done) == (1, 1) and m.test_runs >= 2
+    assert "Build: 1 of 1 tasks" in tr.posted[-1]
     assert "ghs_TOKEN" not in tr.posted[-1]
 
 

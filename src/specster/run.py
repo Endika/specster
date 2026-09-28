@@ -208,6 +208,8 @@ class _Run:
     phase: RunPhase = "spec"
     ledger: Ledger | None = None
     warnings: list[str] = field(default_factory=list)
+    # What the build has shown so far, for the footer of a run that fails part way.
+    build_facts: dict[str, Any] = field(default_factory=dict)
 
     @property
     def trigger_label(self) -> str:
@@ -274,7 +276,7 @@ class _Run:
                     phase="build",
                     roles=ledger.roles(),
                     turns=ledger.turns(),
-                    warnings=self.warnings,
+                    **({"warnings": self.warnings} | self.build_facts),
                     **_usage(ledger.usage()),
                 )
             else:
@@ -577,29 +579,40 @@ def _models(
     return lambda: make_model(models.worker), lambda: make_model(models.reviewer)
 
 
-def _build_metrics(
-    run: _Run, ledger: Ledger, report: BuildReport, books: Sequence[SkillBook], **fields: Any
-) -> RunMetrics:
+def _skill_facts(books: Sequence[SkillBook]) -> dict[str, Any]:
     def names(skills: Sequence[Skill]) -> list[str]:
         return list(dict.fromkeys(s.name for s in skills))
 
+    return {
+        "skills_available": names([s for b in books for s in b.inline + b.on_demand]),
+        "skills_inlined": names([s for b in books for s in b.inline]),
+        "skills_read": sorted({n for b in books for n in b.read}),
+    }
+
+
+def _report_facts(run: _Run, report: BuildReport, books: Sequence[SkillBook]) -> dict[str, Any]:
+    return _skill_facts(books) | {
+        "tasks_total": len(report.tasks),
+        "tasks_done": sum(1 for r in report.tasks if r.status == "done"),
+        "test_runs": report.test_runs,
+        "parallel_used": report.parallel_used,
+        "review_rounds": report.review_rounds,
+        "truncations": report.truncations,
+        "warnings": run.warnings + report.warnings,
+    }
+
+
+def _build_metrics(
+    run: _Run, ledger: Ledger, report: BuildReport, books: Sequence[SkillBook], **fields: Any
+) -> RunMetrics:
     return run.metrics(
         _BUILD_OUTCOMES[report.status],
         ledger.cost(),
         role=run.cfg.models.worker,
         phase="build",
         roles=ledger.roles(),
-        tasks_total=len(report.tasks),
-        tasks_done=sum(1 for r in report.tasks if r.status == "done"),
-        test_runs=report.test_runs,
-        parallel_used=report.parallel_used,
-        review_rounds=report.review_rounds,
         turns=ledger.turns(),
-        truncations=report.truncations,
-        warnings=run.warnings + report.warnings,
-        skills_available=names([s for b in books for s in b.inline + b.on_demand]),
-        skills_inlined=names([s for b in books for s in b.inline]),
-        skills_read=sorted({n for b in books for n in b.read}),
+        **_report_facts(run, report, books),
         **_usage(ledger.usage()),
         **fields,
     )
@@ -732,6 +745,8 @@ def _build_phase(
             return sandbox
 
         ledger = run.ledger = Ledger(cfg.pricing)
+        books = [build_skills, review_skills]
+        run.build_facts = _skill_facts(books) | {"tasks_total": len(spec.tasks)}
         try:
             report = run_build(
                 BuildSetup(
@@ -760,6 +775,7 @@ def _build_phase(
             ) from e
         truncations = [repo_map.truncation] if repo_map.truncation else []
         report.truncations[:0] = truncations
+        run.build_facts = _report_facts(run, report, books)
         branch_url = None
         if report.commits > 0:
             try:
@@ -783,7 +799,7 @@ def _build_phase(
             n,
             build.close_issue,
         )
-        m = _build_metrics(run, ledger, report, [build_skills, review_skills])
+        m = _build_metrics(run, ledger, report, books)
         if report.status == "approved":
             try:
                 pull = tracker.create_pull(
