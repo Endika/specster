@@ -1,0 +1,345 @@
+interactions:
+- request:
+    body: '{"max_tokens":1024,"messages":[{"role":"user","content":[{"type":"text","text":"Use
+      the lookup tool with key ''color'', then call submit_answer with exactly the
+      value it returned. Do not answer in text.","cache_control":{"type":"ephemeral"}}]}],"model":"claude-haiku-4-5","system":[{"type":"text","text":"You
+      are a test harness."},{"type":"text","text":"Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      ","cache_control":{"type":"ephemeral"}}],"tools":[{"name":"lookup","description":"Look
+      up a stored value.","input_schema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false}},{"name":"submit_answer","description":"Submit
+      the final answer.","input_schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}}],"stream":true}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      anthropic-version:
+      - '2023-06-01'
+      connection:
+      - keep-alive
+      content-length:
+      - '4187'
+      content-type:
+      - application/json
+      host:
+      - api.anthropic.com
+      user-agent:
+      - Anthropic/Python 1.8.0
+      x-stainless-arch:
+      - x64
+      x-stainless-async:
+      - 'false'
+      x-stainless-helper-method:
+      - stream
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Linux
+      x-stainless-package-version:
+      - 1.8.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.3
+      x-stainless-stream-helper:
+      - messages
+      x-stainless-timeout:
+      - NOT_GIVEN
+    method: POST
+    uri: https://api.anthropic.com/v1/messages
+  response:
+    body:
+      string: 'event: message_start
+
+        data: {"type":"message_start","message":{"model":"claude-haiku-4-5-20251001","id":"msg_011CfWWJAWL6dy7U2J5psKby","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1257,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":21,"service_tier":"standard","inference_geo":"not_available"},"diagnostics":null}       }
+
+
+        event: content_block_start
+
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01NTShDEdjCWCu6ZrSy9BmoE","name":"lookup","input":{},"caller":{"type":"direct"}}      }
+
+
+        event: ping
+
+        data: {"type": "ping"}
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}    }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"key\":"}              }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"
+        \"color"}       }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"}"}          }
+
+
+        event: content_block_stop
+
+        data: {"type":"content_block_stop","index":0   }
+
+
+        event: message_delta
+
+        data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":1257,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":52}      }
+
+
+        event: message_stop
+
+        data: {"type":"message_stop"            }
+
+
+        '
+    headers:
+      content-type:
+      - text/event-stream; charset=utf-8
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"max_tokens":1024,"messages":[{"role":"user","content":[{"type":"text","text":"Use
+      the lookup tool with key ''color'', then call submit_answer with exactly the
+      value it returned. Do not answer in text."}]},{"role":"assistant","content":[{"id":"toolu_01NTShDEdjCWCu6ZrSy9BmoE","caller":{"type":"direct"},"input":{"key":"color"},"name":"lookup","type":"tool_use"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01NTShDEdjCWCu6ZrSy9BmoE","content":"blue","is_error":false,"cache_control":{"type":"ephemeral"}}]}],"model":"claude-haiku-4-5","system":[{"type":"text","text":"You
+      are a test harness."},{"type":"text","text":"Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      Context padding. Context padding. Context padding. Context padding. Context
+      padding. Context padding. Context padding. Context padding. Context padding.
+      ","cache_control":{"type":"ephemeral"}}],"tools":[{"name":"lookup","description":"Look
+      up a stored value.","input_schema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false}},{"name":"submit_answer","description":"Submit
+      the final answer.","input_schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}}],"stream":true}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      anthropic-version:
+      - '2023-06-01'
+      connection:
+      - keep-alive
+      content-length:
+      - '4477'
+      content-type:
+      - application/json
+      host:
+      - api.anthropic.com
+      user-agent:
+      - Anthropic/Python 1.8.0
+      x-stainless-arch:
+      - x64
+      x-stainless-async:
+      - 'false'
+      x-stainless-helper-method:
+      - stream
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Linux
+      x-stainless-package-version:
+      - 1.8.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.3
+      x-stainless-stream-helper:
+      - messages
+      x-stainless-timeout:
+      - NOT_GIVEN
+    method: POST
+    uri: https://api.anthropic.com/v1/messages
+  response:
+    body:
+      string: 'event: message_start
+
+        data: {"type":"message_start","message":{"model":"claude-haiku-4-5-20251001","id":"msg_011CfWWJEKHS7VTkFfPp7m9F","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1322,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"},"diagnostics":null}       }
+
+
+        event: content_block_start
+
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}           }
+
+
+        event: ping
+
+        data: {"type": "ping"}
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Now"}   }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"
+        I''ll submit"}   }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"
+        that"}  }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"
+        answer:"}   }
+
+
+        event: content_block_stop
+
+        data: {"type":"content_block_stop","index":0          }
+
+
+        event: content_block_start
+
+        data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01R33A1xKsxnuqQL8KHW5e96","name":"submit_answer","input":{},"caller":{"type":"direct"}}            }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}        }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"answe"}          }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"r\":
+        \"bl"}         }
+
+
+        event: content_block_delta
+
+        data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"ue\"}"}           }
+
+
+        event: content_block_stop
+
+        data: {"type":"content_block_stop","index":1         }
+
+
+        event: message_delta
+
+        data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":1322,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":61}       }
+
+
+        event: message_stop
+
+        data: {"type":"message_stop"               }
+
+
+        '
+    headers:
+      content-type:
+      - text/event-stream; charset=utf-8
+    status:
+      code: 200
+      message: OK
+version: 1
