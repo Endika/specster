@@ -343,10 +343,17 @@ def entrypoints() -> dict[str, list[str]]:
     workflow = (ROOT / ".github" / "workflows" / "specster.yml").read_text()
     run_line = next(ln for ln in workflow.splitlines() if "-m specster" in ln)
     dogfood = run_line.split("run:", 1)[1].split()
+    argv = json.loads(entry.removeprefix("ENTRYPOINT"))
     return {
-        "docker": [sys.executable, *json.loads(entry.removeprefix("ENTRYPOINT"))[1:]],
+        "docker": [sys.executable, *argv[3:]],
         "dogfood": [sys.executable, *dogfood[dogfood.index("python") + 1 :]],
     }
+
+
+def test_tini_is_pid_1_so_the_orphans_a_test_kills_are_reaped() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    entry = next(ln for ln in dockerfile.splitlines() if ln.startswith("ENTRYPOINT"))
+    assert json.loads(entry.removeprefix("ENTRYPOINT"))[:2] == ["/usr/bin/tini", "--"]
 
 
 @pytest.mark.parametrize("where", ["docker", "dogfood"])
