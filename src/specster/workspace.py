@@ -37,6 +37,20 @@ def is_workflow_path(path: str) -> bool:
     return any(rel == d or rel.startswith(f"{d}/") for d in WORKFLOW_DIRS)
 
 
+SPECSTER_DIR = ".github/specster"
+CONFIG_PATH = f"{SPECSTER_DIR}/config.yml"
+
+
+def is_config_path(path: str, config_path: str = CONFIG_PATH) -> bool:
+    """Specster's own config and skills: once merged, a change there reconfigures every run."""
+    rel = norm_path(path).lower()
+    return (
+        rel == norm_path(config_path).lower()
+        or rel == SPECSTER_DIR
+        or rel.startswith(f"{SPECSTER_DIR}/")
+    )
+
+
 def _is_binary(path: Path) -> bool:
     with path.open("rb") as f:
         return b"\0" in f.read(8192)
@@ -187,9 +201,13 @@ class TaskWorkspace(Workspace):
         writable: Sequence[str],
         *,
         allow_workflows: bool = False,
+        allow_config: bool = False,
+        config_path: str = CONFIG_PATH,
     ) -> None:
         super().__init__(root, exclude)
         self.allow_workflows = allow_workflows
+        self.allow_config = allow_config
+        self.config_path = config_path
         self.writable = frozenset(norm_path(p) for p in writable)
         self.changes: dict[str, str] = {}
         self.originals: dict[str, bytes | None] = {}
@@ -213,6 +231,10 @@ class TaskWorkspace(Workspace):
             raise ToolError(f"{path}: ignored path")
         if not self.allow_workflows and is_workflow_path(rel):
             raise ToolError(f"{path}: a workflow file, and build.allow_workflow_changes is off")
+        if not self.allow_config and is_config_path(rel, self.config_path):
+            raise ToolError(
+                f"{path}: Specster's own configuration, and build.allow_config_changes is off"
+            )
         return rel
 
     @staticmethod

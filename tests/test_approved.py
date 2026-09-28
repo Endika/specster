@@ -229,3 +229,38 @@ def test_a_plan_that_changes_a_workflow_is_refused_unless_allowed() -> None:
         login="specster[bot]",
     )
     assert ".github/workflows/ci.yml" in allowed[0].tasks[0].files
+
+
+def approve_with(files: list[str], build: BuildConfig, config_path: str | None = None) -> object:
+    spec = SPEC | {"tasks": [TASK | {"files": files}]}
+    kw = {} if config_path is None else {"config_path": config_path}
+    return approved_spec(
+        ISSUE,
+        [bot_comment(1, spec_comment_body(spec), T0)],
+        TrustConfig(),
+        LabelsConfig(),
+        build,
+        T0 + timedelta(hours=1),
+        None,
+        login="specster[bot]",
+        **kw,
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "config_path"),
+    [
+        (".github/specster/config.yml", None),
+        (".github/specster/skills/review.md", None),
+        ("ops/specster.yml", "ops/specster.yml"),
+    ],
+)
+def test_a_plan_that_changes_specsters_own_config_is_refused_unless_allowed(
+    path: str, config_path: str | None
+) -> None:
+    with pytest.raises(BuildRefused) as e:
+        approve_with(["app.py", path], BuildConfig(), config_path)
+    assert f"{path} is Specster's own configuration" in e.value.message
+    assert "build.allow_config_changes: true" in e.value.hint
+    allowed = approve_with(["app.py", path], BuildConfig(allow_config_changes=True), config_path)
+    assert path in allowed[0].tasks[0].files  # type: ignore[index]

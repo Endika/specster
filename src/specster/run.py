@@ -62,7 +62,7 @@ from specster.sandbox import (
 from specster.schemas import QuestionsResult
 from specster.skills import Fetch, Skill, SkillBook, SkillIntegrityError, load_skills
 from specster.thread import Thread, build_thread, previous_runs
-from specster.workspace import Workspace
+from specster.workspace import CONFIG_PATH, Workspace
 
 LABEL_COLORS = {
     "spec": "5319e7",
@@ -152,7 +152,7 @@ def env_from(environ: Mapping[str, str]) -> Env:
         repo=environ.get("GITHUB_REPOSITORY", ""),
         run_id=environ.get("GITHUB_RUN_ID", "local"),
         token=environ.get("INPUT_GITHUB_TOKEN") or environ.get("GITHUB_TOKEN", ""),
-        config_path=environ.get("INPUT_CONFIG_PATH") or ".github/specster/config.yml",
+        config_path=environ.get("INPUT_CONFIG_PATH") or CONFIG_PATH,
         dispatch_issue=environ.get("INPUT_ISSUE_NUMBER") or None,
         api_url=environ.get("GITHUB_API_URL", "https://api.github.com"),
         graphql_url=environ.get("GITHUB_GRAPHQL_URL", "https://api.github.com/graphql"),
@@ -645,6 +645,7 @@ def _build_phase(
             label_at,
             tracker.body_edited_at(n),
             login=login,
+            config_path=env.config_path,
         )
     except BuildRefused as r:
         return run.refuse(r)
@@ -749,6 +750,7 @@ def _build_phase(
                     known,
                     cfg.persona,
                     time_left,
+                    env.config_path,
                 )
             )
         except SandboxError as e:

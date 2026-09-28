@@ -30,7 +30,7 @@ from specster.sandbox import RunResult, Sandbox
 from specster.schemas import Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
 from specster.worker import TaskTools, WorkerResult, run_worker
-from specster.workspace import TaskWorkspace, ToolError, Workspace, has_git_component
+from specster.workspace import CONFIG_PATH, TaskWorkspace, ToolError, Workspace, has_git_component
 
 DIFF_MAX_CHARS = 150_000
 FINAL_SLOT = 0
@@ -104,6 +104,7 @@ class BuildSetup:
     persona: PersonaConfig
     # Seconds left before build.max_minutes; None never stops the build on time.
     time_left: Callable[[], float] | None = None
+    config_path: str = CONFIG_PATH
 
 
 def budget_stop(ledger: Ledger, budget: BudgetConfig, prior_known_usd: float) -> str | None:
@@ -122,6 +123,8 @@ def apply_changes(
     changes: Mapping[str, str],
     originals: Mapping[str, bytes | None],
     allow_workflows: bool = False,
+    allow_config: bool = False,
+    config_path: str = CONFIG_PATH,
 ) -> list[str]:
     paths = sorted(changes)
     refused = [p for p in paths if has_git_component(p)]
@@ -129,7 +132,14 @@ def apply_changes(
         raise BuildConflict(f"{refused[0]}: a .git path component")
     # TaskWorkspace reads and writes through no-follow directory fds, so a symlink in the
     # integration tree can never redirect root's write.
-    ws = TaskWorkspace(tree, [], paths, allow_workflows=allow_workflows)
+    ws = TaskWorkspace(
+        tree,
+        [],
+        paths,
+        allow_workflows=allow_workflows,
+        allow_config=allow_config,
+        config_path=config_path,
+    )
     for rel in paths:
         if rel not in originals:
             raise BuildConflict(f"{rel}: changed without an original to check against")
@@ -154,8 +164,10 @@ def commit_changes(
     originals: Mapping[str, bytes | None],
     subject: str,
     allow_workflows: bool = False,
+    allow_config: bool = False,
+    config_path: str = CONFIG_PATH,
 ) -> str | None:
-    paths = apply_changes(tree, changes, originals, allow_workflows)
+    paths = apply_changes(tree, changes, originals, allow_workflows, allow_config, config_path)
     sha = git.commit_paths(tree, paths, subject) if paths else None
     expected = {p for p in paths if changes[p].encode() != originals[p]}
     committed: set[str] = set()
@@ -270,6 +282,8 @@ class _Build:
                 self.cfg.repo_map.exclude,
                 task.files,
                 allow_workflows=self.cfg.build.allow_workflow_changes,
+                allow_config=self.cfg.build.allow_config_changes,
+                config_path=self.s.config_path,
             )
             sandbox.hand_over(tree)
             home = sandbox.new_home(enclosure, "home")
@@ -333,6 +347,8 @@ class _Build:
             result.originals,
             result.subject,
             self.cfg.build.allow_workflow_changes,
+            self.cfg.build.allow_config_changes,
+            self.s.config_path,
         )
         if sha is None:
             self.warnings.append(f"{task.id} changed no files")
