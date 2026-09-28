@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/Endika/specster/compare/specster-v0.5.3...specster-v0.5.4) (2026-09-28)
+
+
+### Bug Fixes
+
+* leave one-line code spans unescaped so GitHub shows what the model wrote ([6a539e3](https://github.com/Endika/specster/commit/6a539e399729617496aba4e3ad7e75019767202f))
+
 ## [0.5.3](https://github.com/Endika/specster/compare/specster-v0.5.2...specster-v0.5.3) (2026-09-28)
 
 
