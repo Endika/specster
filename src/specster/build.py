@@ -1,7 +1,9 @@
+import json
 import os
 import queue
 import secrets
 import shutil
+import stat
 import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
@@ -33,6 +35,25 @@ from specster.worker import TaskTools, WorkerResult, run_worker
 from specster.workspace import CONFIG_PATH, TaskWorkspace, ToolError, Workspace, has_git_component
 
 DIFF_MAX_CHARS = 150_000
+MISE = Path("/usr/local/bin/mise")
+# Tools whose own version files (.nvmrc, .ruby-version, ...) count as declared; Python is left
+# out because the image's Python and uv already serve it.
+_IDIOMATIC_TOOLS = "node,ruby,java,go,bun,deno,erlang,elixir"
+# The files mise reads a toolchain from at the repository root: only these make a build install.
+TOOL_FILES = (
+    "mise.toml",
+    ".mise.toml",
+    ".config/mise.toml",
+    ".tool-versions",
+    ".nvmrc",
+    ".node-version",
+    ".ruby-version",
+    ".java-version",
+    ".go-version",
+    ".bun-version",
+)
+# asdf and vfox plugins are scripts from anywhere; the core tools and registry backends are not.
+_DISABLED_BACKENDS = "asdf,vfox"
 FINAL_SLOT = 0
 NO_TESTS_RUN = "No tests were run: build.test_command is not set."
 
@@ -177,6 +198,21 @@ def commit_changes(
     if missing:
         raise BuildConflict(f"commit dropped paths: {', '.join(missing)}")
     return sha
+
+
+def _freeze(root: Path) -> None:
+    """Hand the installed toolchains to root, read-only: no slot may change what others run.
+
+    Setuid and setgid bits go too, since a slot could set them on its own file before the
+    ownership moves to root.
+    """
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in [".", *dirnames, *filenames]:
+            path = Path(dirpath) / name if name != "." else Path(dirpath)
+            os.chown(path, 0, 0, follow_symlinks=False)
+            st = path.lstat()
+            if not stat.S_ISLNK(st.st_mode):
+                path.chmod(stat.S_IMODE(st.st_mode) & ~0o7022)
 
 
 def _count(n: int, noun: str) -> str:
@@ -425,6 +461,63 @@ class _Build:
         finally:
             shutil.rmtree(enclosure, ignore_errors=True)
 
+    def _install_tools(self) -> RunResult | None:
+        """Install the declared toolchains once, as the final slot; the failed run if any."""
+        build = self.cfg.build
+        if not build.tools and not self.git.present(self.s.base, TOOL_FILES):
+            return None
+        if not MISE.exists():
+            self.warnings.append(f"toolchains are declared, but {MISE} is missing: none installed")
+            return None
+        if self._final is None:
+            self._final = self.s.make_sandbox(FINAL_SLOT)
+        sandbox = self._final
+        tools = self.s.scratch / "tools"
+        tools.mkdir(mode=0o755)
+        if sandbox.identity is not None:
+            os.chown(tools, sandbox.identity.uid, sandbox.identity.gid)
+        enclosure = self.s.scratch / "tools-install"
+        try:
+            tree = self._enclose(sandbox, enclosure, self.s.base)
+            wanted = enclosure / "tools.toml"
+            wanted.write_text(
+                "[tools]\n" + "".join(f"{k} = {json.dumps(v)}\n" for k, v in build.tools.items())
+            )
+            wanted.chmod(0o644)
+            sandbox.hand_over(tree)
+            home = sandbox.new_home(enclosure, "home")
+            env = [
+                f"MISE_DATA_DIR={tools}",
+                f"MISE_CACHE_DIR={home}/.cache/mise",
+                f"MISE_STATE_DIR={home}/.local/state/mise",
+                f"MISE_GLOBAL_CONFIG_FILE={wanted}",
+                f"MISE_TRUSTED_CONFIG_PATHS={tree}",
+                f"MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS={_IDIOMATIC_TOOLS}",
+                f"MISE_DISABLE_BACKENDS={_DISABLED_BACKENDS}",
+                "MISE_YES=1",
+                "MISE_QUIET=1",
+            ]
+            mise = ["/usr/bin/env", *env, str(MISE)]
+            for step in ("install", "bin-paths"):
+                res = sandbox.run([*mise, step], tree, home, f"toolchains {step}")
+                if res.truncation:
+                    self.truncations.append(res.truncation)
+                if not res.ok:
+                    return res
+        finally:
+            shutil.rmtree(enclosure, ignore_errors=True)
+        root = tools.resolve()
+        bins = [
+            line
+            for line in res.output.splitlines()
+            if line.startswith("/") and Path(line).resolve().is_relative_to(root)
+        ]
+        if sandbox.identity is not None:
+            _freeze(tools)
+        for slot_box in [*self._sandboxes.values(), sandbox]:
+            slot_box.use_tools(bins)
+        return None
+
     def _review(self, tests: str) -> ReviewResult:
         head = self.git.head(self.integration)
         diff = self.git.diff(self.s.base, head)
@@ -467,6 +560,7 @@ class _Build:
             self.git.add_worktree(self.integration, self.s.base, branch=self.s.branch)
             return self._run()
         finally:
+            shutil.rmtree(self.s.scratch / "tools", ignore_errors=True)
             try:
                 self.git.drop_worktree(self.integration)
             except GitError as e:
@@ -504,6 +598,11 @@ class _Build:
             )
 
         build = self.cfg.build
+        if build.setup_command is not None or build.test_command is not None:
+            failed_tools = self._install_tools()
+            if failed_tools is not None:
+                final = failed_tools
+                return report("failed", "the toolchains could not be installed")
         if build.test_command is not None and not build.allow_failing_base:
             # A red base would fail every task's tests whatever its worker writes.
             final, setup_failed = self._final_tests("base")

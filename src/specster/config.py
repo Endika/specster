@@ -149,6 +149,9 @@ class PersonaConfig(_Strict):
 
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# A plain core tool, never a backend-prefixed one such as npm:x or asdf:x.
+_TOOL_NAME = re.compile(r"^[a-z][a-z0-9-]*$")
+_TOOL_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 Command = Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
 
@@ -160,6 +163,8 @@ class BuildConfig(_Strict):
     setup_command: Command | None = None
     test_command: Command | None = None
     test_env: dict[str, str] = {}
+    # Toolchains mise installs for the commands, on top of what the repo declares itself.
+    tools: dict[str, str] = {}
     test_timeout_s: int = Field(default=600, gt=0)
     test_output_max_kb: int = Field(default=20, gt=0)
     test_output_max_file_mb: int = Field(default=1024, gt=0)
@@ -169,6 +174,16 @@ class BuildConfig(_Strict):
     allow_failing_base: bool = False
     allow_workflow_changes: bool = False
     allow_config_changes: bool = False
+
+    @field_validator("tools")
+    @classmethod
+    def _tool_names(cls, value: dict[str, str]) -> dict[str, str]:
+        for name, version in value.items():
+            if not _TOOL_NAME.match(name):
+                raise ValueError(f"{name!r} is not a mise core tool name, e.g. node or java")
+            if not _TOOL_VERSION.match(version):
+                raise ValueError(f"{version!r} is not a version for {name}, e.g. 22 or 21.0.2")
+        return value
 
     @field_validator("test_env")
     @classmethod

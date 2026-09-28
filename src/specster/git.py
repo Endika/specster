@@ -234,6 +234,11 @@ class Git:
         self.run("add", "-A", "-f", "--", ".")
         self.run("commit", "-q", "--no-verify", "--allow-empty", "-m", message)
 
+    def present(self, commit: str, paths: Sequence[str]) -> list[str]:
+        """Which of these repository paths exist in the commit."""
+        listing = self.run("ls-tree", "-r", "--name-only", "-z", commit, "--", *paths)
+        return [p for p in listing.split("\0") if p]
+
     def files_in(self, sha: str, tree: Path | None = None) -> set[str]:
         """The paths a commit changed."""
         listing = self.run("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", sha, cwd=tree)
