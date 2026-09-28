@@ -130,7 +130,8 @@ Notes on the parts that matter:
   Keep `build.max_minutes` (default 100) below the build job's `timeout-minutes`: at that limit
   Specster stops the way a spent budget does (pushes what is done, comments, `needs-human`), while
   a job timeout kills the container with no comment and no cost recorded. Each test run is also
-  shortened to the time the build has left.
+  shortened to the time the build has left, and no worker or reviewer starts another model turn
+  once it has passed.
 - The step's `outcome` output is `questions`, `spec`, `refused`, `pr_opened`, `not_approved`,
   `build_failed`, `error` or `budget_exhausted`, or `skipped` when the event was not for Specster
   (another label, a bot sender).
