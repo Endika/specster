@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/Endika/specster/compare/specster-v0.8.0...specster-v0.8.1) (2026-09-28)
+
+
+### Documentation
+
+* make the README a short install, use and cost guide and move the reference to docs/ ([0b582c6](https://github.com/Endika/specster/commit/0b582c6a9b7ecb8ed45dd542d4408bbedd65e558))
+
 ## [0.8.0](https://github.com/Endika/specster/compare/specster-v0.7.0...specster-v0.8.0) (2026-09-28)
 
 
