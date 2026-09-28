@@ -399,6 +399,25 @@ def test_a_fork_bomb_is_bounded_and_killed(sandbox_dir: Path) -> None:
     assert res.ok and not sandbox._live_pids(SANDBOX_BASE_UID + 7)
 
 
+# A vfork parent waits in D (TASK_KILLABLE) until its child execs or exits: SIGSTOP never takes.
+VFORK_IN_D = (
+    "import ctypes, subprocess, sys, time\n"
+    "code = 'import ctypes' + chr(10) + 'libc = ctypes.CDLL(None)' + chr(10)"
+    " + 'if libc.vfork() == 0:' + chr(10) + '    libc.sleep(60)' + chr(10) + '    libc._exit(0)'\n"
+    "pid = subprocess.Popen([sys.executable, '-c', code], start_new_session=True).pid\n"
+    "time.sleep(0.5)\n"
+    "print(open(f'/proc/{pid}/stat').read().rsplit(')', 1)[1].split()[0])\n"
+)
+
+
+@ROOT_ONLY
+def test_a_process_in_d_state_is_killed_without_waiting_for_it_to_stop(sandbox_dir: Path) -> None:
+    started = time.monotonic()
+    res = _slot_run(sandbox_dir, 2, [PY, "-c", VFORK_IN_D])
+    assert res.ok and res.output.strip() == "D"
+    assert not sandbox._live_pids(SANDBOX_BASE_UID + 2) and time.monotonic() - started < 10
+
+
 def _reap_repeatedly(sandbox_dir: Path, slot: int, code: str, times: int, **limits: Any) -> None:
     sb = ready(Sandbox(slot_identity(slot), 20, 10_000, {}, **limits), sandbox_dir)
     tree = sandbox_dir / "tree"
