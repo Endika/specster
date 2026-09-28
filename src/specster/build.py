@@ -296,6 +296,7 @@ class _Build:
                 build.test_command,
                 task.id,
                 self.s.time_left,
+                self._aborted.is_set,
             )
             user = task_block(self.s.spec.text, task, findings, secrets.token_hex(8))
             started = True
