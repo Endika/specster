@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.8](https://github.com/Endika/specster/compare/specster-v0.5.7...specster-v0.5.8) (2026-09-28)
+
+
+### Bug Fixes
+
+* refuse a TMPDIR in build.test_env, which would reopen the shared /tmp ([0d6e139](https://github.com/Endika/specster/commit/0d6e1394159832ae059da9b6facf0a1ca7e07da6))
+
+
+### Documentation
+
+* explain why /tmp and /dev/shm stay shared between slots ([c3b9f93](https://github.com/Endika/specster/commit/c3b9f930c8864d71c8f3c912307d2076b04edb2a))
+
 ## [0.5.7](https://github.com/Endika/specster/compare/specster-v0.5.6...specster-v0.5.7) (2026-09-28)
 
 
