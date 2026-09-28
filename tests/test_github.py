@@ -173,6 +173,17 @@ def test_own_login_is_none_when_the_token_cannot_say() -> None:
     assert viewer_client(httpx.Response(200, text="not json")).own_login() is None
 
 
+def test_user_id_reads_the_account_and_is_none_when_github_cannot_say() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/users/specster-endika[bot]":
+            return httpx.Response(200, json={"login": "specster-endika[bot]", "id": 333103899})
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    gh = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle))
+    assert gh.user_id("specster-endika[bot]") == 333103899
+    assert gh.user_id("nobody") is None
+
+
 def test_default_branch_and_branch_existence() -> None:
     gh = client(FakeGitHubServer())
     assert gh.default_branch() == "trunk"

@@ -11,6 +11,15 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 BOT_EMAIL = "specster@users.noreply.github.com"
+
+
+def noreply_email(login: str | None, user_id: int | None) -> str:
+    """GitHub shows a commit's avatar by its author email; the account's noreply one links it."""
+    if login is None or user_id is None:
+        return BOT_EMAIL
+    return f"{user_id}+{login}@users.noreply.github.com"
+
+
 _TAIL = 2000
 DEFAULT_TIMEOUT_S = 300.0
 PUSH_TIMEOUT_S = 600.0

@@ -24,7 +24,7 @@ from specster.build import FINAL_SLOT, BuildReport, BuildSetup, run_build
 from specster.closing import rewrite_references
 from specster.config import Config, ConfigError, LabelsConfig, ModelConfig, Phase, load_config
 from specster.event import EventError, RunPhase, Trigger, parse_event, phase_of, skip_reason
-from specster.git import BOT_EMAIL, Author, Git, GitError
+from specster.git import Author, Git, GitError, noreply_email
 from specster.github import Comment, GitHubError, Issue, IssueTracker
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel, Usage
@@ -695,7 +695,8 @@ def _build_phase(
     scratch = scratch_dir()
     git: Git | None = None
     try:
-        git = Git(env.workspace, Author(cfg.persona.name, BOT_EMAIL), scratch / "git-home")
+        email = noreply_email(login, tracker.user_id(login) if login else None)
+        git = Git(env.workspace, Author(cfg.persona.name, email), scratch / "git-home")
         try:
             base = git.head()
         except GitError as e:
