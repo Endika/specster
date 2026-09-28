@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from specster.git import BOT_EMAIL, Author, Git, GitError, push_invocation
+from specster.git import BOT_EMAIL, Author, Git, GitError, noreply_email, push_invocation
 from tests.fakes import make_remote, make_repo
 
 TOKEN = "ghs_SECRETTOKEN"
@@ -272,3 +272,9 @@ def test_a_timed_out_git_whose_group_is_already_gone_still_reports_the_timeout(
     git = Git(tmp_path, Author("t", BOT_EMAIL), tmp_path / "home")
     with pytest.raises(GitError, match=r"timed out after 0\.2 s"):
         git.run("status", timeout=0.2)
+
+
+def test_the_noreply_email_links_commits_to_the_account_so_github_shows_its_avatar() -> None:
+    email = noreply_email("specster-endika[bot]", 333103899)
+    assert email == "333103899+specster-endika[bot]@users.noreply.github.com"
+    assert noreply_email(None, 333103899) == noreply_email("x[bot]", None) == BOT_EMAIL

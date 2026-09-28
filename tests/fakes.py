@@ -26,6 +26,7 @@ class FakeTracker:
     posted: list[str] = field(default_factory=list)
     now: datetime = datetime(2026, 1, 1, 12, tzinfo=UTC)
     login: str | None = None
+    user_ids: dict[str, int] = field(default_factory=dict)
     default: str = "main"
     remote_branches: set[str] = field(default_factory=set)
     pulls: list[tuple[str, str, str, str]] = field(default_factory=list)
@@ -58,6 +59,9 @@ class FakeTracker:
 
     def own_login(self) -> str | None:
         return self.login
+
+    def user_id(self, login: str) -> int | None:
+        return self.user_ids.get(login)
 
     def default_branch(self) -> str:
         return self.default

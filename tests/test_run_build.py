@@ -134,6 +134,15 @@ def test_a_plan_that_changes_the_configured_config_file_is_refused(tmp_path: Pat
     assert tr.pulls == []
 
 
+def test_build_commits_carry_the_bot_accounts_noreply_email(tmp_path: Path) -> None:
+    e, tr, remote = world(tmp_path)
+    tr.user_ids = {"specster[bot]": 42}
+    assert go(e, tr, book(), approve()) == 0
+    git = Git(remote, Author("Specster", BOT_EMAIL), tmp_path / "log-home")
+    emails = git.run(f"--git-dir={remote}", "log", "--format=%ae", "-1", "specster/issue-7")
+    assert emails.strip() == "42+specster[bot]@users.noreply.github.com"
+
+
 def test_a_build_without_approval_pushes_the_branch_and_asks_for_a_human(tmp_path: Path) -> None:
     e, tr, _ = world(tmp_path, "  max_review_rounds: 0\n")
     bad = {"task_id": "a", "file": "app.py", "severity": "critical", "description": "wrong value"}
