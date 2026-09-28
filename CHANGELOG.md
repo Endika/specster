@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/Endika/specster/compare/specster-v0.5.1...specster-v0.5.2) (2026-09-28)
+
+
+### Documentation
+
+* name roadmap milestones after their releases ([72c1dc3](https://github.com/Endika/specster/commit/72c1dc3082e7f31f779d60ec5232cccc3685aa13))
+
 ## [0.5.1](https://github.com/Endika/specster/compare/specster-v0.5.0...specster-v0.5.1) (2026-09-28)
 
 
