@@ -148,6 +148,20 @@ def test_spec_round_posts_plan_and_moves_to_spec_ready(tmp_path: Path) -> None:
     assert outcome(tmp_path) == "outcome=spec\n"
 
 
+def test_a_task_with_many_files_is_flagged_in_the_spec_footer(tmp_path: Path) -> None:
+    files = [f"m{i}.py" for i in range(6)]
+    big = {"id": "a", "title": "A", "description": "d", "files": files, "acceptance": ["x"]}
+    spec = SPEC | {"files": files, "tasks": [big]}
+    tr = tracker()
+    assert run(env(tmp_path), tr, ScriptedModel([[ToolCall("1", "submit_spec", spec)]])) == 0
+    m = extract_markers(tr.posted[0])[0]
+    assert (
+        "task a touches 6 files, and a worker has build.max_turns_per_task (40) turns for all of "
+        "them: split it before ai-build if it can be split"
+    ) in m.warnings
+    assert "- Warning: task a touches 6 files" in tr.posted[0]
+
+
 def test_metrics_record_files_read_and_repo_map(tmp_path: Path) -> None:
     read = ToolCall("1", "read_file", {"path": "app.py"})
     tr = tracker()

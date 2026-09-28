@@ -59,7 +59,7 @@ from specster.sandbox import (
     scratch_dir,
     slot_identity,
 )
-from specster.schemas import QuestionsResult
+from specster.schemas import TASK_FILES_MAX, PlanTask, QuestionsResult
 from specster.skills import Fetch, Skill, SkillBook, SkillIntegrityError, load_skills
 from specster.thread import Thread, build_thread, previous_runs
 from specster.workspace import CONFIG_PATH, Workspace
@@ -518,7 +518,11 @@ def _spec_phase(
         skills_inlined=[s.name for s in skills.inline],
         plan_max_parallel=None if is_questions else max_parallel(outcome.tasks),
         truncations=([repo_map.truncation] if repo_map.truncation else []) + ws.truncations,
-        warnings=warnings + login_warnings + revision_warnings + budget_warnings,
+        warnings=warnings
+        + login_warnings
+        + revision_warnings
+        + budget_warnings
+        + _task_size_warnings(outcome.tasks, cfg),
         revision=revision and not is_questions,
         **_usage(outcome.usage),
         **thread_fields,
@@ -538,6 +542,16 @@ def _spec_phase(
             _describe(e), UNEXPECTED_HINT, m.cost_usd, outcome.usage, outcome.turns
         ) from e
     return 0
+
+
+def _task_size_warnings(tasks: Sequence[PlanTask], cfg: Config) -> list[str]:
+    turns = cfg.build.max_turns_per_task
+    return [
+        f"task {t.id} touches {len(t.files)} files, and a worker has build.max_turns_per_task "
+        f"({turns}) turns for all of them: split it before {cfg.labels.build} if it can be split"
+        for t in tasks
+        if len(t.files) > TASK_FILES_MAX
+    ]
 
 
 def _login_warnings(configured: str | None, own: str | None) -> list[str]:
