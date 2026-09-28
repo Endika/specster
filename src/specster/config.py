@@ -166,6 +166,7 @@ class BuildConfig(_Strict):
     max_minutes: int = Field(default=100, gt=0)
     close_issue: bool = True
     allow_comments_after_spec: bool = False
+    allow_failing_base: bool = False
     allow_workflow_changes: bool = False
     allow_config_changes: bool = False
 
