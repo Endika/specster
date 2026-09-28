@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import re
+from typing import Any
 
 import pytest
 
@@ -286,7 +287,7 @@ A = PlanTask(id="a", title="A", description="d", files=["app.py"], acceptance=["
 MINOR = Finding(task_id="a", file="app.py", severity="minor", description="rename <x>")
 
 
-def view(**kw: object) -> BuildView:
+def view(**kw: Any) -> BuildView:
     report = BuildReport(
         "approved",
         "",
@@ -304,19 +305,18 @@ def view(**kw: object) -> BuildView:
         [],
         [],
     )
-    base: dict[str, object] = {
-        "report": report,
-        "spec_text": "**Objective.** Export CSV.\n\n**In scope**",
-        "spec_url": "https://x/c/1",
-        "branch": "specster/issue-7",
-        "branch_url": None,
-        "pr_url": "https://github.com/o/r/pull/12",
-        "unapplied": [],
-        "issue_number": 7,
-        "close_issue": True,
-    }
-    base.update(kw)
-    return BuildView(**base)  # type: ignore[arg-type]
+    default = BuildView(
+        report,
+        "**Objective.** Export CSV.\n\n**In scope**",
+        "https://x/c/1",
+        "specster/issue-7",
+        None,
+        "https://github.com/o/r/pull/12",
+        [],
+        7,
+        True,
+    )
+    return dataclasses.replace(default, **kw)
 
 
 def test_pr_body_carries_objective_commits_tests_minor_and_closes() -> None:
