@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/Endika/specster/compare/specster-v0.7.0...specster-v0.8.0) (2026-09-28)
+
+
+### Features
+
+* **cli:** add --help flag to python -m specster ([ff90f11](https://github.com/Endika/specster/commit/ff90f116874ef0653b466605a0d87615d37ddf85))
+
 ## [0.7.0](https://github.com/Endika/specster/compare/specster-v0.6.0...specster-v0.7.0) (2026-09-28)
 
 
