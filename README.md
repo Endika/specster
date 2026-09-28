@@ -405,15 +405,16 @@ Specster comment as its own bot:
    App's logo on them; when the account cannot be looked up they fall back to
    `specster@users.noreply.github.com`, which has no avatar.
 2. Generate a private key and install the App on the repository.
-3. Store the App ID as a repository or organization variable (e.g. `SPECSTER_APP_ID`) and the
-   private key as a secret (e.g. `SPECSTER_APP_KEY`).
+3. Store the App's Client ID (`Iv23...`, on the App's settings page; not the numeric App ID) as a
+   repository or organization variable (e.g. `SPECSTER_CLIENT_ID`) and the private key as a secret
+   (e.g. `SPECSTER_APP_KEY`).
 4. Mint an installation token in the workflow and pass it as `github_token`:
 
 ```yaml
   - uses: actions/create-github-app-token@v3
     id: app
     with:
-      app-id: ${{ vars.SPECSTER_APP_ID }}
+      client-id: ${{ vars.SPECSTER_CLIENT_ID }}
       private-key: ${{ secrets.SPECSTER_APP_KEY }}
   - uses: Endika/specster@v0
     with:
@@ -422,7 +423,7 @@ Specster comment as its own bot:
 
 A private key is never shared between organizations: each org that wants its own bot identity
 creates its own App and keeps its own key. `.github/workflows/specster.yml` in this repository is
-a working example that makes the App step conditional (`if: vars.SPECSTER_APP_ID != ''`), falling
+a working example that makes the App step conditional (`if: vars.SPECSTER_CLIENT_ID != ''`), falling
 back to `github.token`.
 
 ## Build phase

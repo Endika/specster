@@ -31,9 +31,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/create-github-app-token@v3
         id: app
-        if: vars.SPECSTER_APP_ID != ''
+        if: vars.SPECSTER_CLIENT_ID != ''
         with:
-          app-id: ${{ vars.SPECSTER_APP_ID }}
+          client-id: ${{ vars.SPECSTER_CLIENT_ID }}
           private-key: ${{ secrets.SPECSTER_APP_KEY }}
       - uses: astral-sh/setup-uv@v7
         with:
@@ -58,9 +58,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/create-github-app-token@v3
         id: app
-        if: vars.SPECSTER_APP_ID != ''
+        if: vars.SPECSTER_CLIENT_ID != ''
         with:
-          app-id: ${{ vars.SPECSTER_APP_ID }}
+          client-id: ${{ vars.SPECSTER_CLIENT_ID }}
           private-key: ${{ secrets.SPECSTER_APP_KEY }}
       - run: docker build -t specster:dogfood .
       - name: run the image built from this checkout, as the action would
