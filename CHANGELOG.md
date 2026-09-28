@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/Endika/specster/compare/specster-v0.4.2...specster-v0.4.3) (2026-09-28)
+
+
+### Bug Fixes
+
+* **cli:** reject unknown -- flags with usage and exit 2 ([11c963e](https://github.com/Endika/specster/commit/11c963e006659ecec6001267ebcf5ea17e73ebf2))
+
 ## [0.4.2](https://github.com/Endika/specster/compare/specster-v0.4.1...specster-v0.4.2) (2026-09-28)
 
 
