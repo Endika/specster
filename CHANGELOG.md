@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/Endika/specster/compare/specster-v0.6.0...specster-v0.7.0) (2026-09-28)
+
+
+### Features
+
+* stop a build whose tests already fail on the base, before any worker is paid ([931c387](https://github.com/Endika/specster/commit/931c38777347494ae9a135a305743f1b2d54ad76))
+
+
+### Documentation
+
+* explain the base test run and build.allow_failing_base ([f50d1fe](https://github.com/Endika/specster/commit/f50d1fecd5658b2f93da6d02ff5579ea346e2b4e))
+
 ## [0.6.0](https://github.com/Endika/specster/compare/specster-v0.5.9...specster-v0.6.0) (2026-09-28)
 
 
