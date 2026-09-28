@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.6](https://github.com/Endika/specster/compare/specster-v0.5.5...specster-v0.5.6) (2026-09-28)
+
+
+### Bug Fixes
+
+* stop the reviewer at the build's time limit like the workers ([b901c15](https://github.com/Endika/specster/commit/b901c1515422948cb1d421f2fb958e785db67bb0))
+
+
+### Documentation
+
+* say the time limit also stops the reviewer ([decb1b5](https://github.com/Endika/specster/commit/decb1b54b569f0e118a6d38effb1459f3336697f))
+
 ## [0.5.5](https://github.com/Endika/specster/compare/specster-v0.5.4...specster-v0.5.5) (2026-09-28)
 
 
