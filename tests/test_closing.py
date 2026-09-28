@@ -11,6 +11,9 @@ FORMS = [
     ("www.github.com/o/r/issues/3", "o/r issue 3"),
     ("GH-3", "issue 3"),
     ("gh-3", "issue 3"),
+    ("[the bug](https://github.com/o/r/issues/3)", "the bug (o/r issue 3)"),
+    ("[#3](https://github.com/o/r/issues/3)", "issue 3 (o/r issue 3)"),
+    ("<https://github.com/o/r/issues/3>", "o/r issue 3"),
 ]
 KEYWORDS = ["Fixes ", "closed ", "RESOLVE ", "fix: ", "Closes:", "resolves\n"]
 
@@ -26,7 +29,18 @@ def test_every_reference_after_a_keyword_is_spelled_out(keyword: str, ref: str, 
 
 @pytest.mark.parametrize(
     "text",
-    ["see #3", "prefix #3", "fixture #3", "fixes the parser", "#3", "GH-3", "fixes issue 3"],
+    [
+        "see #3",
+        "prefix #3",
+        "fixture #3",
+        "fixes the parser",
+        "#3",
+        "GH-3",
+        "fixes issue 3",
+        "fixes [#3](https://example.com)",
+        "fixes [#3]",
+        "fixes ([#3](https://github.com/o/r/issues/3))",
+    ],
 )
 def test_other_text_is_left_alone(text: str) -> None:
     assert not closes_an_issue(text) and rewrite_references(text) == text
