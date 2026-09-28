@@ -2,6 +2,8 @@ import dataclasses
 import json
 import re
 
+import pytest
+
 from specster.build import BuildReport, Commit, TaskRecord
 from specster.config import PersonaConfig
 from specster.metrics import RoleMetrics, RunMetrics, extract_markers
@@ -592,3 +594,21 @@ def test_a_closing_reference_split_by_backticks_is_still_spelled_out() -> None:
     q = Q.model_copy(update={"questions": [Q.questions[0].model_copy(update=question)]})
     out = render_questions(q, ctx())
     assert "`fixes issue 3`" in out and "#3" not in out
+
+
+def test_code_spans_keep_their_text_while_prose_around_them_stays_escaped() -> None:
+    spec, tasks = spec_and_tasks()
+    approach = "Print `specster <version> & @team`, but a < b & @team outside."
+    out = render_spec(spec.model_copy(update={"approach": approach}), tasks, [], bare())
+    assert "Print `specster <version> & @team`, but a &lt; b &amp; &#64;team outside." in out
+
+
+@pytest.mark.parametrize("text", ["`a\n<!-- b`", "`<!-- a", "``<!-- a`"])
+def test_a_span_across_lines_or_left_open_is_escaped_like_prose(text: str) -> None:
+    spec, tasks = spec_and_tasks()
+    out = render_spec(spec.model_copy(update={"approach": text}), tasks, [], bare())
+    assert re.findall(r"<!--(?! specster:)", out) == [] and extract_markers(out) == [M]
+
+
+def test_the_spec_title_keeps_what_the_model_wrote_inside_a_code_span() -> None:
+    assert spec_title("### Use `a &amp; <b>` &amp; &#64;x\n") == "Use `a &amp; <b>` & @x"

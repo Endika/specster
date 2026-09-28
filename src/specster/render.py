@@ -231,16 +231,38 @@ def fence(text: str, info: str = "") -> str:
 
 
 _MENTION = re.compile(r"(?<!\w)@(?=[A-Za-z0-9])")
+# A matched code span on one line: GitHub shows it verbatim, entities included, and never pings
+# or opens HTML inside it. Across lines it would not protect: a line starting "<!--" is an HTML
+# block before any span is parsed.
+_SPAN = re.compile(r"(?<!`)(`+)(?!`)[^\n]*?[^`\n]\1(?!`)")
+
+
+def _outside_spans(text: str, fn: Callable[[str], str]) -> str:
+    out: list[str] = []
+    last = 0
+    for m in _SPAN.finditer(text):
+        out += [fn(text[last : m.start()]), m[0]]
+        last = m.end()
+    return "".join([*out, fn(text[last:])])
 
 
 def _no_mentions(escaped: str) -> str:
-    return _MENTION.sub("&#64;", escaped)
+    return _outside_spans(escaped, lambda s: _MENTION.sub("&#64;", s))
 
 
 def _escaped(text: str) -> str:
     # A "<!--" would hide the footer and "<details" could forge our sections; "&" first, so no
     # entity the text carries (like "&#32;") ever decodes.
-    return rewrite_references(text).replace("&", "&amp;").replace("<", "&lt;")
+    return _outside_spans(
+        rewrite_references(text), lambda s: s.replace("&", "&amp;").replace("<", "&lt;")
+    )
+
+
+def _unescaped(text: str) -> str:
+    """Undo _prose's escapes, "&" last, so only what the model wrote comes back."""
+    return _outside_spans(
+        text, lambda s: s.replace("&#64;", "@").replace("&lt;", "<").replace("&amp;", "&")
+    )
 
 
 def _prose(text: str) -> str:
@@ -502,8 +524,7 @@ def spec_title(spec_text: str) -> str | None:
     """The spec's title as plain one-line text, for a pull request title (not HTML-rendered)."""
     for line in spec_text.splitlines():
         if line.startswith("### "):
-            # Undo _prose's escapes, "&" last, so only what the model wrote comes back.
-            text = line[4:].replace("&#64;", "@").replace("&lt;", "<").replace("&amp;", "&")
+            text = _unescaped(line[4:])
             return rewrite_references(" ".join(text.split())) or None
     return None
 
