@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.9](https://github.com/Endika/specster/compare/specster-v0.5.8...specster-v0.5.9) (2026-09-28)
+
+
+### Bug Fixes
+
+* give killed slot processes 30 s to exit, since a starved runner keeps them running ([df8a7c2](https://github.com/Endika/specster/commit/df8a7c2c6ca9988f337d5b221d65e7c05caf4b68))
+* let sandbox slots read the tree-sitter grammars baked into the image ([5b8f4bd](https://github.com/Endika/specster/commit/5b8f4bd04fc7116a4efe5d9fd3ee7bd30fd00343))
+
 ## [0.5.8](https://github.com/Endika/specster/compare/specster-v0.5.7...specster-v0.5.8) (2026-09-28)
 
 
