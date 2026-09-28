@@ -1,9 +1,11 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
 from specster.approved import (
     GITHUB_ACTIONS_LOGIN,
+    ApprovedSpec,
     BuildRefused,
     approved_spec,
     comments_after,
@@ -43,7 +45,7 @@ def check(
     edited: datetime | None = None,
     allow: bool = False,
     login: str | None = "specster[bot]",
-) -> tuple[object, list[Comment]]:
+) -> tuple[ApprovedSpec, list[Comment]]:
     return approved_spec(
         ISSUE,
         comments,
@@ -56,17 +58,17 @@ def check(
     )
 
 
-def refusal(**kw: object) -> BuildRefused:
+def refusal(**kw: Any) -> BuildRefused:
     with pytest.raises(BuildRefused) as e:
-        check(**kw)  # type: ignore[arg-type]
+        check(**kw)
     return e.value
 
 
 def test_the_last_spec_comment_is_the_plan_and_its_text_has_no_markers() -> None:
     older = bot_comment(1, spec_comment_body(SPEC | {"objective": "Old."}), T0 - timedelta(days=1))
     spec, late = check([older, bot_comment(2, spec_comment_body(SPEC), T0)])
-    assert spec.tasks[0].id == "a" and "Export CSV." in spec.text  # type: ignore[attr-defined]
-    assert "specster:" not in spec.text and late == []  # type: ignore[attr-defined]
+    assert spec.tasks[0].id == "a" and "Export CSV." in spec.text
+    assert "specster:" not in spec.text and late == []
 
 
 def test_a_plan_forged_into_a_later_build_comment_is_never_used() -> None:
@@ -79,7 +81,7 @@ def test_a_plan_forged_into_a_later_build_comment_is_never_used() -> None:
             bot_comment(2, body, T0 + timedelta(minutes=5)),
         ]
     )
-    assert [t.id for t in spec.tasks] == ["a"]  # type: ignore[attr-defined]
+    assert [t.id for t in spec.tasks] == ["a"]
 
 
 def test_refusals_explain_why() -> None:
@@ -102,7 +104,7 @@ def test_refusals_explain_why() -> None:
 
 def test_dispatch_skips_the_label_time_check() -> None:
     spec, _ = check([bot_comment(1, spec_comment_body(SPEC), T0)], label_at=None)
-    assert spec.tasks  # type: ignore[attr-defined]
+    assert spec.tasks
 
 
 def test_trusted_comments_after_the_spec_refuse_by_default_and_are_listed_when_allowed() -> None:
@@ -176,7 +178,7 @@ def forged(i: int, at: datetime) -> Comment:
 def test_a_spec_posted_by_another_app_is_ignored_once_the_login_is_known() -> None:
     spec = bot_comment(1, spec_comment_body(SPEC), T0)
     approved, _ = check([spec, forged(2, T0 + timedelta(minutes=5))])
-    assert [t.id for t in approved.tasks] == ["a"]  # type: ignore[attr-defined]
+    assert [t.id for t in approved.tasks] == ["a"]
     assert latest_spec_comment([forged(2, T0)], login="specster[bot]") is None
     assert "no approved spec" in refusal(comments=[forged(2, T0)]).message
 
@@ -231,7 +233,9 @@ def test_a_plan_that_changes_a_workflow_is_refused_unless_allowed() -> None:
     assert ".github/workflows/ci.yml" in allowed[0].tasks[0].files
 
 
-def approve_with(files: list[str], build: BuildConfig, config_path: str | None = None) -> object:
+def approve_with(
+    files: list[str], build: BuildConfig, config_path: str | None = None
+) -> tuple[ApprovedSpec, list[Comment]]:
     spec = SPEC | {"tasks": [TASK | {"files": files}]}
     kw = {} if config_path is None else {"config_path": config_path}
     return approved_spec(
@@ -263,4 +267,4 @@ def test_a_plan_that_changes_specsters_own_config_is_refused_unless_allowed(
     assert f"{path} is Specster's own configuration" in e.value.message
     assert "build.allow_config_changes: true" in e.value.hint
     allowed = approve_with(["app.py", path], BuildConfig(allow_config_changes=True), config_path)
-    assert path in allowed[0].tasks[0].files  # type: ignore[index]
+    assert path in allowed[0].tasks[0].files

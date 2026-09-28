@@ -7,6 +7,7 @@ import pytest
 from specster.agent import AgentError, NotYet, SubmissionError, run_agent, run_loop
 from specster.config import SkillsConfig
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
+from specster.schemas import QuestionsResult, SpecResult
 from specster.skills import SkillBook, load_skills
 from specster.workspace import Workspace
 from tests.fakes import ScriptedModel
@@ -63,7 +64,7 @@ def test_invalid_submission_gets_one_retry_with_the_error(tmp_path: Path) -> Non
     )
     out = run_agent(model, "s", "c", "t", ws, skills, max_turns=5)
     assert model.received[1][0].is_error and "tasks" in model.received[1][0].content
-    assert out.result.title == "CSV export"  # type: ignore[union-attr]
+    assert isinstance(out.result, SpecResult) and out.result.title == "CSV export"
 
 
 def test_two_invalid_submissions_fail(tmp_path: Path) -> None:
@@ -170,7 +171,7 @@ def test_more_questions_than_allowed_are_sent_back_once(tmp_path: Path) -> None:
     out = run_agent(model, "s", "c", "t", ws, skills, max_turns=5, max_questions=3)
     sent_back = model.received[1][0]
     assert sent_back.is_error and "ask at most 3" in sent_back.content
-    assert len(out.result.questions) == 2  # type: ignore[union-attr]
+    assert isinstance(out.result, QuestionsResult) and len(out.result.questions) == 2
 
 
 SUBMIT_X = [ToolSpec("submit_x", "Submit.", {"type": "object", "properties": {}})]
