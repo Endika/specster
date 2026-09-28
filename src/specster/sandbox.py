@@ -196,6 +196,7 @@ class Sandbox:
         self._timeout_s = timeout_s
         self._max = output_max_bytes
         self._extra_env = dict(extra_env)
+        self._tool_paths: tuple[str, ...] = ()
 
     @property
     def identity(self) -> Identity | None:
@@ -249,11 +250,15 @@ class Sandbox:
         limits = [str(self._max_file), str(self._max_procs)]
         return [sys.executable, "-I", "-m", "specster.sandbox_exec", *limits, "--"]
 
+    def use_tools(self, bin_dirs: Sequence[str]) -> None:
+        """Put the build's installed toolchains first on every later command's PATH."""
+        self._tool_paths = tuple(bin_dirs)
+
     def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
         if not self._locked:
             raise SandboxError("refusing to run a test command before lock_down of the workspace")
         env = {
-            "PATH": os.environ.get("PATH", os.defpath),
+            "PATH": os.pathsep.join([*self._tool_paths, os.environ.get("PATH", os.defpath)]),
             "HOME": str(home),
             "LANG": "C.UTF-8",
             "TMPDIR": str(home / "tmp"),

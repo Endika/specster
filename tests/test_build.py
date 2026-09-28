@@ -1,8 +1,10 @@
+import os
 import re
+import stat
 import sys
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ from specster.approved import ApprovedSpec
 from specster.build import (
     BuildConflict,
     BuildSetup,
+    _freeze,
     apply_changes,
     budget_stop,
     commit_changes,
@@ -27,6 +30,7 @@ from specster.schemas import PlanTask
 from specster.skills import load_skills
 from tests.fakes import ScriptBook, ScriptedModel, make_repo
 from tests.test_approved import T0, human
+from tests.test_sandbox import ROOT_ONLY
 
 PASS = [sys.executable, "-c", "pass"]
 
@@ -69,9 +73,10 @@ def setup(
     sandboxes: Callable[[int], Sandbox] | None = None,
     time_left: Callable[[], float] | None = None,
     gate_base: bool = False,
+    files: Mapping[str, str] | None = None,
 ) -> BuildSetup:
     repo = tmp_path / "repo"
-    git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n"})
+    git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n", **(files or {})})
     # The fixtures' test commands fail on the base on purpose, so only the base-gate tests gate.
     build = (build or BuildConfig()).model_copy(update={"allow_failing_base": not gate_base})
     cfg = Config(build=build, budget=budget or BudgetConfig())
@@ -158,6 +163,115 @@ def test_a_failed_task_keeps_its_last_test_run_for_the_comment(tmp_path: Path) -
     report = run_build(setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([]), build))
     last = report.tasks[0].last_tests
     assert report.tasks[0].status == "failed" and last is not None and last.exit_code == 3
+
+
+FAKE_MISE = """\
+import os, pathlib, shutil, sys
+pathlib.Path(sys.argv[0]).with_name("calls").open("a").write(sys.argv[1] + "\\n")
+data = pathlib.Path(os.environ["MISE_DATA_DIR"])
+bin_dir = data / "installs" / "faketool" / "1" / "bin"
+if sys.argv[1] == "install":
+    if "broken" in pathlib.Path(os.environ["MISE_GLOBAL_CONFIG_FILE"]).read_text():
+        sys.exit("mise ERROR no such tool: broken")
+    bin_dir.mkdir(parents=True)
+    tool = bin_dir / "faketool"
+    tool.write_text("#!/bin/sh\\nexit 0\\n")
+    tool.chmod(0o755)
+    shutil.copy(os.environ["MISE_GLOBAL_CONFIG_FILE"], pathlib.Path(sys.argv[0]).with_name("asked"))
+else:
+    print("mise WARN a newer mise is available")
+    print(bin_dir)
+    print("/etc")
+"""
+
+
+def fake_mise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    mise = tmp_path / "mise"
+    mise.write_text(f"#!{sys.executable}\n{FAKE_MISE}")
+    mise.chmod(0o755)
+    monkeypatch.setattr("specster.build.MISE", mise)
+    return mise
+
+
+def test_declared_toolchains_are_installed_once_and_put_on_every_command_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_asked = fake_mise(tmp_path, monkeypatch).with_name("asked")
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    build = BuildConfig(test_command=["faketool"], tools={"node": "22"})
+    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([verdict("approve")]), build)
+    report = run_build(s)
+    assert report.status == "approved" and report.final_tests is not None
+    assert report.final_tests.ok
+    assert fake_asked.read_text() == '[tools]\nnode = "22"\n'
+    assert not (s.scratch / "tools").exists()
+
+
+def test_a_version_file_in_the_repo_is_enough_to_install_its_toolchain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = fake_mise(tmp_path, monkeypatch).with_name("calls")
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([verdict("approve")]),
+        BuildConfig(test_command=["faketool"]),
+        files={".nvmrc": "22\n"},
+    )
+    assert run_build(s).status == "approved" and calls.read_text() == "install\nbin-paths\n"
+
+
+def test_a_repo_that_declares_no_toolchain_never_runs_mise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = fake_mise(tmp_path, monkeypatch).with_name("calls")
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    build = BuildConfig(test_command=PASS)
+    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([verdict("approve")]), build)
+    assert run_build(s).status == "approved" and not calls.exists()
+
+
+def test_toolchains_that_fail_to_install_stop_the_build_with_mise_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mise(tmp_path, monkeypatch)
+    book = ScriptBook({'id="a"': [[done("feat(a): set A")]]})
+    build = BuildConfig(test_command=PASS, tools={"broken": "1"})
+    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([]), build)
+    report = run_build(s)
+    assert report.status == "failed" and report.reason == "the toolchains could not be installed"
+    assert report.final_tests is not None and "no such tool: broken" in report.final_tests.output
+    assert book.sessions == {}
+
+
+def test_build_tools_without_mise_in_the_image_is_said_plainly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("specster.build.MISE", tmp_path / "no-mise")
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    build = BuildConfig(test_command=PASS, tools={"node": "22"})
+    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([verdict("approve")]), build)
+    report = run_build(s)
+    assert report.status == "approved"
+    assert any("toolchains are declared" in w and "none installed" in w for w in report.warnings)
+
+
+@ROOT_ONLY
+def test_frozen_toolchains_belong_to_root_with_no_setuid_bit(tmp_path: Path) -> None:
+    root = tmp_path / "tools"
+    (root / "bin").mkdir(parents=True)
+    tool = root / "bin" / "tool"
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o6777)
+    (root / "link").symlink_to("/etc/passwd")
+    for path in (root, root / "bin", tool):
+        os.chown(path, 61001, 61001, follow_symlinks=False)
+    _freeze(root)
+    assert tool.stat().st_uid == 0 and stat.S_IMODE(tool.stat().st_mode) == 0o755
+    assert stat.S_IMODE((root / "bin").stat().st_mode) & 0o022 == 0
+    assert Path("/etc/passwd").stat().st_uid == 0 and (root / "link").is_symlink()
 
 
 def test_a_red_base_stops_the_build_before_any_worker_is_paid(tmp_path: Path) -> None:
