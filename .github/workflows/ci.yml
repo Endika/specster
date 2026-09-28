@@ -67,7 +67,8 @@ jobs:
             'mkdir /src && cd /src && tar xf - && uv sync --all-groups --locked && uv run pytest --block-network -W error'
       - name: this repo's own setup and test commands pass as a sandbox slot, as a worker runs them
         run: |
-          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint sh specster:ci -c \
+          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint /usr/bin/tini \
+            specster:ci -- sh -c \
             'mkdir /work && cd /work && tar xf - && /app/.venv/bin/python -P tests/dogfood_as_slot.py /work'
 
   all-green:
