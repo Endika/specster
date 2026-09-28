@@ -278,7 +278,7 @@ def test_a_sandbox_error_bills_the_run_asks_for_a_human_and_pushes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     e, tr, remote = world(tmp_path)
-    monkeypatch.setattr("specster.run.Sandbox", Broken)
+    monkeypatch.setattr("specster.usecases.build_phase.Sandbox", Broken)
     worker = book()
     assert go(e, tr, worker, approve()) == 1
     assert "survived the kill" in tr.posted[-1] and tr.pulls == []
@@ -301,7 +301,7 @@ def test_a_sandbox_error_mid_task_bills_the_worker_turns_paid_so_far(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     e, tr, _ = world(tmp_path)
-    monkeypatch.setattr("specster.run.Sandbox", BrokenMidTask)
+    monkeypatch.setattr("specster.usecases.build_phase.Sandbox", BrokenMidTask)
     assert go(e, tr, book(), approve()) == 1
     m = last_marker(tr.posted[-1])
     assert m is not None and m.outcome == "error" and m.roles["worker"].turns == 2
@@ -414,7 +414,7 @@ def test_a_build_past_max_minutes_pushes_what_is_done_and_asks_for_a_human(
             clock.now = 5 * 60.0
             return res
 
-    monkeypatch.setattr("specster.run.Sandbox", Late)
+    monkeypatch.setattr("specster.usecases.build_phase.Sandbox", Late)
     reviewer = ScriptedModel([])
     code = main(e, tr, models(book(), reviewer), lambda *_: b"", timer=clock, identity=unprivileged)
     assert code == 0 and tr.pulls == [] and reviewer.sessions_started == 0
@@ -431,7 +431,7 @@ def test_a_docker_socket_other_users_can_reach_fails_before_any_model_call(
 ) -> None:
     e, tr, _ = world(tmp_path)
     sock = unix_socket(short_dir / "d.sock", 0o666)
-    monkeypatch.setattr("specster.run.DOCKER_SOCKET", sock)
+    monkeypatch.setattr("specster.usecases.build_phase.DOCKER_SOCKET", sock)
     worker = ScriptBook({})
     assert go(e, tr, worker, ScriptedModel([])) == 1
     assert f"{sock} is readable or writable by a sandbox uid" in tr.posted[-1]
@@ -464,7 +464,7 @@ def test_every_build_gives_the_git_dir_back_to_the_workspace_owner(
     for p in [e.workspace, *e.workspace.rglob("*")]:
         os.chown(p, 4321, 4321, follow_symlinks=False)
     if broken:
-        monkeypatch.setattr("specster.run.Sandbox", Broken)
+        monkeypatch.setattr("specster.usecases.build_phase.Sandbox", Broken)
     assert go(e, tr, book(), approve()) == (1 if broken else 0)
     git_dir = e.workspace / ".git"
     assert {(p.lstat().st_uid, p.lstat().st_gid) for p in [git_dir, *git_dir.rglob("*")]} == {
