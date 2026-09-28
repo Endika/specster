@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 import anthropic
 import openai
@@ -124,14 +124,24 @@ def _gemini(cfg: ModelConfig, env: Mapping[str, str], replay: bool) -> ChatModel
     return GeminiChat(client, p, cfg.model, cfg.max_tokens, cfg.max_retries)
 
 
+# One adapter per API family; each provider of that family only changes how it authenticates.
+_ADAPTERS: dict[str, Callable[[ModelConfig, Mapping[str, str], bool], ChatModel]] = {
+    "anthropic": _anthropic,
+    "bedrock": _anthropic,
+    "vertex-anthropic": _anthropic,
+    "openai": _openai,
+    "openai-compatible": _openai,
+    "azure-openai": _openai,
+    "gemini": _gemini,
+    "vertex-gemini": _gemini,
+}
+
+
 def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = False) -> ChatModel:
     p = cfg.provider
     if cfg.base_url and p in _NO_BASE_URL:
         raise ProviderConfigError(f"models.*.base_url is not supported for provider {p}")
-    if p in ("anthropic", "bedrock", "vertex-anthropic"):
-        return _anthropic(cfg, env, replay)
-    if p in ("openai", "openai-compatible", "azure-openai"):
-        return _openai(cfg, env, replay)
-    if p in ("gemini", "vertex-gemini"):
-        return _gemini(cfg, env, replay)
-    raise ProviderConfigError(f"provider {p} is not wired yet")
+    build = _ADAPTERS.get(p)
+    if build is None:
+        raise ProviderConfigError(f"provider {p} is not wired yet")
+    return build(cfg, env, replay)
