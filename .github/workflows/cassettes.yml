@@ -1,0 +1,33 @@
+name: Record cassettes
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider: { description: Provider whose contract cassette to record, default: anthropic }
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups --locked
+      - name: record against the live API
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROVIDER: ${{ inputs.provider }}
+        run: >
+          uv run pytest "tests/contract/test_contract.py::test_tool_round_trip[$PROVIDER]"
+          --record-mode=once -p no:randomly
+      # Committed by hand through a pull request, after a look, never from here.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cassette-${{ inputs.provider }}
+          path: tests/contract/cassettes/
+          if-no-files-found: error
