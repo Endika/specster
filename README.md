@@ -267,6 +267,7 @@ build:
   close_issue: true                    # the pull request body carries "Closes #<issue>"
   allow_comments_after_spec: false     # true lets a build run despite trusted comments posted after the spec
   allow_workflow_changes: false        # true lets a task change .github/workflows/** and .github/actions/**
+  allow_config_changes: false          # true lets a task change .github/specster/** and the config_path file
 
 pricing: {}                            # override or add prices, USD per million tokens:
                                         #   claude-haiku-4-5: {input: 1.0, output: 5.0, cache_read: 0.1, cache_write: 1.25}
@@ -672,6 +673,11 @@ exhaust, or silently dodge, either cap.
   the pull request Specster opens runs that model-written code too, and a same-repository pull
   request gets the repository's secrets. A task cannot change
   `.github/workflows/**` or `.github/actions/**` unless `build.allow_workflow_changes: true`: the
+  build refuses such a plan and the worker cannot write there.
+- **Specster's own configuration is off limits too.** Once merged, a change to
+  `.github/specster/**` (config and skills) or to the `config_path` file reconfigures every later
+  run: its trust mode, budgets, test command and `allow_workflow_changes`. A task cannot change
+  them unless `build.allow_config_changes: true`, a separate switch from the workflow one; the
   build refuses such a plan and the worker cannot write there.
 - **Repository files are not sanitized.** Only the issue body and comments go through the hidden-
   content filter; a file the model reads with `read_file` or `grep` is handed over as-is. The
