@@ -48,6 +48,7 @@ class WorkerResult:
     test_runs: int
     tests_passed: bool | None
     truncations: list[str]
+    last_tests: RunResult | None = None
 
 
 def _tool_text(res: RunResult) -> str:
@@ -271,6 +272,7 @@ def run_worker(
             tools.runs,
             passed,
             [*ws.truncations, *tools.truncations, *([note] if note else [])],
+            tools.last,
         )
 
     try:

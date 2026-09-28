@@ -106,6 +106,7 @@ def test_a_task_whose_tests_never_pass_fails_with_the_reason(tmp_path: Path) -> 
     out, _, _ = worker(tmp_path, [[submit()] for _ in range(6)])
     assert out.status == "failed" and "tests still fail" in out.reason
     assert out.turns == 6 and out.tests_passed is False
+    assert out.last_tests is not None and out.last_tests.exit_code == 1
 
 
 def test_setup_runs_once_per_worktree_and_no_test_command_is_said_plainly(tmp_path: Path) -> None:

@@ -57,6 +57,7 @@ class TaskRecord:
     reason: str = ""
     summary: str = ""
     commits: list[Commit] = field(default_factory=list)
+    last_tests: RunResult | None = None
 
 
 @dataclass
@@ -323,6 +324,7 @@ class _Build:
         self.truncations.extend(result.truncations)
         if result.status != "done":
             record.status, record.reason = result.status, result.reason
+            record.last_tests = result.last_tests
             return
         sha = commit_changes(
             self.git,
