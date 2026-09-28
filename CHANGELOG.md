@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/Endika/specster/compare/specster-v0.5.2...specster-v0.5.3) (2026-09-28)
+
+
+### Bug Fixes
+
+* neutralise closing references hidden in Markdown links and autolinks ([ab541d6](https://github.com/Endika/specster/commit/ab541d6c24f672e600ca713b6cdfb1f4c3ad456d))
+
 ## [0.5.2](https://github.com/Endika/specster/compare/specster-v0.5.1...specster-v0.5.2) (2026-09-28)
 
 
