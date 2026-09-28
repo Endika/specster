@@ -320,7 +320,7 @@ an env var named in `api_key_env` that is not one of those (e.g. `DEEPSEEK_API_K
 
 **azure-openai** - `base_url` (the resource endpoint) and `api_version` are required. With a key,
 reads `AZURE_OPENAI_API_KEY` or `api_key_env`; without one, it authenticates with
-`DefaultAzureCredential`. In v0.1 that means an API key or service-principal environment
+`DefaultAzureCredential`. For now that means an API key or service-principal environment
 variables (see "Azure" below): the `azure/login` az CLI session is not visible inside the
 Specster container.
 
@@ -372,7 +372,7 @@ GCP (for `vertex-anthropic` and `vertex-gemini`):
       service_account: specster@my-project.iam.gserviceaccount.com
 ```
 
-Azure (for `azure-openai` without a key): there is no OIDC login in v0.1. `azure/login` stores an
+Azure (for `azure-openai` without a key): there is no OIDC login yet. `azure/login` stores an
 az CLI session on the runner, and the Specster container cannot see it. Pass a service principal
 as environment variables on the Specster step instead; `DefaultAzureCredential` reads them:
 
@@ -774,8 +774,12 @@ cached context.
 
 ## Roadmap
 
-- **v0.2 - build phase (done).** The `ai-build` label turns an approved, hash-verified plan into
+Milestones are named after the release that shipped them.
+
+- **0.4 - build phase (done).** The `ai-build` label turns an approved, hash-verified plan into
   code: parallel workers per task, a reviewer role, and a pull request. See "Build phase" above.
-- **v0.3 - cost/quality benchmark and model escalation.** The eval harness grows into a standing
+- **Next - toolchains for other languages.** One image with `mise` installs the versions a
+  repository declares (or `build.tools` sets), so projects in other or mixed languages can build.
+- **Then - cost/quality benchmark and model escalation.** The eval harness grows into a standing
   benchmark across providers and models, comparing cost against the same quality bar; the build
   phase escalates to a stronger model when a task or a review keeps failing.
