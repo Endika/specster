@@ -146,6 +146,15 @@ def test_a_level_starts_from_the_previous_level_and_a_failure_skips_dependents(
     assert report.tasks[2].reason == "depends on b, which did not finish"
 
 
+def test_a_failed_task_keeps_its_last_test_run_for_the_comment(tmp_path: Path) -> None:
+    fail = [sys.executable, "-c", "raise SystemExit(3)"]
+    book = ScriptBook({'id="a"': [[done("feat(a): set A"), done("feat(a): set A")]]})
+    build = BuildConfig(test_command=fail, max_turns_per_task=2)
+    report = run_build(setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([]), build))
+    last = report.tasks[0].last_tests
+    assert report.tasks[0].status == "failed" and last is not None and last.exit_code == 3
+
+
 def test_blocking_findings_go_back_to_their_task_for_a_correction_round(tmp_path: Path) -> None:
     bad = {"task_id": "a", "file": "app.py", "severity": "important", "description": "A must be 2"}
     book = ScriptBook(

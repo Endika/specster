@@ -7,6 +7,7 @@ from specster.closing import rewrite_references
 from specster.config import PersonaConfig
 from specster.metrics import RunMetrics, encode_marker
 from specster.plan import levels, mermaid, plan_payload
+from specster.sandbox import RunResult
 from specster.schemas import Finding, PlanTask, QuestionsResult, SpecResult
 from specster.thread import FOOTER_OPEN, HIDDEN_OPEN, HiddenItem
 
@@ -56,6 +57,8 @@ LABELS: dict[str, dict[str, str]] = {
         "tests_ok": "Tests pass on the branch ({runs} test runs in total).",
         "tests_bad": "Tests fail on the branch (exit {code}).",
         "tests_timeout": "Tests timed out on the branch.",
+        "task_tests_bad": "Last test run of `{task}` failed (exit {code}).",
+        "task_tests_timeout": "Last test run of `{task}` timed out.",
         "minor": "Minor findings",
         "pending": "Findings still open",
         "unapplied": "Comments after the spec, not applied: add `{label}` again to fold them in",
@@ -145,6 +148,8 @@ LABELS: dict[str, dict[str, str]] = {
         "tests_ok": "Los tests pasan en la rama ({runs} ejecuciones en total).",
         "tests_bad": "Los tests fallan en la rama (salida {code}).",
         "tests_timeout": "Los tests han agotado el tiempo en la rama.",
+        "task_tests_bad": "La última ejecución de tests de `{task}` ha fallado (salida {code}).",
+        "task_tests_timeout": "La última ejecución de tests de `{task}` ha agotado el tiempo.",
         "minor": "Hallazgos menores",
         "pending": "Hallazgos pendientes",
         "unapplied": (
@@ -561,14 +566,43 @@ def _tests(
         lines = [lab["tests_timeout"]]
     else:
         lines = [lab["tests_bad"].format(code=res.exit_code)]
+    return _failed_run(res, lines, output, "test output")
+
+
+def _failed_run(
+    res: RunResult, lines: list[str], output: bool, what: str
+) -> tuple[list[str], str | None]:
     if not output:
-        return lines, f"test output left out: {_OVER}"
+        return lines, f"{what} left out: {_OVER}"
     tail, note = res.output, None
     if len(tail) > TEST_OUTPUT_TAIL:
-        note = f"test output cut to the last {TEST_OUTPUT_TAIL:,} of {len(tail):,} characters"
+        note = f"{what} cut to the last {TEST_OUTPUT_TAIL:,} of {len(tail):,} characters"
         tail = tail[-TEST_OUTPUT_TAIL:]
     lines += ["", fence(rewrite_references(tail))]
     return lines, note
+
+
+def _task_tests(
+    report: BuildReport, lab: Mapping[str, str], output: bool
+) -> tuple[list[str], list[str]]:
+    """Each failed task's last test run, when the branch itself was never tested."""
+    if report.final_tests is not None:
+        return [], []
+    body: list[str] = []
+    notes: list[str] = []
+    for r in report.tasks:
+        res = r.last_tests
+        if r.status != "failed" or res is None or res.ok:
+            continue
+        task = _code(r.task.id)
+        if res.timed_out or res.exit_code is None:
+            head = lab["task_tests_timeout"].format(task=task)
+        else:
+            head = lab["task_tests_bad"].format(task=task, code=res.exit_code)
+        lines, note = _failed_run(res, [head], output, f"test output of {r.task.id}")
+        body += [*lines, ""]
+        notes += [note] if note else []
+    return body, notes
 
 
 def _findings(findings: Sequence[Finding]) -> list[str]:
@@ -726,6 +760,9 @@ def render_build(view: BuildView, ctx: RenderContext) -> str:
         _kept(report.tasks, cuts.rows, "task rows", notes)
         if tests:
             body += [f"**{lab['test_result']}:** {tests[0]}", *tests[1:], ""]
+        task_tests, task_notes = _task_tests(report, lab, cuts.output)
+        body += task_tests
+        notes += task_notes
         kept = _kept(pending, cuts.findings, "pending findings", notes)
         if kept:
             body += [f"**{lab['pending']}**", *_by_task(kept), ""]

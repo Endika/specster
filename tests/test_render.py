@@ -392,6 +392,24 @@ def test_a_build_without_approval_shows_the_branch_findings_and_failing_tests() 
     assert cut in body and extract_markers(body)[-1].truncations == [cut]
 
 
+def test_a_failed_task_shows_its_last_test_run_when_the_branch_never_ran_them() -> None:
+    b = PlanTask(id="b", title="B", description="d", files=["b.py"], acceptance=["x"])
+    run = RunResult(("pytest",), 1, "x" * 5_000 + "FAILED test_b", False, None, 1.0)
+    rec = TaskRecord(b, "failed", reason="no submission after 40 turns", last_tests=run)
+    report = dataclasses.replace(
+        failed_view().report, status="failed", tasks=[rec], final_tests=None
+    )
+    for language, text in (
+        ("en", "Last test run of `b` failed (exit 1)."),
+        ("es", "La última ejecución de tests de `b` ha fallado (salida 1)."),
+    ):
+        ctx = RenderContext(PersonaConfig(language=language), BM, (), ())
+        body = render_build(view(report=report, pr_url=None), ctx)
+        assert text in body and "FAILED test_b" in body
+    cut = "test output of b cut to the last 3,000 of 5,013 characters"
+    assert extract_markers(body)[-1].truncations == [cut]
+
+
 def test_a_build_with_no_commits_says_no_branch_was_pushed() -> None:
     report = dataclasses.replace(failed_view().report, status="failed", tasks=[], final_tests=None)
     body = render_build(
