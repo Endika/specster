@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/Endika/specster/compare/specster-v0.5.0...specster-v0.5.1) (2026-09-28)
+
+
+### Documentation
+
+* record the measured build costs from the dogfood runs ([6f653ec](https://github.com/Endika/specster/commit/6f653eca315fa41380eee44fb2d030237aec49f8))
+
 ## [0.5.0](https://github.com/Endika/specster/compare/specster-v0.4.4...specster-v0.5.0) (2026-09-28)
 
 
