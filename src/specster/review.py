@@ -1,8 +1,9 @@
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any
 
 from specster.agent import (
+    Deadline,
     Handler,
     SubmissionError,
     Submit,
@@ -41,6 +42,7 @@ def run_review(
     skills: SkillBook,
     task_ids: Collection[str],
     max_turns: int,
+    time_left: Callable[[], float] | None = None,
 ) -> ReviewOutcome:
     ids = set(task_ids)
 
@@ -67,5 +69,7 @@ def run_review(
     ]
     handlers: dict[str, Handler] = read_handlers(ws) | {"read_skill": skill_handler(skills)}
     submits: dict[str, Submit[ReviewResult]] = {SUBMIT_REVIEW: submit}
+    if time_left is not None:
+        model = Deadline(model, time_left)
     out = run_loop(model, system, context, user, specs, handlers, submits, max_turns, NUDGE)
     return ReviewOutcome(out.value, out.usage, out.turns)

@@ -456,6 +456,7 @@ class _Build:
                 s.review_skills,
                 [t.id for t in self.tasks],
                 self.cfg.budget.max_turns,
+                s.time_left,
             )
         except AgentError as e:
             s.ledger.add("reviewer", self.cfg.models.reviewer, e.usage, e.turns)
@@ -527,6 +528,9 @@ class _Build:
             try:
                 review = self._review(_test_text(final, setup_failed))
             except AgentError as e:
+                late = self._time_stop()
+                if late is not None:
+                    return report("budget_exhausted", late)
                 return report("failed", f"reviewer: {e}")
             blocked = blocking(review)
             tests_ok = final is None or final.ok

@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from specster.llm.base import ChatModel, ToolResult, ToolSpec, Usage
+from specster.llm.base import ChatModel, ChatSession, ToolResult, ToolSpec, Turn, Usage
 from specster.plan import PlanError, normalize_plan
 from specster.schemas import (
     SUBMIT_QUESTIONS,
@@ -19,6 +19,37 @@ from specster.workspace import ToolError, Workspace
 
 NUDGE = "Call submit_questions or submit_spec now."
 LAST = "Last turn: submit now."
+
+
+TIME_UP = "the build reached its time limit (build.max_minutes)"
+
+
+class TimeUp(Exception):
+    """The build's wall-clock limit passed: the model stops before another paid turn."""
+
+
+class _DeadlineSession:
+    def __init__(self, session: ChatSession, time_left: Callable[[], float]) -> None:
+        self._session = session
+        self._time_left = time_left
+
+    def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+        if self._time_left() <= 0:
+            raise TimeUp(TIME_UP)
+        return self._session.send(results, user_text)
+
+
+class Deadline:
+    """A model whose sessions stop before any turn that starts after the time limit."""
+
+    def __init__(self, model: ChatModel, time_left: Callable[[], float]) -> None:
+        self.provider = model.provider
+        self.model = model.model
+        self._inner = model
+        self._time_left = time_left
+
+    def start(self, system: str, context: str, user: str, tools: Sequence[ToolSpec]) -> ChatSession:
+        return _DeadlineSession(self._inner.start(system, context, user, tools), self._time_left)
 
 
 class AgentError(Exception):
