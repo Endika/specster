@@ -95,6 +95,32 @@ failure cases described there. Whichever it was, fix the cause and add `ai-build
 if a branch was already pushed, delete it (or merge/close its pull request) first - Specster's
 own existing-branch error is what stops a retry from reusing or overwriting it.
 
+## Toolchains for other languages
+
+The image carries [mise](https://mise.jdx.dev), pinned and checked against its release's sha256.
+When a build has a `setup_command` or `test_command`, it installs the toolchains the repository
+declares at its root (`mise.toml`, `.tool-versions`, `.nvmrc`, `.node-version`, `.ruby-version`,
+`.java-version`, `.go-version`, `.bun-version`) plus anything `build.tools` names:
+
+```yaml
+build:
+  tools: {node: "22", java: "21"}          # for a repository that declares nothing itself
+  setup_command: [npm, ci]
+  test_command: [npm, test]
+```
+
+What the repository declares wins over `build.tools` for the same tool. A repository mixing
+languages lists several tools, and all of them end up on the commands' `PATH`. A repository that
+declares nothing never runs mise, and a Python one keeps using the image's Python and uv.
+
+How it runs: once per build, before the base test run, mise installs as the final-tests slot's
+unprivileged uid on an exported copy of the base commit, the same trust as `setup_command`, since
+a `mise.toml` can run scripts. Only core tools install: asdf and vfox plugins are disabled, and
+`build.tools` refuses backend-prefixed names such as `npm:x`. Root then takes the installed tree
+over read-only, with no setuid or setgid bit left, so no slot can change what another one runs,
+and every later command gets its `bin` directories first on `PATH`. A failed install stops the
+build before any model call and shows mise's output.
+
 ## Test isolation
 
 Specster (running as root, the way the Docker action starts) never runs anything from the
@@ -153,9 +179,10 @@ to `build.test_env`, which the tests receive by design. A `setup_command` that f
 arbitrary code still runs as that code chooses. `/tmp` and `/dev/shm` are shared between sandbox
 slots (only `TMPDIR`, under each command's own `HOME`, is private to that run, and
 `build.test_env` cannot point it back at `/tmp`), so do not write secrets there. Isolating them
-would take a mount namespace, which the action's unprivileged container cannot create. Only
-Python, `uv` and git are baked into the image; any other toolchain a project needs has to come from
-`build.setup_command`, unprivileged, with no `apt`/`sudo` available. The reap loop kills a
+would take a mount namespace, which the action's unprivileged container cannot create. Python,
+`uv`, git and mise are baked into the image; any other toolchain comes from mise (see "Toolchains
+for other languages" above) or from `build.setup_command`, unprivileged, with no `apt`/`sudo`
+available. The reap loop kills a
 process in D sleep without waiting for it to stop: CI checks it with a `vfork` parent, which waits
 in D until its child is gone. A process wedged in D for good (a hung network filesystem) cannot be
 staged without privileges; if one outlives the kill, the build stops with an error.
