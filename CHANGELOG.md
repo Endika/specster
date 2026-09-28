@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/Endika/specster/compare/specster-v0.5.9...specster-v0.6.0) (2026-09-28)
+
+
+### Features
+
+* cap tasks at five files in the planner prompt and flag bigger ones in the spec ([997d95c](https://github.com/Endika/specster/commit/997d95c9c76339b19ade354ba9108df05d29373e))
+
 ## [0.5.9](https://github.com/Endika/specster/compare/specster-v0.5.8...specster-v0.5.9) (2026-09-28)
 
 
