@@ -756,13 +756,21 @@ Techniques, and why:
 ## Measured costs
 
 Spec-phase runs on this repository's own issues (`claude-opus-5-5`, effort medium) have cost
-around $0.26 for a full spec and $0.08 per round of clarifying questions (issue #20). Build-phase
-costs are not measured yet - the dogfood `build` job above exists to gather them. This table fills
-in from real runs on this repository as they happen:
+$0.09 to $0.26 for a full or revised spec and $0.08 to $0.09 per round of clarifying questions
+(issues #20, #29, #34). Build-phase runs from the dogfood `build` job (worker `claude-sonnet-5`,
+reviewer `claude-opus-5-5`), failures included:
 
-| Issue | Tasks | Worker $ | Reviewer $ | Total $ | Duration |
-|---|---|---|---|---|---|
-| _none yet_ | | | | | |
+| Issue | Tasks | Outcome | Worker $ | Reviewer $ | Total $ | Duration |
+|---|---|---|---|---|---|---|
+| #20 | 2 (one of 15 files) | failed: no submission after 40 turns | 0.865 | - | 0.865 | 3 min |
+| #20 | 2 (one of 15 files) | failed: no submission after 80 turns | 2.140 | - | 2.140 | 7 min |
+| #29 | 1 | failed: a zombie orphan failed a sandbox test (fixed in 0.4.2) | 1.340 | - | 1.340 | 25 min |
+| #29 | 1 | error: the App token could not push | 0.064 | 0.070 | 0.133 | 2 min |
+| #29 | 1 | pull request #32 opened, approved in the first review | 0.067 | 0.088 | 0.155 | 2.5 min |
+
+A small, well-scoped task costs cents; a task packing many files burns its turns reading and can
+fail without a commit, and cost grows faster than the turn count because every turn re-reads the
+cached context.
 
 ## Roadmap
 
