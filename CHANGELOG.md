@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.5](https://github.com/Endika/specster/compare/specster-v0.5.4...specster-v0.5.5) (2026-09-28)
+
+
+### Bug Fixes
+
+* keep the build's tasks, tests and skills in the footer of a failed run ([a0c993d](https://github.com/Endika/specster/commit/a0c993d54700860e75710989a131a5a4ee88f113))
+* tell the planner to write spec fields as plain text, not JSON escapes ([f6aae19](https://github.com/Endika/specster/commit/f6aae1913dd15d93696a822e34ad985383465507))
+
 ## [0.5.4](https://github.com/Endika/specster/compare/specster-v0.5.3...specster-v0.5.4) (2026-09-28)
 
 
