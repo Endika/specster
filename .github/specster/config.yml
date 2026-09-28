@@ -24,6 +24,7 @@ budget:
   max_usd_per_build: 5.0
 build:
   max_parallel: 2
+  max_turns_per_task: 80
   setup_command: [uv, sync, --locked, --all-groups]
   test_command: [uv, run, --locked, pytest, --block-network, -W, error, -q]
   test_timeout_s: 900
