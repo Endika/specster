@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.4](https://github.com/Endika/specster/compare/specster-v0.4.3...specster-v0.4.4) (2026-09-28)
+
+
+### Bug Fixes
+
+* refuse builds that change Specster's own config unless allowed ([df78f65](https://github.com/Endika/specster/commit/df78f6579e97e89ff55370b762fa55b4e4aa471c))
+
+
+### Documentation
+
+* document build.allow_config_changes ([6b44f01](https://github.com/Endika/specster/commit/6b44f01cb6fcb85251d9859644ab53d96ea27933))
+
 ## [0.4.3](https://github.com/Endika/specster/compare/specster-v0.4.2...specster-v0.4.3) (2026-09-28)
 
 
