@@ -167,6 +167,7 @@ class BuildConfig(_Strict):
     close_issue: bool = True
     allow_comments_after_spec: bool = False
     allow_workflow_changes: bool = False
+    allow_config_changes: bool = False
 
     @field_validator("test_env")
     @classmethod

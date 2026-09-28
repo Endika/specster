@@ -26,7 +26,7 @@ from tests.fakes import (
     spec_comment_body,
     unix_socket,
 )
-from tests.test_approved import SPEC, T0, human
+from tests.test_approved import SPEC, T0, TASK, human
 from tests.test_sandbox import ROOT_ONLY
 
 CHECK = json.dumps([sys.executable, "-c", "import app; assert app.A == 1"])
@@ -122,6 +122,16 @@ def test_an_approved_build_pushes_one_commit_per_task_and_opens_the_pr(tmp_path:
     assert m is not None and m.phase == "build" and m.outcome == "pr_opened"
     assert set(m.roles) == {"worker", "reviewer"} and m.tasks_done == 1 and m.test_runs >= 2
     assert (tmp_path / "out.txt").read_text() == "outcome=pr_opened\n"
+
+
+def test_a_plan_that_changes_the_configured_config_file_is_refused(tmp_path: Path) -> None:
+    e, tr, _ = world(tmp_path)
+    e = dataclasses.replace(e, config_path="ops/specster.yml")
+    spec = SPEC | {"tasks": [TASK | {"files": ["app.py", "ops/specster.yml"]}]}
+    tr.comments = [bot_comment(1, spec_comment_body(spec), T0)]
+    assert go(e, tr, ScriptedModel([]), ScriptedModel([])) == 1
+    assert "ops/specster.yml is Specster's own configuration" in tr.posted[-1]
+    assert tr.pulls == []
 
 
 def test_a_build_without_approval_pushes_the_branch_and_asks_for_a_human(tmp_path: Path) -> None:

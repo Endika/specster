@@ -13,7 +13,13 @@ from specster.plan import PlanError, levels, norm_path, normalize_plan
 from specster.sanitize import sanitize
 from specster.schemas import TASK_ID_MAX, PlanTask
 from specster.thread import is_specster, is_trusted, own_text
-from specster.workspace import HARD_EXCLUDE, has_git_component, is_workflow_path
+from specster.workspace import (
+    CONFIG_PATH,
+    HARD_EXCLUDE,
+    has_git_component,
+    is_config_path,
+    is_workflow_path,
+)
 
 BAD_MARKER = "The plan in the last spec comment is missing or does not match its sha256"
 CANNOT_BUILD = "The approved plan cannot be built: "
@@ -148,6 +154,7 @@ def approved_spec(
     body_edited_at: datetime | None,
     *,
     login: str | None,
+    config_path: str = CONFIG_PATH,
 ) -> tuple[ApprovedSpec, list[Comment]]:
     spec_label, build_label = labels.spec, labels.build
     if login is None:
@@ -197,6 +204,14 @@ def approved_spec(
             "the repository's secrets",
             "Set build.allow_workflow_changes: true to build it anyway, or add "
             f"`{spec_label}` again for a plan that leaves workflows alone.",
+        )
+    own = sorted({f for t in spec.tasks for f in t.files if is_config_path(f, config_path)})
+    if own and not build.allow_config_changes:
+        raise BuildRefused(
+            f"{CANNOT_BUILD}{own[0]} is Specster's own configuration, and a merged change there "
+            "reconfigures every later run",
+            "Set build.allow_config_changes: true to build it anyway, or add "
+            f"`{spec_label}` again for a plan that leaves it alone.",
         )
     after = comments_after(comments, comment.created_at, issue, trust, login=login)
     if after and not build.allow_comments_after_spec:

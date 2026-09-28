@@ -144,3 +144,22 @@ def test_workflow_and_action_files_are_refused_unless_allowed(tmp_path: Path, pa
 def test_other_files_under_github_stay_writable(tmp_path: Path) -> None:
     TaskWorkspace(tmp_path, [], [".github/dependabot.yml"]).write_file(".github/dependabot.yml", "")
     assert (tmp_path / ".github" / "dependabot.yml").exists()
+
+
+@pytest.mark.parametrize(
+    ("path", "config_path"),
+    [
+        (".github/specster/config.yml", ".github/specster/config.yml"),
+        (".GitHub/Specster/skills/x.md", ".github/specster/config.yml"),
+        ("ops/specster.yml", "ops/specster.yml"),
+    ],
+)
+def test_specsters_own_config_is_refused_unless_allowed(
+    tmp_path: Path, path: str, config_path: str
+) -> None:
+    with pytest.raises(ToolError, match=r"build\.allow_config_changes is off"):
+        TaskWorkspace(tmp_path, [], [path], config_path=config_path).write_file(path, "x: 1\n")
+    assert not (tmp_path / path).exists()
+    ws = TaskWorkspace(tmp_path, [], [path], allow_config=True, config_path=config_path)
+    ws.write_file(path, "x: 1\n")
+    assert (tmp_path / path).read_text() == "x: 1\n"
