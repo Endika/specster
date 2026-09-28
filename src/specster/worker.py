@@ -27,6 +27,7 @@ from specster.workspace import TaskWorkspace, ToolError
 NUDGE = "Call submit_task now."
 ONE_RUN = "one test run per turn; call run_tests again next turn"
 CHANGED_SINCE = "tests already ran this turn and files changed since; call submit_task next turn"
+STOPPED = "another worker hit a fatal error, so the build stops"
 NO_TESTS = "No test command is configured (build.test_command), so nothing runs your code."
 SUBJECT_MAX = 72
 _SUBJECT = re.compile(
@@ -58,6 +59,10 @@ def _tool_text(res: RunResult) -> str:
     return f"exit {res.exit_code}{timed_out}\n{note}{res.output}"
 
 
+class Stopped(Exception):
+    """Another worker's fatal error ends the build: this one stops before another paid turn."""
+
+
 class TaskTools:
     def __init__(
         self,
@@ -68,6 +73,7 @@ class TaskTools:
         test: Sequence[str] | None,
         task_id: str,
         time_left: Callable[[], float] | None = None,
+        stopped: Callable[[], bool] | None = None,
     ) -> None:
         self.ws = ws
         self.sandbox = sandbox
@@ -76,6 +82,8 @@ class TaskTools:
         self.test = list(test) if test else None
         self.task_id = task_id
         self.time_left = time_left
+        # True once another worker hit a fatal error: this one's turns would be paid for nothing.
+        self.stopped = stopped or (lambda: False)
         self.runs = 0
         self.last: RunResult | None = None
         self.truncations: list[str] = []
@@ -150,6 +158,8 @@ class _TurnSession:
     def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
         if self._tools.out_of_time():
             raise TimeUp(TIME_UP)
+        if self._tools.stopped():
+            raise Stopped(STOPPED)
         turn = self._session.send(results, user_text)
         self._tools.new_turn()
         return turn

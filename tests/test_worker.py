@@ -1,6 +1,7 @@
 import shutil
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,7 @@ def worker(
     test: list[str] | None = CHECK,
     setup: list[str] | None = None,
     lock: bool = True,
+    stopped: Callable[[], bool] | None = None,
 ) -> tuple[WorkerResult, ScriptedModel, TaskTools]:
     tmp_path.mkdir(parents=True, exist_ok=True)
     tree = tmp_path / "tree"
@@ -53,7 +55,8 @@ def worker(
     sb = Sandbox(None, 60, 20_000, {})
     if lock:
         locked(tmp_path, sb)
-    tools = TaskTools(TaskWorkspace(tree, [], TASK.files), sb, home, setup, test, TASK.id)
+    ws = TaskWorkspace(tree, [], TASK.files)
+    tools = TaskTools(ws, sb, home, setup, test, TASK.id, stopped=stopped)
     skills = load_skills(tree, SkillsConfig(), "build", lambda *_: b"", None)
     model = ScriptedModel(script)
     system = worker_system_prompt(PersonaConfig(), skills.on_demand, test is not None)
@@ -312,3 +315,12 @@ def test_a_submit_after_a_write_since_the_passing_run_runs_the_tests_again(
 def test_a_subject_whose_closing_reference_hides_behind_backticks_is_invalid() -> None:
     assert not valid_subject("feat(app): fixes `#3`")
     assert not valid_subject("feat(app): `closes` #3")
+
+
+def test_a_stopped_build_ends_the_worker_before_its_next_paid_turn(tmp_path: Path) -> None:
+    answers = iter([False])
+    read = ToolCall("r", "read_file", {"path": "app.py"})
+    script: list[list[ToolCall] | str] = [[read], [read], [submit()]]
+    out, model, _ = worker(tmp_path, script, stopped=lambda: next(answers, True))
+    assert out.status == "failed" and "another worker hit a fatal error" in out.reason
+    assert out.turns == 1 and len(model.received) == 1

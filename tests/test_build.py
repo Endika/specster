@@ -1,8 +1,10 @@
 import re
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,7 +20,7 @@ from specster.build import (
 from specster.config import BudgetConfig, BuildConfig, Config, ModelConfig, SkillsConfig
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
-from specster.llm.base import ChatModel, ToolCall, ToolResult, Turn, Usage
+from specster.llm.base import ChatModel, ToolCall, ToolResult, ToolSpec, Turn, Usage
 from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
 from specster.schemas import PlanTask
@@ -506,6 +508,43 @@ def test_a_fatal_error_stops_the_queued_workers_of_the_level(tmp_path: Path) -> 
     with pytest.raises(SandboxError, match="lock_down"):
         run_build(s)
     assert list(book.sessions) == ['id="a"']
+
+
+class Fatal(BaseException):
+    pass
+
+
+def test_a_fatal_error_stops_a_running_worker_before_its_next_paid_turn(tmp_path: Path) -> None:
+    reading, failing = threading.Event(), threading.Event()
+
+    class FailsOnceOtherStarted(ScriptedModel):
+        def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+            reading.wait(5)
+            failing.set()
+            raise Fatal("the worker's machine went away")
+
+    class KeepsReading(ScriptedModel):
+        def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+            if not self.received:
+                reading.set()
+                failing.wait(5)
+                time.sleep(0.2)
+            return super().send(results, user_text)
+
+    read = [ToolCall("r", "read_file", {"path": "util.py"})]
+    reader = KeepsReading([read] * 8)
+
+    class Book(ScriptBook):
+        def start(self, system: str, context: str, user: str, tools: Sequence[ToolSpec]) -> Any:
+            model = FailsOnceOtherStarted([]) if 'id="a"' in user else reader
+            model.start(system, context, user, tools)
+            return model
+
+    tasks = [task("a", "app.py"), task("b", "util.py")]
+    s = setup(tmp_path, tasks, Book({}), ScriptedModel([]), build=BuildConfig(max_parallel=2))
+    with pytest.raises(Fatal):
+        run_build(s)
+    assert len(reader.received) == 1 and reader.script
 
 
 def test_a_failing_worktree_drop_never_masks_the_build_or_its_error(
