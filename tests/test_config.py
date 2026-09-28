@@ -87,6 +87,7 @@ def test_commands_are_argument_lists(tmp_path: Path) -> None:
         "test_command: []",
         "setup_command: ['']",
         "test_env: {HOME: /root}",
+        "test_env: {TMPDIR: /tmp}",
         "test_env: {'BAD-NAME': x}",
         "max_parallel: 0",
     ],

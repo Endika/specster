@@ -175,8 +175,9 @@ class BuildConfig(_Strict):
         for name in value:
             if not _ENV_NAME.match(name):
                 raise ValueError(f"{name!r} is not an environment variable name")
-            if name == "HOME":
-                raise ValueError("HOME is set by Specster to a private temporary directory")
+            if name in ("HOME", "TMPDIR"):
+                # A TMPDIR back in the shared /tmp would reach other slots' temporary files.
+                raise ValueError(f"{name} is set by Specster to a private temporary directory")
         return value
 
 
