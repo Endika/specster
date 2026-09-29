@@ -64,3 +64,25 @@
       acceptance:
         - summary gives "<rows> rows, total amount <total with two decimals>".
   hidden: check_summary.py
+
+- id: rename-with-alias
+  spec: |
+    Rename Report.rows to Report.records in reports/model.py, without breaking callers.
+    Report([...]) and Report(records=[...]) build a report, and Report() an empty one.
+    Report(rows=[...]) still works but emits a DeprecationWarning, and so does reading
+    report.rows, which returns report.records. Every caller in reports/ moves to records, so
+    to_json emits no warning. The existing test moves to the new name, and new tests cover
+    both deprecated paths.
+  tasks:
+    - id: rename-rows
+      title: Rename rows to records with a deprecated alias
+      description: >
+        Change Report in reports/model.py, to_json in reports/export.py and
+        tests/test_export.py to records, and add tests/test_model.py for the deprecated
+        rows= argument and rows attribute.
+      files: [reports/model.py, reports/export.py, tests/test_export.py, tests/test_model.py]
+      acceptance:
+        - Report([...]), Report(records=[...]) and Report() work with no warning.
+        - Report(rows=[...]) and reading report.rows emit a DeprecationWarning.
+        - to_json emits no warning.
+  hidden: check_rename.py
