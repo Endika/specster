@@ -17,9 +17,10 @@ def test_judge_agrees_with_hand_labels(
         output = json.dumps(sample.output, ensure_ascii=False)
         error: str | None = None
         scores: dict[str, int] | None = None
+        reasons = ""
         try:
             verdict = judge(judge_model, sample.rubric, sample.thread, output)
-            scores = verdict.scores
+            scores, reasons = verdict.scores, verdict.reasons
             got = "good" if verdict.passed else "bad"
         except RuntimeError as e:
             error, got = str(e), "no grade"
@@ -33,7 +34,15 @@ def test_judge_agrees_with_hand_labels(
                 sample.id,
                 i,
                 agreed,
-                [{"name": "agrees_with_label", "ok": agreed, "detail": f"judge said {got}"}],
+                [
+                    {
+                        "name": "agrees_with_label",
+                        "ok": agreed,
+                        "detail": f"judge said {got}: {reasons}"
+                        if reasons
+                        else f"judge said {got}",
+                    }
+                ],
                 scores,
                 asdict(judge_model.usage),
                 cost,
