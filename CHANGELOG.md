@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/Endika/specster/compare/specster-v0.9.1...specster-v0.10.0) (2026-09-29)
+
+
+### Features
+
+* retry a failed or twice-blocked task once with an escalation model ([5feabc3](https://github.com/Endika/specster/commit/5feabc3811779175181c053a3cae29eadb2610cb))
+
 ## [0.9.1](https://github.com/Endika/specster/compare/specster-v0.9.0...specster-v0.9.1) (2026-09-29)
 
 
