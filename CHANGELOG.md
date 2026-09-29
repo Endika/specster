@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Endika/specster/compare/specster-v0.10.0...specster-v0.10.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* say what each survivor of a sandbox kill is, and wait for D in the D-state test ([577f9cb](https://github.com/Endika/specster/commit/577f9cb31898e60ca0ac16d6a7fa2106e5fc92b8))
+
 ## [0.10.0](https://github.com/Endika/specster/compare/specster-v0.9.1...specster-v0.10.0) (2026-09-29)
 
 
