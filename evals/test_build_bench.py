@@ -17,9 +17,12 @@ def test_build(
     case: BuildCase, eval_model_cfg: ModelConfig, budget: CostMeter, k: int, results: ResultLog
 ) -> None:
     with_skills = os.environ.get("SPECSTER_EVAL_SKILLS", "on") == "on"
-    label = f"{case.id} [{eval_model_cfg.model}, skills {'on' if with_skills else 'off'}]"
+    stronger = os.environ.get("SPECSTER_EVAL_ESCALATION") or None
+    escalation = ModelConfig(provider="anthropic", model=stronger) if stronger else None
+    extra = f", escalation {stronger}" if stronger else ""
+    label = f"{case.id} [{eval_model_cfg.model}, skills {'on' if with_skills else 'off'}{extra}]"
     for i in range(k):
-        out = run_build_case(case, eval_model_cfg, with_skills)
+        out = run_build_case(case, eval_model_cfg, with_skills, escalation)
         report = out.report
         review = report.review
         severities = [f.severity for f in review.findings] if review is not None else []
@@ -40,6 +43,7 @@ def test_build(
                     "critical": severities.count("critical"),
                     "important": severities.count("important"),
                     "minor": severities.count("minor"),
+                    "escalated": sum(1 for t in report.tasks if t.escalated_to),
                     "seconds": int(out.seconds),
                 },
                 {},

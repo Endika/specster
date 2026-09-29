@@ -27,7 +27,7 @@ from specster.repomap import build_repo_map
 from specster.sandbox import RunResult, Sandbox, scratch_dir, slot_identity
 from specster.schemas import PlanTask
 from specster.skills import SkillBook, http_fetch, load_skills
-from specster.workspace import Workspace
+from specster.workspace import CONFIG_PATH, Workspace
 
 EVALS = Path(__file__).parent
 FIXTURE = EVALS / "fixtures" / "build_repo"
@@ -113,13 +113,17 @@ def _hidden_check(git: Git, head: str, hidden: str, scratch: Path) -> RunResult:
     )
 
 
-def run_build_case(case: BuildCase, worker: ModelConfig, with_skills: bool) -> BuildOutcome:
+def run_build_case(
+    case: BuildCase, worker: ModelConfig, with_skills: bool, escalation: ModelConfig | None = None
+) -> BuildOutcome:
     work = Path(tempfile.mkdtemp(prefix="specster-bench-"))
     scratch = scratch_dir()
     started = time.monotonic()
     try:
         git = _repo(work / "repo")
         cfg = Config(build=BUILD)
+        models = cfg.models.model_copy(update={"worker": worker, "escalation": escalation})
+        cfg = cfg.model_copy(update={"models": models})
         build_skills, review_skills = skill_books(git.repo, with_skills)
         ledger = Ledger({})
         at = datetime.now(UTC)
@@ -136,7 +140,7 @@ def run_build_case(case: BuildCase, worker: ModelConfig, with_skills: bool) -> B
         repo_map = build_repo_map(Workspace(git.repo, cfg.repo_map.exclude), 2_000)
         report = run_build(
             BuildSetup(
-                cfg.model_copy(update={"models": cfg.models.model_copy(update={"worker": worker})}),
+                cfg,
                 ApprovedSpec(comment, case.tasks, "0" * 64, case.spec),
                 git,
                 sandbox,
@@ -151,6 +155,9 @@ def run_build_case(case: BuildCase, worker: ModelConfig, with_skills: bool) -> B
                 scratch,
                 0.0,
                 cfg.persona,
+                None,
+                CONFIG_PATH,
+                (lambda: make(escalation)) if escalation is not None else None,
             )
         )
         hidden = _hidden_check(git, report.head, case.hidden, scratch)
