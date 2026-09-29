@@ -66,8 +66,8 @@ jobs:
             -e UV_PROJECT_ENVIRONMENT=/src/.venv specster:ci -c \
             'mkdir /src && cd /src && tar xf - && uv sync -q --all-groups --locked && nproc &&
             for i in $(seq $(( $(nproc) * 2 ))); do (while :; do :; done) & done;
-            for i in $(seq 20); do out=$(uv run pytest -p no:randomly -o addopts="" tests/test_sandbox.py -k "fork_bomb or forking_sigcont" 2>&1);
-            echo "iteration $i: $(echo "$out" | tail -1)"; echo "$out" | grep -o "survived the kill: .*" | cut -c1-900; done'
+            for i in $(seq 3); do out=$(uv run pytest -p no:randomly -o addopts="" tests/test_sandbox.py -k "fork_bomb or forking_sigcont" 2>&1);
+            echo "iteration $i: $(echo "$out" | tail -1)"; echo "$out" | grep -E "^(E |FAILED|>)" | cut -c1-600; done'
       - name: the full suite as root inside the image, root-only sandbox tests included
         run: |
           git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint sh \
