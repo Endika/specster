@@ -11,8 +11,13 @@ on:
       suite:
         description: Which evals to run
         type: choice
-        options: [all, calibration, behavior, injection]
+        options: [all, calibration, behavior, injection, build]
         default: all
+      skills:
+        description: For the build suite, whether workers and reviewer get this repo's skills
+        type: choice
+        options: ["on", "off"]
+        default: "on"
 
 permissions:
   contents: read
@@ -28,6 +33,7 @@ jobs:
           enable-cache: true
       - run: uv sync --all-groups --locked
       - name: evals
+        if: inputs.suite != 'build'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SPECSTER_EVAL_PROVIDER: ${{ inputs.provider }}
@@ -42,6 +48,25 @@ jobs:
           uv run pytest "$target" -m eval -v
           --eval-k "$EVAL_K" --eval-max-usd "$EVAL_MAX_USD"
           --eval-out "$RUNNER_TEMP/specster-evals.jsonl"
+      # Builds run sandbox slots, so the build suite runs as root inside the image.
+      - run: docker build -t specster:evals .
+        if: inputs.suite == 'build'
+      - name: build evals, inside the image
+        if: inputs.suite == 'build'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SPECSTER_EVAL_MODEL: ${{ inputs.model }}
+          SPECSTER_EVAL_SKILLS: ${{ inputs.skills }}
+          EVAL_K: ${{ inputs.k }}
+          EVAL_MAX_USD: ${{ inputs.max_usd }}
+        run: >
+          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint /usr/bin/tini
+          -e ANTHROPIC_API_KEY -e SPECSTER_EVAL_MODEL -e SPECSTER_EVAL_SKILLS -e EVAL_K -e EVAL_MAX_USD
+          -e UV_PROJECT_ENVIRONMENT=/work/.venv -e PYTHONPATH=/work
+          -v "$RUNNER_TEMP:/out" specster:evals -- sh -c
+          'mkdir /work && cd /work && tar xf - && uv sync --all-groups --locked &&
+          uv run pytest evals/test_build_bench.py -m eval -v --eval-k "$EVAL_K"
+          --eval-max-usd "$EVAL_MAX_USD" --eval-out /out/specster-evals.jsonl'
       - name: summary table
         if: always()
         run: uv run python -m evals.summary "$RUNNER_TEMP/specster-evals.jsonl" >> "$GITHUB_STEP_SUMMARY"
