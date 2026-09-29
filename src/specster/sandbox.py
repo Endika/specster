@@ -151,7 +151,16 @@ def _kill_all(identity: Identity) -> None:
     # A per-slot cgroup v2 with cgroup.kill would be atomic, but the action's container has no
     # writable cgroup mount, so the /proc loop below is what runs.
     uid = identity.uid
+    started = time.monotonic()
     live = _live_pids(uid)
+    first_seen: dict[int, int] = {}
+    rounds = 0
+
+    def note(pids: Iterable[int]) -> None:
+        for pid in pids:
+            first_seen.setdefault(pid, rounds)
+
+    note(live)
     # The budget starts after the first scan: under a saturated uid that scan alone takes seconds.
     deadline = time.monotonic() + _REAP_BUDGET_S
     for _ in range(_REAP_ROUNDS):
@@ -162,18 +171,47 @@ def _kill_all(identity: Identity) -> None:
         if time.monotonic() >= deadline:
             break
         time.sleep(_REAP_PAUSE_S)
+        rounds += 1
         live = _live_pids(uid)
+        note(live)
     # Killed pids (a D wait included) die on their own; keep killing until the grace bound.
     grace = time.monotonic() + _DYING_GRACE_S
     while time.monotonic() < grace:
         live = _live_pids(uid)
         if not live:
             return
+        rounds += 1
+        note(live)
         _signal_all(live, _KILL_SIGNAL)
         time.sleep(_REAP_PAUSE_S)
     left = _slot_states(uid)
     if left:
-        raise SandboxError(f"processes of sandbox uid {uid} survived the kill: {left}")
+        took = time.monotonic() - started
+        detail = ", ".join(_survivor(pid, first_seen.get(pid, rounds)) for pid in sorted(left)[:12])
+        raise SandboxError(
+            f"processes of sandbox uid {uid} survived the kill: {len(left)} left after {rounds} "
+            f"rounds in {took:.1f} s; {detail}"
+        )
+
+
+def _survivor(pid: int, first_round: int) -> str:
+    """One survivor, with what tells a dying process from one that escaped the kill."""
+    try:
+        fields = dict(
+            line.split(":", 1)
+            for line in Path(f"/proc/{pid}/status").read_text().splitlines()
+            if ":" in line
+        )
+    except OSError:
+        return f"{pid} (gone)"
+    pending = int(fields.get("SigPnd", "0").strip() or "0", 16)
+    shared = int(fields.get("ShdPnd", "0").strip() or "0", 16)
+    kill = bool((pending | shared) & (1 << (signal.SIGKILL - 1)))
+    state = fields.get("State", "?").strip()[:1]
+    return (
+        f"{pid} {state} ppid {fields.get('PPid', '?').strip()} "
+        f"first seen round {first_round} SIGKILL {'pending' if kill else 'not pending'}"
+    )
 
 
 class Sandbox:

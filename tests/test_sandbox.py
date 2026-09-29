@@ -405,8 +405,13 @@ VFORK_IN_D = (
     "code = 'import ctypes' + chr(10) + 'libc = ctypes.CDLL(None)' + chr(10)"
     " + 'if libc.vfork() == 0:' + chr(10) + '    libc.sleep(60)' + chr(10) + '    libc._exit(0)'\n"
     "pid = subprocess.Popen([sys.executable, '-c', code], start_new_session=True).pid\n"
-    "time.sleep(0.5)\n"
-    "print(open(f'/proc/{pid}/stat').read().rsplit(')', 1)[1].split()[0])\n"
+    # A starved runner can take seconds to reach the vfork, so wait for D rather than a while.
+    "for _ in range(200):\n"
+    "    state = open(f'/proc/{pid}/stat').read().rsplit(')', 1)[1].split()[0]\n"
+    "    if state == 'D':\n"
+    "        break\n"
+    "    time.sleep(0.05)\n"
+    "print(state)\n"
 )
 
 
