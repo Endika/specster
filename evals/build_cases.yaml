@@ -77,12 +77,77 @@
     - id: rename-rows
       title: Rename rows to records with a deprecated alias
       description: >
-        Change Report in reports/model.py, to_json in reports/export.py and
-        tests/test_export.py to records, and add tests/test_model.py for the deprecated
+        Change Report in reports/model.py, to_json in reports/export.py, sum_amounts in
+        reports/totals.py and tests/test_export.py to records, and add tests/test_model.py for the deprecated
         rows= argument and rows attribute.
-      files: [reports/model.py, reports/export.py, tests/test_export.py, tests/test_model.py]
+      files:
+        [reports/model.py, reports/export.py, reports/totals.py, tests/test_export.py, tests/test_model.py]
       acceptance:
         - Report([...]), Report(records=[...]) and Report() work with no warning.
         - Report(rows=[...]) and reading report.rows emit a DeprecationWarning.
         - to_json emits no warning.
   hidden: check_rename.py
+
+- id: bug-fix-from-symptom
+  spec: |
+    sum_amounts in reports/totals.py raises ValueError on amounts written with a thousands
+    separator: sum_amounts(Report([{"amount": "1,234.50"}, {"amount": "10"}])) should be
+    1244.5. Amounts are written like "12", "12.5", "1,234.50", with optional spaces around
+    them, and "(5)" means -5. Fix the cause, wherever it is, and add a test for each form.
+  tasks:
+    - id: fix-amounts
+      title: Parse every written amount form
+      description: >
+        Find why sum_amounts fails on "1,234.50" and fix it at the cause, so every form in the
+        spec parses; test each form.
+      files: [reports/amounts.py, tests/test_amounts.py]
+      acceptance:
+        - parse_amount reads "12", "12.5", "1,234.50", " 7 " and "(5)" as 12, 12.5, 1234.5, 7 and -5.
+        - sum_amounts gives 1244.5 for the example in the spec.
+  hidden: check_amounts.py
+
+- id: csv-round-trip
+  spec: |
+    Add reports/csv_io.py with to_csv(report) -> str and from_csv(text) -> Report, so that
+    from_csv(to_csv(r)).rows == r.rows for any rows of str values. to_csv writes a header with
+    the union of the rows' keys in first-seen order, empty cells for missing keys, and "\n"
+    line endings. from_csv reads that back, and also accepts "\r\n" line endings and a UTF-8
+    byte order mark ("\ufeff") at the start; a missing or empty cell comes back as "". Empty
+    text gives Report([]). Values may hold commas, quotes and newlines.
+  tasks:
+    - id: add-csv-io
+      title: Add to_csv and from_csv
+      description: Implement reports/csv_io.py and tests/test_csv_io.py as the spec says.
+      files: [reports/csv_io.py, tests/test_csv_io.py]
+      acceptance:
+        - Round-trips rows whose values hold commas, quotes and newlines.
+        - Reads "\r\n" endings and a leading byte order mark; empty text gives Report([]).
+  hidden: check_csv_io.py
+
+- id: exporter-registry
+  spec: |
+    Add an exporter registry. reports/registry.py: register(name) is a decorator that records
+    a function Report -> str under that name; export(report, name) calls it; formats() lists the
+    names sorted; export with an unknown name raises ValueError whose message lists the known
+    names. Then register to_json as "json" in reports/export.py, and add reports/text.py with
+    to_text registered as "text": one line per row, "key=value" pairs joined with ", " in the
+    row's key order, lines ending with "\n". Importing reports registers both formats, and
+    to_json keeps working as before.
+  tasks:
+    - id: add-registry
+      title: Add the registry
+      description: Implement reports/registry.py and tests/test_registry.py as the spec says.
+      files: [reports/registry.py, tests/test_registry.py]
+      acceptance:
+        - register, export and formats behave as the spec says, and unknown names raise ValueError.
+    - id: register-exporters
+      title: Register json and text
+      description: >
+        Register to_json as "json", add reports/text.py with to_text as "text", and make
+        importing reports register both; test the text format.
+      files: [reports/export.py, reports/text.py, reports/__init__.py, tests/test_text.py]
+      depends_on: [add-registry]
+      acceptance:
+        - After import reports, formats() == ["json", "text"].
+        - export(report, "json") equals to_json(report).
+  hidden: check_registry.py

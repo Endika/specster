@@ -63,6 +63,65 @@ REFERENCE = {
             "import json\n\nfrom reports.model import Report\n\n\n"
             "def to_json(report: Report) -> str:\n    return json.dumps(report.records)\n"
         ),
+        "reports/totals.py": (
+            "from reports.amounts import parse_amount\nfrom reports.model import Report\n\n\n"
+            "def sum_amounts(report: Report) -> float:\n"
+            "    return sum(parse_amount(r['amount']) for r in report.records if 'amount' in r)\n"
+        ),
+    },
+    "bug-fix-from-symptom": {
+        "reports/amounts.py": (
+            "def parse_amount(text: str) -> float:\n"
+            "    text = text.strip()\n"
+            "    if text.startswith('(') and text.endswith(')'):\n"
+            "        return -parse_amount(text[1:-1])\n"
+            "    return float(text.replace(',', ''))\n"
+        ),
+    },
+    "csv-round-trip": {
+        "reports/csv_io.py": (
+            "import csv\nimport io\n\nfrom reports.model import Report\n\n\n"
+            "def to_csv(report: Report) -> str:\n"
+            "    if not report.rows:\n        return ''\n"
+            "    header = list(dict.fromkeys(k for row in report.rows for k in row))\n"
+            "    out = io.StringIO()\n"
+            "    writer = csv.DictWriter(out, header, restval='', lineterminator='\\n')\n"
+            "    writer.writeheader()\n    writer.writerows(report.rows)\n"
+            "    return out.getvalue()\n\n\n"
+            "def from_csv(text: str) -> Report:\n"
+            "    text = text.removeprefix('\\ufeff')\n"
+            "    if not text:\n        return Report([])\n"
+            "    reader = csv.DictReader(io.StringIO(text, newline=''), restval='')\n"
+            "    return Report([dict(row) for row in reader])\n"
+        ),
+    },
+    "exporter-registry": {
+        "reports/registry.py": (
+            "from collections.abc import Callable\n\nfrom reports.model import Report\n\n"
+            "_EXPORTERS: dict[str, Callable[[Report], str]] = {}\n\n\n"
+            "def register(name: str):\n"
+            "    def add(fn: Callable[[Report], str]) -> Callable[[Report], str]:\n"
+            "        _EXPORTERS[name] = fn\n        return fn\n"
+            "    return add\n\n\n"
+            "def formats() -> list[str]:\n    return sorted(_EXPORTERS)\n\n\n"
+            "def export(report: Report, name: str) -> str:\n"
+            "    if name not in _EXPORTERS:\n"
+            "        raise ValueError(f'unknown format {name}; known: {formats()}')\n"
+            "    return _EXPORTERS[name](report)\n"
+        ),
+        "reports/export.py": (
+            "import json\n\nfrom reports.model import Report\n"
+            "from reports.registry import register\n\n\n"
+            "@register('json')\ndef to_json(report: Report) -> str:\n"
+            "    return json.dumps(report.rows)\n"
+        ),
+        "reports/text.py": (
+            "from reports.model import Report\nfrom reports.registry import register\n\n\n"
+            "@register('text')\ndef to_text(report: Report) -> str:\n"
+            "    lines = (', '.join(f'{k}={v}' for k, v in r.items()) for r in report.rows)\n"
+            "    return ''.join(line + '\\n' for line in lines)\n"
+        ),
+        "reports/__init__.py": "from reports import export, text  # noqa: F401\n",
     },
     "total-then-summary": {
         "reports/model.py": (
