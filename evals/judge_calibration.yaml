@@ -18,32 +18,38 @@
       - Other formats
     files: [reports/export.py, tests/test_export.py]
     approach: >
-      Use csv.DictWriter over report.rows with the union of every row's keys, in first-seen
-      order, as the header, writing to an io.StringIO with delimiter ",", and return the text. An empty report
-      returns an empty string.
+      Use csv.DictWriter over report.rows, writing to an io.StringIO, and return the text as a
+      str, as to_json does; encoding to UTF-8 bytes is the caller's, so non-ASCII values stay
+      as they are. The header is the union of every row's keys in first-seen order, a missing
+      cell is written empty (restval=""), fields are comma-separated and lines end with "\n"
+      (lineterminator="\n"). An empty report returns an empty string, with no header.
     risks:
-      - Rows with different keys; DictWriter raises on unknown keys, so the header is the union
-        of all keys in first-seen order.
+      - Values with commas, quotes or newlines; csv's default QUOTE_MINIMAL quotes them, and the
+        test covers one.
     test_strategy: >
-      Unit test in tests/test_export.py that parses the output with csv.reader and checks the
-      header row and one data row, including a non-ASCII value.
+      Unit tests in tests/test_export.py that parse the output with csv.reader: header and
+      rows, a missing cell, a value with a comma and a non-ASCII one, and the empty report.
     tasks:
       - id: add-to-csv
         title: Add to_csv to reports/export.py
         description: >
-          Implement to_csv(report) with csv.DictWriter, header from the union of row keys,
-          comma separator, returned as a str.
+          Implement to_csv(report) -> str with csv.DictWriter as described in the approach.
         files: [reports/export.py]
         acceptance:
-          - The first line is the header row with every column name.
-          - Fields are separated by a comma separator.
+          - The first line lists the union of the rows' keys in first-seen order.
+          - Each later line holds one row's values in that column order, empty where missing.
+          - Lines end with "\n", and an empty report gives "".
       - id: test-to-csv
         title: Test to_csv
-        description: Add test_to_csv_writes_header_and_rows next to the JSON test.
+        description: >
+          Add tests next to the JSON test for the header, the rows, a missing cell, a value with
+          a comma, a non-ASCII value and the empty report.
         files: [tests/test_export.py]
         depends_on: [add-to-csv]
         acceptance:
-          - The test fails without to_csv and passes with it.
+          - A row with a comma in a value parses back to the same value with csv.reader.
+          - A non-ASCII value comes back unchanged, and a missing cell comes back as "".
+          - to_csv(Report([])) is asserted to be "".
 
 - id: bad-spec
   label: bad
