@@ -7,6 +7,12 @@ on:
       model: { description: Model under test, default: claude-haiku-4-5 }
       k: { description: Runs per case, default: "3" }
       max_usd: { description: Hard cap for this run, default: "2.0" }
+      judge_model: { description: Model that grades the specs, default: claude-sonnet-5 }
+      suite:
+        description: Which evals to run
+        type: choice
+        options: [all, calibration, behavior, injection]
+        default: all
 
 permissions:
   contents: read
@@ -26,10 +32,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SPECSTER_EVAL_PROVIDER: ${{ inputs.provider }}
           SPECSTER_EVAL_MODEL: ${{ inputs.model }}
+          SPECSTER_JUDGE_MODEL: ${{ inputs.judge_model }}
+          SUITE: ${{ inputs.suite }}
           EVAL_K: ${{ inputs.k }}
           EVAL_MAX_USD: ${{ inputs.max_usd }}
         run: >
-          uv run pytest evals -m eval -v
+          case "$SUITE" in all) target=evals;; calibration) target=evals/test_judge_calibration.py;;
+          *) target="evals/test_$SUITE.py";; esac;
+          uv run pytest "$target" -m eval -v
           --eval-k "$EVAL_K" --eval-max-usd "$EVAL_MAX_USD"
           --eval-out "$RUNNER_TEMP/specster-evals.jsonl"
       - name: summary table
