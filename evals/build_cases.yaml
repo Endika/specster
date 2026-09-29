@@ -1,0 +1,66 @@
+# Approved plans the build benchmark builds on evals/fixtures/build_repo. Each hidden check is
+# a test the worker never sees; it runs on the built branch and says whether the code is right.
+- id: csv-export
+  spec: |
+    Add to_csv(report) -> str to reports/export.py, next to to_json. It writes report.rows as
+    CSV with csv.DictWriter: the header is the union of every row's keys in first-seen order,
+    a missing cell is empty, fields are comma-separated, lines end with "\n", and an empty
+    report returns "". Non-ASCII values stay as they are (the function returns a str).
+  tasks:
+    - id: add-to-csv
+      title: Add to_csv with its tests
+      description: >
+        Implement to_csv in reports/export.py as the spec says, and test it in
+        tests/test_export.py: header, rows, a missing cell, a non-ASCII value, the empty report.
+      files: [reports/export.py, tests/test_export.py]
+      acceptance:
+        - The first line is the union of the rows' keys in first-seen order.
+        - A missing cell is empty, lines end with "\n", and an empty report gives "".
+  hidden: check_csv.py
+
+- id: two-exporters
+  spec: |
+    Add two exporters, each in its own module with its own tests. reports/tsv.py:
+    to_tsv(report) -> str, tab-separated, a header line with the first row's keys, then one
+    line per row, each line ending with "\n"; an empty report returns "". reports/markdown.py:
+    to_markdown(report) -> str, a Markdown table: "| a | b |", then "| --- | --- |", then one
+    "| x | y |" line per row, lines joined with "\n" and no trailing newline; an empty report
+    returns "".
+  tasks:
+    - id: add-tsv
+      title: Add to_tsv
+      description: Implement reports/tsv.py and tests/test_tsv.py as the spec says.
+      files: [reports/tsv.py, tests/test_tsv.py]
+      acceptance:
+        - to_tsv writes a header line and one tab-separated line per row, each ending with "\n".
+    - id: add-markdown
+      title: Add to_markdown
+      description: Implement reports/markdown.py and tests/test_markdown.py as the spec says.
+      files: [reports/markdown.py, tests/test_markdown.py]
+      acceptance:
+        - to_markdown writes the header row, the separator row and one row per report row.
+  hidden: check_exporters.py
+
+- id: total-then-summary
+  spec: |
+    Add Report.total(field) -> float to reports/model.py: the sum of float(row[field]) over
+    the rows that have the field, 0.0 when none do. Then add summary(report) -> str to
+    reports/export.py, returning f"{len(report.rows)} rows, total amount {total:.2f}" where
+    total is report.total("amount"). Each change comes with its tests.
+  tasks:
+    - id: add-total
+      title: Add Report.total
+      description: Implement Report.total in reports/model.py, tested in tests/test_model.py.
+      files: [reports/model.py, tests/test_model.py]
+      acceptance:
+        - total sums the field over the rows that have it, and is 0.0 when none do.
+    - id: add-summary
+      title: Add summary
+      description: >
+        Implement summary in reports/export.py on top of Report.total, tested in
+        tests/test_summary.py.
+      files: [reports/export.py, tests/test_summary.py]
+      depends_on: [add-total]
+      acceptance:
+        - summary gives "<rows> rows, total amount <total with two decimals>".
+  hidden: check_summary.py
