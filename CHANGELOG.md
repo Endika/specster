@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/Endika/specster/compare/specster-v0.9.0...specster-v0.9.1) (2026-09-29)
+
+
+### Documentation
+
+* publish the cost and quality benchmark results ([3f20478](https://github.com/Endika/specster/commit/3f2047890e4b1af296570ebc0274c5dd9cbaf9af))
+
 ## [0.9.0](https://github.com/Endika/specster/compare/specster-v0.8.1...specster-v0.9.0) (2026-09-28)
 
 
