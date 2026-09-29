@@ -139,9 +139,19 @@ list price:
 
 Bold is the default. Prices are USD per million tokens (input / output / cache read / cache
 write): Opus 5.5 $4 / $20 / $0.20 / $5, Sonnet 5 $2 / $10 / $0.20 / $2.50, Haiku 4.5 $1 / $5 /
-$0.10 / $1.25. Cost is only half the comparison: in the evals, Haiku as planner lost half its runs to
-malformed spec lists, so it is not the default. A quality comparison across models is next on the
-roadmap.
+$0.10 / $1.25.
+
+**Quality, measured.** In the [benchmark](docs/evals.md#benchmark-results-2026-09-29), graded by
+a calibrated judge and by hidden tests:
+
+| Role | Haiku 4.5 | Sonnet 5 | Opus 5.5 |
+|---|---|---|---|
+| Planner: spec and injection cases passed | 7/21 | 15/21 | **21/21** |
+| Worker: builds passed (reviewer + hidden test) | 8/8 | **8/8** | 8/8 |
+| Worker: mean cost per build, reviewer included | $0.078 | **$0.060** | $0.067 |
+
+Opus 5.5 is the only planner that passed every case, and the only one no injected comment
+steered. Every worker passed every build case, so those cases rank workers on cost alone.
 
 ## Safety in short
 
@@ -167,5 +177,7 @@ The details and the known limits: [Security model](docs/security.md).
 - **Other languages (done).** mise installs the toolchains a repository declares, or
   `build.tools` names, so projects in other or mixed languages build: see
   [Toolchains](docs/build.md#toolchains-for-other-languages).
-- **Next - cost and quality benchmark, and model escalation**, so every model choice above comes
-  with a measured quality score next to its price.
+- **Cost and quality benchmark (done).** A calibrated judge and hidden build tests: see
+  [Benchmark results](docs/evals.md#benchmark-results-2026-09-29).
+- **Next - harder build cases and model escalation**, so workers are ranked on quality too, and a
+  task or review that keeps failing moves to a stronger model.
