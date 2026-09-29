@@ -6,13 +6,14 @@ import shutil
 import stat
 import sys
 import threading
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from specster.agent import AgentError, attached_usage
+from specster.agent import TIME_UP, AgentError, attached_usage
 from specster.approved import ApprovedSpec
 from specster.config import BudgetConfig, Config, ModelConfig, PersonaConfig
 from specster.git import BOT_EMAIL, Author, Git, GitError
@@ -31,7 +32,7 @@ from specster.review import blocking, run_review
 from specster.sandbox import RunResult, Sandbox
 from specster.schemas import Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
-from specster.worker import TaskTools, WorkerResult, run_worker
+from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
 from specster.workspace import CONFIG_PATH, TaskWorkspace, ToolError, Workspace, has_git_component
 
 DIFF_MAX_CHARS = 150_000
@@ -79,6 +80,7 @@ class TaskRecord:
     summary: str = ""
     commits: list[Commit] = field(default_factory=list)
     last_tests: RunResult | None = None
+    escalated_to: str | None = None
 
 
 @dataclass
@@ -126,6 +128,7 @@ class BuildSetup:
     # Seconds left before build.max_minutes; None never stops the build on time.
     time_left: Callable[[], float] | None = None
     config_path: str = CONFIG_PATH
+    make_escalation: Callable[[], ChatModel] | None = None
 
 
 def budget_stop(ledger: Ledger, budget: BudgetConfig, prior_known_usd: float) -> str | None:
@@ -249,6 +252,7 @@ class _Build:
             self._free.put(slot)
         self._final: Sandbox | None = None
         self._aborted = threading.Event()
+        self._corrected: Counter[str] = Counter()
         self._out_of_time = False
         has_tests = self.cfg.build.test_command is not None
         self.worker_system = worker_system_prompt(
@@ -290,7 +294,12 @@ class _Build:
         return tree
 
     def _work(
-        self, task: PlanTask, base: str, round_no: int, findings: Sequence[Finding]
+        self,
+        task: PlanTask,
+        base: str,
+        round_no: int,
+        findings: Sequence[Finding],
+        escalated: bool = False,
     ) -> WorkerResult:
         stop = "the build was aborted" if self._aborted.is_set() else self._stop()
         if stop is not None:
@@ -301,7 +310,8 @@ class _Build:
         with self._lock:
             self._active += 1
             self.parallel_used = max(self.parallel_used, self._active)
-        enclosure = self.s.scratch / f"w{round_no}-{task.id}"
+        enclosure = self.s.scratch / f"w{round_no}-{task.id}{'-escalated' if escalated else ''}"
+        role, model = self._worker_role(escalated)
         started = False
         try:
             sandbox = self._sandboxes[slot]
@@ -330,8 +340,10 @@ class _Build:
             )
             user = task_block(self.s.spec.text, task, findings, secrets.token_hex(8))
             started = True
+            make = self.s.make_escalation if escalated else self.s.make_worker
+            assert make is not None
             result = run_worker(
-                self.s.make_worker(),
+                make(),
                 self.worker_system,
                 self.worker_context,
                 user,
@@ -341,19 +353,37 @@ class _Build:
                 build.max_turns_per_task,
                 round_no > 0,
             )
-            self.s.ledger.add("worker", self.cfg.models.worker, result.usage, result.turns)
+            self.s.ledger.add(role, model, result.usage, result.turns)
             return result
         except BaseException as e:
             # A worker already picked from the queue must not start after a fatal error.
             self._aborted.set()
             if started:
-                self._bill_fatal("worker", self.cfg.models.worker, e)
+                self._bill_fatal(role, model, e)
             raise
         finally:
             shutil.rmtree(enclosure, ignore_errors=True)
             with self._lock:
                 self._active -= 1
             self._free.put(slot)
+
+    def _worker_role(self, escalated: bool) -> tuple[str, ModelConfig]:
+        models = self.cfg.models
+        if escalated and models.escalation is not None:
+            return "worker-escalated", models.escalation
+        return "worker", models.worker
+
+    def _should_escalate(self, result: WorkerResult) -> bool:
+        """A task that failed on its own, not one stopped by time, budget or another's error."""
+        if self.s.make_escalation is None or self.cfg.models.escalation is None:
+            return False
+        if result.status != "failed" or TIME_UP in result.reason or STOPPED in result.reason:
+            return False
+        stop = self._stop()
+        if stop is not None:
+            self.warnings.append(f"{result.task_id} was not escalated: {stop}")
+            return False
+        return True
 
     def _bill_fatal(self, role: str, model: ModelConfig, e: BaseException) -> None:
         found = attached_usage(e)
@@ -390,7 +420,11 @@ class _Build:
             record.summary = result.summary
 
     def _run_group(
-        self, group: Sequence[PlanTask], round_no: int, findings: Mapping[str, Sequence[Finding]]
+        self,
+        group: Sequence[PlanTask],
+        round_no: int,
+        findings: Mapping[str, Sequence[Finding]],
+        escalate: frozenset[str] = frozenset(),
     ) -> None:
         base = self.git.head(self.integration)
         runnable: list[PlanTask] = []
@@ -401,25 +435,60 @@ class _Build:
                 self.records[t.id].reason = f"depends on {', '.join(blocked)}, which did not finish"
             else:
                 runnable.append(t)
+        results = self._pool(runnable, base, round_no, findings, escalate)
+        retry = [
+            t
+            for t, r in zip(runnable, results, strict=True)
+            if t.id not in escalate and self._should_escalate(r)
+        ]
+        # A failed task tries once more from the same base, with the stronger model.
+        again = dict(
+            zip(
+                [t.id for t in retry],
+                self._pool(retry, base, round_no, findings, frozenset(t.id for t in retry)),
+                strict=True,
+            )
+        )
+        model = self.cfg.models.escalation
+        for t, result in zip(runnable, results, strict=True):
+            if model is not None and (t.id in escalate or t.id in again):
+                self.records[t.id].escalated_to = model.model
+            self._record(t, again.get(t.id, result))
+
+    def _pool(
+        self,
+        tasks: Sequence[PlanTask],
+        base: str,
+        round_no: int,
+        findings: Mapping[str, Sequence[Finding]],
+        escalate: frozenset[str],
+    ) -> list[WorkerResult]:
+        if not tasks:
+            return []
         pool = ThreadPoolExecutor(max_workers=self.cfg.build.max_parallel)
         try:
             futures = [
-                pool.submit(self._work, t, base, round_no, findings.get(t.id, ())) for t in runnable
+                pool.submit(self._work, t, base, round_no, findings.get(t.id, ()), t.id in escalate)
+                for t in tasks
             ]
             results = [f.result() for f in futures]
         except BaseException:
             pool.shutdown(wait=True, cancel_futures=True)
             raise
         pool.shutdown()
-        for t, result in zip(runnable, results, strict=True):
-            self._record(t, result)
+        return results
 
     def _run_tasks(
-        self, tasks: Sequence[PlanTask], round_no: int, findings: Mapping[str, Sequence[Finding]]
+        self,
+        tasks: Sequence[PlanTask],
+        round_no: int,
+        findings: Mapping[str, Sequence[Finding]],
+        escalate: frozenset[str] = frozenset(),
     ) -> None:
         depth = levels(self.tasks)
         for level in sorted({depth[t.id] for t in tasks}):
-            self._run_group([t for t in tasks if depth[t.id] == level], round_no, findings)
+            group = [t for t in tasks if depth[t.id] == level]
+            self._run_group(group, round_no, findings, escalate)
 
     def _unfinished(self) -> tuple[Outcome, str] | None:
         records = [self.records[t.id] for t in self.tasks]
@@ -656,7 +725,12 @@ class _Build:
             named: dict[str, list[Finding]] = {}
             for f in blocked:
                 named.setdefault(f.task_id, []).append(f)
-            self._run_tasks([t for t in self.tasks if t.id in named], round_no + 1, named)
+            # A task the reviewer blocks again after a correction round gets the stronger model.
+            again = frozenset(t for t in named if self._corrected[t] > 0)
+            escalate = again if self.cfg.models.escalation is not None else frozenset()
+            for t in named:
+                self._corrected[t] += 1
+            self._run_tasks([t for t in self.tasks if t.id in named], round_no + 1, named, escalate)
             stopped = self._unfinished_or_late()
             if stopped is not None:
                 return report(*stopped)

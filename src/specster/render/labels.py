@@ -50,6 +50,7 @@ LABELS: dict[str, dict[str, str]] = {
         "st_done": "done",
         "st_failed": "failed",
         "st_skipped": "skipped",
+        "escalated": "escalated to {model}",
         "st_not_started": "not started",
         "hint_default_branch": "Run the build from the default branch.",
         "hint_branch_exists": (
@@ -143,6 +144,7 @@ LABELS: dict[str, dict[str, str]] = {
         "st_done": "hecha",
         "st_failed": "fallida",
         "st_skipped": "omitida",
+        "escalated": "escalada a {model}",
         "st_not_started": "sin empezar",
         "hint_default_branch": "Lanza la construcci\u00f3n desde la rama por defecto.",
         "hint_branch_exists": (

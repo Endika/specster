@@ -95,6 +95,27 @@ failure cases described there. Whichever it was, fix the cause and add `ai-build
 if a branch was already pushed, delete it (or merge/close its pull request) first - Specster's
 own existing-branch error is what stops a retry from reusing or overwriting it.
 
+## Model escalation
+
+With `models.escalation` set, a task its worker could not finish gets one more try with that
+stronger model instead of failing the build:
+
+```yaml
+models:
+  escalation: {provider: anthropic, model: claude-opus-5-5}
+```
+
+- A task that fails on its own (no `submit_task` within its turns, or tests still red) runs once
+  more from the same base, in a fresh tree, with the escalation model. If that fails too, the
+  task fails as before. A task stopped by the time limit, the budget or another worker's fatal
+  error is never escalated.
+- A task the reviewer blocks again after a correction round gets its next round with the
+  escalation model.
+- The retry is billed as its own role, `worker-escalated`, counts towards
+  `budget.max_usd_per_build`, and only starts while the budget allows; otherwise the comment
+  says it was not escalated and why. The task table marks the task "escalated to <model>".
+- It is off by default, since it spends money nobody asked for.
+
 ## Toolchains for other languages
 
 The image carries [mise](https://mise.jdx.dev), pinned and checked against its release's sha256.

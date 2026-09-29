@@ -28,6 +28,7 @@ from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
 from specster.schemas import PlanTask
 from specster.skills import load_skills
+from specster.workspace import CONFIG_PATH
 from tests.fakes import ScriptBook, ScriptedModel, make_repo
 from tests.test_approved import T0, human
 from tests.test_sandbox import ROOT_ONLY
@@ -74,12 +75,18 @@ def setup(
     time_left: Callable[[], float] | None = None,
     gate_base: bool = False,
     files: Mapping[str, str] | None = None,
+    escalation: ChatModel | None = None,
 ) -> BuildSetup:
     repo = tmp_path / "repo"
     git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n", **(files or {})})
     # The fixtures' test commands fail on the base on purpose, so only the base-gate tests gate.
     build = (build or BuildConfig()).model_copy(update={"allow_failing_base": not gate_base})
     cfg = Config(build=build, budget=budget or BudgetConfig())
+    if escalation is not None:
+        stronger = ModelConfig(provider="anthropic", model="claude-opus-5-5")
+        cfg = cfg.model_copy(
+            update={"models": cfg.models.model_copy(update={"escalation": stronger})}
+        )
     skills = load_skills(repo, SkillsConfig(), "build", lambda *_: b"", None)
     spec = ApprovedSpec(human(1, T0), tasks, "0" * 64, "The spec text.")
     scratch = tmp_path / "scratch"
@@ -105,6 +112,8 @@ def setup(
         0.0,
         cfg.persona,
         time_left,
+        CONFIG_PATH,
+        (lambda: escalation) if escalation is not None else None,
     )
 
 
@@ -300,6 +309,74 @@ def test_a_green_base_is_checked_once_and_the_build_goes_on(tmp_path: Path) -> N
         setup(tmp_path, [task("a", "app.py")], book, reviewer, build, gate_base=True)
     )
     assert report.status == "approved" and report.test_runs == 3
+
+
+def never_submits() -> list[list[ToolCall] | str]:
+    return ["thinking", "still thinking"]
+
+
+def test_a_failed_task_gets_one_more_try_with_the_escalation_model(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [never_submits()]})
+    stronger = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([verdict("approve")]),
+        escalation=stronger,
+    )
+    report = run_build(s)
+    assert report.status == "approved" and report.tasks[0].escalated_to == "claude-opus-5-5"
+    assert set(s.ledger.roles()) == {"worker", "worker-escalated", "reviewer"}
+    assert subjects(s.git, s.base) == ["feat(a): set A"]
+
+
+def test_a_task_that_fails_with_both_models_stays_failed(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [never_submits()]})
+    stronger = ScriptBook({'id="a"': [never_submits()]})
+    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([]), escalation=stronger)
+    report = run_build(s)
+    assert report.status == "failed" and report.tasks[0].status == "failed"
+    assert report.tasks[0].escalated_to == "claude-opus-5-5"
+    assert len(stronger.sessions['id="a"']) == 1
+
+
+def test_without_an_escalation_model_a_failed_task_is_not_retried(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [never_submits()]})
+    report = run_build(setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([])))
+    assert report.status == "failed" and report.tasks[0].escalated_to is None
+    assert len(book.sessions['id="a"']) == 1
+
+
+def test_a_spent_build_budget_skips_the_escalation_and_says_so(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [never_submits()]})
+    stronger = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    budget = BudgetConfig(max_usd_per_build=0.000001)
+    s = setup(
+        tmp_path, [task("a", "app.py")], book, ScriptedModel([]), budget=budget, escalation=stronger
+    )
+    report = run_build(s)
+    assert report.tasks[0].escalated_to is None and "a" not in stronger.sessions
+    assert any(w.startswith("a was not escalated: ") for w in report.warnings)
+
+
+def test_a_task_blocked_again_after_a_correction_round_is_escalated(tmp_path: Path) -> None:
+    bad = {"task_id": "a", "file": "app.py", "severity": "important", "description": "A must be 3"}
+    book = ScriptBook(
+        {
+            'id="a"': [
+                [write("app.py", "A = 1\n"), done("feat(a): set A")],
+                [write("app.py", "A = 2\n"), done("fix(a): set A to 2")],
+            ]
+        }
+    )
+    stronger = ScriptBook({'id="a"': [[write("app.py", "A = 3\n"), done("fix(a): set A to 3")]]})
+    reviewer = ScriptedModel([verdict("changes", bad), verdict("changes", bad), verdict("approve")])
+    s = setup(tmp_path, [task("a", "app.py")], book, reviewer, escalation=stronger)
+    report = run_build(s)
+    assert report.status == "approved" and report.review_rounds == 2
+    assert subjects(s.git, s.base) == ["feat(a): set A", "fix(a): set A to 2", "fix(a): set A to 3"]
+    assert report.tasks[0].escalated_to == "claude-opus-5-5"
 
 
 def test_blocking_findings_go_back_to_their_task_for_a_correction_round(tmp_path: Path) -> None:

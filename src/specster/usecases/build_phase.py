@@ -82,16 +82,21 @@ def _low_budget(run: RunContext, known: float) -> list[str]:
 
 def _models(
     run: RunContext, make_model: Callable[[ModelConfig], ChatModel]
-) -> tuple[Callable[[], ChatModel], Callable[[], ChatModel]]:
+) -> tuple[Callable[[], ChatModel], Callable[[], ChatModel], Callable[[], ChatModel] | None]:
     models = run.cfg.models
-    for key, cfg in (("models.worker", models.worker), ("models.reviewer", models.reviewer)):
+    roles = [("models.worker", models.worker), ("models.reviewer", models.reviewer)]
+    escalation = models.escalation
+    if escalation is not None:
+        roles.append(("models.escalation", escalation))
+    for key, cfg in roles:
         try:
             make_model(cfg)
         except ProviderConfigError as e:
             raise Failure(
                 describe(e), hint(run.cfg.persona.language, "hint_role_model", key=key)
             ) from e
-    return lambda: make_model(models.worker), lambda: make_model(models.reviewer)
+    stronger = (lambda: make_model(escalation)) if escalation is not None else None
+    return lambda: make_model(models.worker), lambda: make_model(models.reviewer), stronger
 
 
 def _skill_facts(books: Sequence[SkillBook]) -> dict[str, Any]:
@@ -162,6 +167,7 @@ class _Tools:
     branch: str
     make_worker: Callable[[], ChatModel]
     make_reviewer: Callable[[], ChatModel]
+    make_escalation: Callable[[], ChatModel] | None
     books: list[SkillBook]
     repo_map: RepoMap
 
@@ -281,7 +287,7 @@ class BuildPhase:
         socket = docker_socket_problem(DOCKER_SOCKET)
         if socket is not None:
             raise Failure(socket, hint(self.lang, "hint_docker_socket", label=labels.build))
-        make_worker, make_reviewer = _models(run, self.make_model)
+        make_worker, make_reviewer, make_escalation = _models(run, self.make_model)
         build_skills = load_phase_skills(run, self.fetch, "build")
         review_skills = load_phase_skills(run, self.fetch, "review")
         run.warnings += build_skills.warnings + [
@@ -290,7 +296,14 @@ class BuildPhase:
         repo_map = build_repo_map(
             Workspace(env.workspace, cfg.repo_map.exclude), cfg.repo_map.max_tokens
         )
-        return _Tools(branch, make_worker, make_reviewer, [build_skills, review_skills], repo_map)
+        return _Tools(
+            branch,
+            make_worker,
+            make_reviewer,
+            make_escalation,
+            [build_skills, review_skills],
+            repo_map,
+        )
 
     def _build(
         self, approval: _Approval, tools: _Tools, scratch: Path
@@ -357,6 +370,7 @@ class BuildPhase:
                     cfg.persona,
                     time_left,
                     env.config_path,
+                    tools.make_escalation,
                 )
             )
         except SandboxError as e:

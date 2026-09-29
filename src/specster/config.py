@@ -60,6 +60,8 @@ class ModelsConfig(_Strict):
     planner: ModelConfig = ModelConfig()
     worker: ModelConfig = Field(default_factory=_worker_default)
     reviewer: ModelConfig = Field(default_factory=_reviewer_default)
+    # A stronger worker a failed task, or one the reviewer blocks twice, gets one more try with.
+    escalation: ModelConfig | None = None
 
     @field_validator("worker", "reviewer", mode="before")
     @classmethod
