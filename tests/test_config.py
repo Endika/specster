@@ -105,3 +105,9 @@ def test_two_labels_with_the_same_name_are_rejected(tmp_path: Path) -> None:
     path.write_text("labels:\n  build: ai-spec\n")
     with pytest.raises(ConfigError, match=r"labels\.spec and labels\.build are both 'ai-spec'"):
         load_config(path)
+
+
+def test_the_escalation_model_is_off_unless_set(tmp_path: Path) -> None:
+    assert load_config(write(tmp_path, "")).models.escalation is None
+    cfg = load_config(write(tmp_path, "models:\n  escalation: {model: claude-opus-5-5}\n"))
+    assert cfg.models.escalation is not None and cfg.models.escalation.model == "claude-opus-5-5"

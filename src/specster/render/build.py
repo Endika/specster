@@ -43,6 +43,8 @@ class BuildView:
 def _status(record: TaskRecord, lab: Mapping[str, str]) -> str:
     key = "not_started" if record.status == "pending" else record.status
     status = lab[f"st_{key}"]
+    if record.escalated_to:
+        status += f" ({lab['escalated'].format(model=f'`{_code(record.escalated_to)}`')})"
     return (
         f"{status}: {_cell(record.reason)}" if record.status != "done" and record.reason else status
     )

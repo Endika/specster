@@ -98,6 +98,7 @@ models:
   planner:  {provider: anthropic, model: claude-opus-5-5}                  # writes the spec
   worker:   {provider: anthropic, model: claude-sonnet-5}                  # writes the code
   reviewer: {provider: anthropic, model: claude-opus-5-5, effort: medium}  # reviews the build
+  # escalation: {provider: anthropic, model: claude-opus-5-5}  # retry a failed task, off by default
 budget:
   max_usd_per_issue: 8.0    # every run on the issue added up
   max_usd_per_build: 5.0

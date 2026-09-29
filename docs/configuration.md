@@ -134,6 +134,8 @@ models:
     provider: anthropic
     model: claude-opus-5-5
     effort: medium
+  escalation: null              # a stronger worker for one more try at a failed or twice-blocked task;
+                                # e.g. {provider: anthropic, model: claude-opus-5-5}; see docs/build.md
 
 labels:
   spec: ai-spec                 # trigger label for the spec phase

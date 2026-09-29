@@ -157,6 +157,24 @@ def test_a_red_base_is_reported_with_its_test_output_and_no_model_cost(tmp_path:
     assert "needs-human" in tr.issue.labels and not list((remote / "refs" / "heads").iterdir())
 
 
+def test_a_configured_escalation_model_rescues_a_failed_task_and_the_comment_says_so(
+    tmp_path: Path,
+) -> None:
+    config = "models:\n  escalation: {provider: anthropic, model: claude-opus-5}\n"
+    e, tr, _ = world(tmp_path, config)
+    stuck = ScriptBook({'id="a"': [["thinking", "still thinking"]]})
+    reviewer = approve()
+
+    def make(cfg: ModelConfig) -> ChatModel:
+        return {"claude-sonnet-5": stuck, "claude-opus-5": book()}.get(cfg.model, reviewer)
+
+    code = main(e, tr, make, lambda *_: b"", timer=lambda: 0.0, identity=unprivileged)
+    assert code == 0 and tr.pulls
+    assert "(escalated to `claude-opus-5`)" in tr.posted[-1]
+    m = last_marker(tr.posted[-1])
+    assert m is not None and set(m.roles) == {"worker", "worker-escalated", "reviewer"}
+
+
 def test_a_build_without_approval_pushes_the_branch_and_asks_for_a_human(tmp_path: Path) -> None:
     e, tr, _ = world(tmp_path, "  max_review_rounds: 0\n")
     bad = {"task_id": "a", "file": "app.py", "severity": "critical", "description": "wrong value"}
