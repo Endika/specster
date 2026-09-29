@@ -18,8 +18,8 @@
       - Other formats
     files: [reports/export.py, tests/test_export.py]
     approach: >
-      Use csv.DictWriter over report.rows with the keys of the first row as the header,
-      writing to an io.StringIO with delimiter ",", and return the text. An empty report
+      Use csv.DictWriter over report.rows with the union of every row's keys, in first-seen
+      order, as the header, writing to an io.StringIO with delimiter ",", and return the text. An empty report
       returns an empty string.
     risks:
       - Rows with different keys; DictWriter raises on unknown keys, so the header is the union
