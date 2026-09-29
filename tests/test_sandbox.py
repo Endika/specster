@@ -366,8 +366,12 @@ def ring(count: int, fork: bool) -> str:
     extra = ", 'fork'" if fork else ""
     return (
         "import subprocess, sys, time\n"
-        f"kids = [subprocess.Popen([sys.executable, '-c', {RING_MEMBER!r}{extra}]) "
-        f"for _ in range({count})]\n"
+        # Forking members can fill RLIMIT_NPROC before the last one starts; that is the point.
+        f"for _ in range({count}):\n"
+        "    try:\n"
+        f"        subprocess.Popen([sys.executable, '-c', {RING_MEMBER!r}{extra}])\n"
+        "    except OSError:\n"
+        "        pass\n"
         "time.sleep(0.5)\n"
     )
 
