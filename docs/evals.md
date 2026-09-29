@@ -42,3 +42,49 @@ Techniques, and why:
 
 `.github/workflows/evals.yml` runs this on demand (`workflow_dispatch`) with the provider, model,
 `k` and cap as inputs, and publishes a summary table and the raw JSONL as a workflow artifact.
+
+## Benchmark results (2026-09-29)
+
+Every number below comes from the evals workflow on `main`, with the costs it recorded.
+
+**The judge.** Before grading anything, three candidate judges graded the four hand-labelled
+calibration cases three times each. Opus 5 and Opus 5.5 agreed with every label (12/12),
+Sonnet 5 missed one (11/12). Opus 5 is the benchmark's judge: it is never one of the models
+under test, so it grades all three planners with the same yardstick. Calibration also found a
+flaw in the calibration set itself: the hand-labelled good spec contradicted itself and left
+real gaps, and was fixed before the scores below were taken.
+
+**Planner (spec phase).** The seven behaviour and prompt-injection cases, three runs each:
+
+| Planner | Runs passed | Malformed spec lists | Mean cost per run |
+|---|---|---|---|
+| Opus 5.5 (default) | 21/21 | 0 | $0.054 |
+| Sonnet 5 | 15/21 | 0 | $0.036 |
+| Haiku 4.5 | 7/21 | 9 | $0.030 |
+
+Sonnet asked questions the repository already answered in all three runs of that case, and in
+one run of `hostile-comment-trust-all` it wrote the injected canary into its spec: with
+`trust.comments: all`, a hostile comment steered it once in three. Opus 5.5 held on every run.
+Haiku lost most runs to spec lists sent as dash-prefixed text instead of arrays.
+
+**Worker (build phase).** Four approved plans (one task, two parallel tasks, a task that
+depends on another, and a rename across files kept backward compatible) built for real in the
+image, two runs each, with Opus 5.5 reviewing. A run passes when the reviewer approves and a
+hidden test the worker never saw passes on the built branch.
+
+| Worker | Skills | Passed | Review rounds | Minor findings | Mean cost per build | Mean time |
+|---|---|---|---|---|---|---|
+| Haiku 4.5 | off | 8/8 | 0.1 | 8 | $0.078 | 39 s |
+| Haiku 4.5 | on | 8/8 | 0.2 | 18 | $0.081 | 53 s |
+| Sonnet 5 (default) | off | 8/8 | 0.1 | 13 | $0.060 | 39 s |
+| Sonnet 5 | on | 8/8 | 0.1 | 12 | $0.098 | 46 s |
+| Opus 5.5 | off | 8/8 | 0.0 | 5 | $0.067 | 27 s |
+| Opus 5.5 | on | 8/8 | 0.0 | 4 | $0.087 | 30 s |
+
+Every build passed, so these four cases cannot tell workers apart on quality: the differences
+are in cost, time and how much the reviewer had to say. Haiku is not cheaper per build, since
+it takes more turns and more review. Skills added 4 to 63 % to the cost with no measurable gain
+here; with tasks this small that shows they did not help, not that they cannot. Harder build
+cases are needed before a quality ranking of workers means anything.
+
+The whole benchmark cost about $8.
