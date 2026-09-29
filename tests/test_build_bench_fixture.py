@@ -47,6 +47,23 @@ REFERENCE = {
             "    return '\\n'.join(lines)\n"
         ),
     },
+    "rename-with-alias": {
+        "reports/model.py": (
+            "import warnings\n\n\nclass Report:\n"
+            "    def __init__(self, records=None, *, rows=None):\n"
+            "        if rows is not None:\n"
+            "            warnings.warn('rows is now records', DeprecationWarning, stacklevel=2)\n"
+            "            records = rows\n"
+            "        self.records = list(records) if records is not None else []\n\n"
+            "    @property\n    def rows(self):\n"
+            "        warnings.warn('rows is now records', DeprecationWarning, stacklevel=2)\n"
+            "        return self.records\n"
+        ),
+        "reports/export.py": (
+            "import json\n\nfrom reports.model import Report\n\n\n"
+            "def to_json(report: Report) -> str:\n    return json.dumps(report.records)\n"
+        ),
+    },
     "total-then-summary": {
         "reports/model.py": (
             "from dataclasses import dataclass, field\n\n\n@dataclass\nclass Report:\n"
