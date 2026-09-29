@@ -60,6 +60,12 @@ jobs:
         run: |
           canary="$(openssl rand -hex 16)"
           docker run --rm --network none -e SPECSTER_ISOLATION_CANARY="$canary" specster:ci --isolation-check
+      - name: "throwaway: the fork-bomb tests 30 times, with the survivor detail"
+        run: |
+          git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint sh \
+            -e UV_PROJECT_ENVIRONMENT=/src/.venv specster:ci -c \
+            'mkdir /src && cd /src && tar xf - && uv sync -q --all-groups --locked && nproc &&
+            for i in $(seq 30); do uv run pytest -q -x -p no:randomly tests/test_sandbox.py -k "fork_bomb or forking_sigcont" 2>&1 | grep -E "survived the kill|passed|failed" | tail -2; done'
       - name: the full suite as root inside the image, root-only sandbox tests included
         run: |
           git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint sh \
