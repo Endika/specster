@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import (
@@ -158,6 +159,31 @@ _TOOL_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 Command = Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
 
 
+_LOOPBACK = ("127.0.0.1", "localhost")
+
+
+class PreviewConfig(_Strict):
+    serve_command: Command
+    ready_url: str
+    seed_command: Command | None = None
+    ready_timeout_s: int = Field(default=60, gt=0, le=300)
+
+    @field_validator("ready_url")
+    @classmethod
+    def _loopback(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if parts.scheme != "http" or parts.hostname not in _LOOPBACK or parts.username:
+            raise ValueError("must be an http:// URL on 127.0.0.1 or localhost")
+        if parts.port is None:
+            raise ValueError("must name the port the app listens on, e.g. :8000")
+        return value
+
+    @property
+    def origin(self) -> str:
+        parts = urlsplit(self.ready_url)
+        return f"{parts.scheme}://{parts.hostname}:{parts.port}"
+
+
 class BuildConfig(_Strict):
     max_parallel: int = Field(default=2, ge=1, le=8)
     max_turns_per_task: int = Field(default=40, gt=1)
@@ -174,6 +200,7 @@ class BuildConfig(_Strict):
     close_issue: bool = True
     allow_comments_after_spec: bool = False
     allow_failing_base: bool = False
+    preview: PreviewConfig | None = None
     allow_workflow_changes: bool = False
     allow_config_changes: bool = False
 

@@ -68,3 +68,9 @@ def test_the_planner_is_told_to_write_fields_as_plain_text_not_json_escapes() ->
 def test_the_planner_is_told_how_big_a_task_may_be() -> None:
     prompt = system_prompt(PersonaConfig(), [])
     assert "at most 5 files" in prompt and "a rename" in prompt
+
+
+def test_prompt_asks_for_evidence_only_with_preview() -> None:
+    assert "evidence" not in system_prompt(PersonaConfig(), [], preview=False)
+    text = system_prompt(PersonaConfig(), [], preview=True)
+    assert "evidence" in text and "GET" in text

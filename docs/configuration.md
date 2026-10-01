@@ -204,6 +204,13 @@ build:
   allow_failing_base: false            # true builds even when test_command already fails before any task
   allow_workflow_changes: false        # true lets a task change .github/workflows/** and .github/actions/**
   allow_config_changes: false          # true lets a task change .github/specster/** and the config_path file
+  # Before/after evidence for the pull request (off unless set): Specster starts the app at
+  # the base commit and at the branch head and sends both the requests the spec lists.
+  preview:
+    serve_command: [python, -m, app]           # runs in the sandbox; must keep running
+    ready_url: http://127.0.0.1:8000/health    # polled until it answers; loopback only
+    seed_command: [python, seed.py]            # optional, before serve_command; no real data
+    ready_timeout_s: 60                        # at most 300
 
 pricing: {}                            # override or add prices, USD per million tokens:
                                         #   claude-haiku-4-5: {input: 1.0, output: 5.0, cache_read: 0.1, cache_write: 1.25}

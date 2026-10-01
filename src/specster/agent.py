@@ -267,6 +267,7 @@ def run_agent(
     max_questions: int = 5,
     *,
     revision: bool = False,
+    preview: bool = False,
 ) -> AgentOutcome:
     def questions(args: dict[str, Any]) -> _Accepted:
         result = QuestionsResult.model_validate(args)
@@ -281,6 +282,14 @@ def run_agent(
         result = SpecResult.model_validate(args)
         if result.changes and not revision:
             raise SubmissionError("changes is only for revising a previous spec; leave it empty")
+        if result.evidence and not preview:
+            raise SubmissionError(
+                "evidence needs build.preview in the repository's config, which is not set; "
+                "leave evidence empty"
+            )
+        names = [e.name for e in result.evidence]
+        if len(set(names)) != len(names):
+            raise SubmissionError("evidence names must be unique")
         tasks, fixes = normalize_plan(result.tasks)
         return result, tasks, fixes
 
