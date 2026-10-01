@@ -5,6 +5,7 @@ import pytest
 from specster.config import ModelConfig, Provider
 from specster.llm.factory import _ADAPTERS, ProviderConfigError, build_chat_model
 from specster.llm.openai_chat import OpenAIChat
+from specster.llm.traced import TracedModel
 
 
 @pytest.mark.parametrize(
@@ -85,8 +86,8 @@ def test_openai_compatible_needs_no_key() -> None:
 )
 def test_openai_token_parameter_defaults_per_provider(cfg: ModelConfig, param: str) -> None:
     model = build_chat_model(cfg, {}, replay=True)
-    assert isinstance(model, OpenAIChat)
-    assert model.token_param == param
+    assert isinstance(model, TracedModel) and isinstance(model.inner, OpenAIChat)
+    assert model.inner.token_param == param
 
 
 @pytest.mark.parametrize(

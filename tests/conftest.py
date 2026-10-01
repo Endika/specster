@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from opentelemetry import metrics
+from opentelemetry import metrics, trace
 from opentelemetry.sdk.metrics import MeterProvider, _Gauge
 from opentelemetry.sdk.metrics.export import AggregationTemporality, Gauge, InMemoryMetricReader
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 # Imported here under a filter of its own: pytest lets a command-line `-W error` override any
 # ini filterwarnings entry, and google-genai trips a Python 3.14 deprecation at import time.
@@ -62,6 +65,28 @@ def metric_points(metric_reader: InMemoryMetricReader) -> Callable[[], list[Poin
             if isinstance(m.data, Gauge)
             for p in m.data.data_points
         ]
+
+    read()
+    return read
+
+
+@pytest.fixture(scope="session")
+def span_exporter() -> InMemorySpanExporter:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    return exporter
+
+
+@pytest.fixture
+def spans(span_exporter: InMemorySpanExporter) -> Callable[[], list[ReadableSpan]]:
+    """Reads and clears the spans ended since the previous call, starting empty in each test."""
+
+    def read() -> list[ReadableSpan]:
+        out = list(span_exporter.get_finished_spans())
+        span_exporter.clear()
+        return out
 
     read()
     return read

@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 from opentelemetry import metrics, trace
@@ -16,6 +16,8 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import Span, StatusCode
+from opentelemetry.util.types import Attributes
 
 _ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT"
 _METRICS_ENDPOINT = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
@@ -85,6 +87,26 @@ class Telemetry:
             if self.stop_span_exporter is not None:
                 with contextlib.suppress(Exception):
                     self.stop_span_exporter()
+
+
+def mark_error(span: Span, e: BaseException) -> None:
+    # Only the class: a message can carry test output or issue text.
+    span.set_status(StatusCode.ERROR)
+    span.set_attribute("error.type", type(e).__name__)
+
+
+@contextlib.contextmanager
+def span(name: str, attributes: Attributes = None) -> Iterator[Span]:
+    """A child of the current span; a no-op until a tracer provider is installed."""
+    tracer = trace.get_tracer("specster")
+    with tracer.start_as_current_span(
+        name, attributes=attributes, record_exception=False, set_status_on_exception=False
+    ) as current:
+        try:
+            yield current
+        except BaseException as e:
+            mark_error(current, e)
+            raise
 
 
 def configure(environ: Mapping[str, str], version: str, instance_id: str) -> Telemetry | None:

@@ -1,3 +1,4 @@
+import contextvars
 import json
 import math
 import os
@@ -37,6 +38,7 @@ from specster.review import blocking, run_review
 from specster.sandbox import RunResult, Sandbox, Server
 from specster.schemas import Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
+from specster.telemetry import span
 from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
 from specster.workspace import CONFIG_PATH, TaskWorkspace, ToolError, Workspace, has_git_component
 
@@ -307,6 +309,24 @@ class _Build:
         findings: Sequence[Finding],
         escalated: bool = False,
     ) -> WorkerResult:
+        attributes = {
+            "specster.task.id": task.id,
+            "specster.task.round": round_no,
+            "specster.task.escalated": escalated,
+        }
+        with span(f"task {task.id}", attributes) as current:
+            result = self._attempt(task, base, round_no, findings, escalated)
+            current.set_attribute("specster.task.status", result.status)
+            return result
+
+    def _attempt(
+        self,
+        task: PlanTask,
+        base: str,
+        round_no: int,
+        findings: Sequence[Finding],
+        escalated: bool,
+    ) -> WorkerResult:
         stop = "the build was aborted" if self._aborted.is_set() else self._stop()
         if stop is not None:
             return WorkerResult(
@@ -473,8 +493,18 @@ class _Build:
             return []
         pool = ThreadPoolExecutor(max_workers=self.cfg.build.max_parallel)
         try:
+            # One context per task: the task spans hang off the current one, and a context
+            # cannot be entered by two threads at once.
             futures = [
-                pool.submit(self._work, t, base, round_no, findings.get(t.id, ()), t.id in escalate)
+                pool.submit(
+                    contextvars.copy_context().run,
+                    self._work,
+                    t,
+                    base,
+                    round_no,
+                    findings.get(t.id, ()),
+                    t.id in escalate,
+                )
                 for t in tasks
             ]
             results = [f.result() for f in futures]
@@ -509,8 +539,12 @@ class _Build:
                     return outcome, f"{r.task.id}: {r.reason}"
         return None
 
-    def _final_tests(self, tag: str) -> tuple[RunResult, bool]:
+    def _final_tests(self, round_no: int | None) -> tuple[RunResult, bool]:
         """The integrated branch's test result and whether it is the failed setup's."""
+        with span("final_tests", {} if round_no is None else {"specster.round": round_no}):
+            return self._run_final_tests("base" if round_no is None else str(round_no))
+
+    def _run_final_tests(self, tag: str) -> tuple[RunResult, bool]:
         if self._final is None:
             self._final = self.s.make_sandbox(FINAL_SLOT)
         sandbox = self._final
@@ -595,6 +629,10 @@ class _Build:
 
     def _evidence(self) -> EvidenceRun | None:
         """The approved requests at base and head; never raises, never changes the outcome."""
+        with span("evidence"):
+            return self._collect_evidence()
+
+    def _collect_evidence(self) -> EvidenceRun | None:
         requests = self.s.spec.evidence
         preview = self.cfg.build.preview
         if not requests:
@@ -664,7 +702,11 @@ class _Build:
                 return None, f"{which} failed (exit {res.exit_code}{timed_out})"
         return sandbox.start(preview.serve_command, tree, home, f"serve {side}"), None
 
-    def _review(self, tests: str) -> ReviewResult:
+    def _review(self, tests: str, round_no: int) -> ReviewResult:
+        with span("review", {"specster.round": round_no}):
+            return self._run_review(tests)
+
+    def _run_review(self, tests: str) -> ReviewResult:
         head = self.git.head(self.integration)
         diff = self.git.diff(self.s.base, head)
         note = None
@@ -755,7 +797,7 @@ class _Build:
                 return report("failed", "the toolchains could not be installed")
         if build.test_command is not None and not build.allow_failing_base:
             # A red base would fail every task's tests whatever its worker writes.
-            final, setup_failed = self._final_tests("base")
+            final, setup_failed = self._final_tests(None)
             if not final.ok:
                 what = "setup_command fails" if setup_failed else "tests fail"
                 return report(
@@ -777,12 +819,12 @@ class _Build:
                 return report("budget_exhausted", stop)
             setup_failed = False
             if self.cfg.build.test_command is not None:
-                final, setup_failed = self._final_tests(str(round_no))
+                final, setup_failed = self._final_tests(round_no)
                 stop = self._stop()
                 if stop is not None:
                     return report("budget_exhausted", stop)
             try:
-                review = self._review(_test_text(final, setup_failed))
+                review = self._review(_test_text(final, setup_failed), round_no)
             except AgentError as e:
                 late = self._time_stop()
                 if late is not None:
