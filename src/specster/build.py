@@ -7,6 +7,7 @@ import shutil
 import stat
 import sys
 import threading
+import traceback
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -616,9 +617,11 @@ class _Build:
             def start_side(side: Side) -> tuple[Server | None, str | None]:
                 return self._start_side(sandbox, preview, side, enclosures, failed)
 
-            with httpx.Client() as client:
+            # The app is on loopback: an HTTP(S)_PROXY from the runner must not catch it.
+            with httpx.Client(trust_env=False) as client:
                 run = collect(start_side, preview, requests, client, self.s.time_left or _forever)
         except Exception as e:
+            traceback.print_exc()
             self.warnings.append(f"evidence: {type(e).__name__}: {e}")
             return None
         finally:
@@ -744,7 +747,8 @@ class _Build:
             )
 
         build = self.cfg.build
-        if build.setup_command is not None or build.test_command is not None:
+        previewed = build.preview is not None and bool(self.s.spec.evidence)
+        if build.setup_command is not None or build.test_command is not None or previewed:
             failed_tools = self._install_tools()
             if failed_tools is not None:
                 final = failed_tools

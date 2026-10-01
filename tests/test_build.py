@@ -1008,6 +1008,7 @@ def evidence_setup(
     preview: PreviewConfig | None,
     reviewer: ChatModel | None = None,
     time_left: Callable[[], float] | None = None,
+    tools: dict[str, str] | None = None,
 ) -> BuildSetup:
     book = ScriptBook({'id="a"': [[write("app.py", head_app), done("feat(a): list users")]]})
     return setup(
@@ -1015,7 +1016,7 @@ def evidence_setup(
         [task("a", "app.py")],
         book,
         reviewer or ScriptedModel([verdict("approve")]),
-        build=BuildConfig(preview=preview, max_review_rounds=0),
+        build=BuildConfig(preview=preview, max_review_rounds=0, tools=tools or {}),
         files={"app.py": base_app},
         evidence=EVIDENCE,
         time_left=time_left,
@@ -1086,6 +1087,52 @@ def test_a_server_that_forks_a_listener_frees_the_port_for_the_head(tmp_path: Pa
     assert ev is not None and not ev.problems
     head = ev.items[1].head
     assert head is not None and head.status == 200
+
+
+@LOCAL
+def test_evidence_never_goes_through_a_proxy_in_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    port = free_port()
+    s = evidence_setup(tmp_path, app(port, BASE_ROUTES), app(port, HEAD_ROUTES), preview_for(port))
+    ev = run_build(s).evidence
+    assert ev is not None and not ev.problems
+    users = ev.items[0].base
+    assert users is not None and users.status == 200
+
+
+@LOCAL
+def test_a_preview_alone_gets_the_toolchains_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = fake_mise(tmp_path, monkeypatch).with_name("calls")
+    port = free_port()
+    serve = ["/bin/sh", "-c", f"faketool && exec {sys.executable} app.py"]
+    s = evidence_setup(
+        tmp_path,
+        app(port, BASE_ROUTES),
+        app(port, HEAD_ROUTES),
+        preview_for(port, serve),
+        tools={"node": "22"},
+    )
+    report = run_build(s)
+    assert report.status == "approved" and calls.read_text() == "install\nbin-paths\n"
+    assert report.evidence is not None and not report.evidence.problems
+
+
+@LOCAL
+def test_an_unexpected_evidence_error_is_a_warning_with_its_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    port = free_port()
+    s = evidence_setup(tmp_path, app(port, BASE_ROUTES), app(port, HEAD_ROUTES), preview_for(port))
+    (s.scratch / "evidence-base").mkdir()
+    report = run_build(s)
+    assert report.status == "approved" and report.evidence is None
+    assert any(w.startswith("evidence: FileExistsError") for w in report.warnings)
+    err = capsys.readouterr().err
+    assert "Traceback (most recent call last)" in err and "FileExistsError" in err
 
 
 def test_no_preview_means_no_evidence_run(tmp_path: Path) -> None:
