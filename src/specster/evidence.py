@@ -13,6 +13,8 @@ from specster.sandbox import Server
 from specster.schemas import EvidenceRequest
 
 BODY_MAX_BYTES = 64 * 1024
+# Deeper JSON stays text: the parser recurses per level, unbounded without a stack limit.
+JSON_MAX_DEPTH = 200
 CAPTURE_MAX_S = 30.0
 LOG_TAIL_CHARS = 4000
 ERROR_MAX_CHARS = 200
@@ -66,6 +68,28 @@ class EvidenceRun:
     logs: Mapping[str, str]
 
 
+def _too_deep(raw: bytes) -> bool:
+    depth = 0
+    in_string = escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:  # backslash
+                escaped = True
+            elif byte == 0x22:  # quote
+                in_string = False
+        elif byte == 0x22:
+            in_string = True
+        elif byte in (0x5B, 0x7B):  # [ {
+            depth += 1
+            if depth > JSON_MAX_DEPTH:
+                return True
+        elif byte in (0x5D, 0x7D):  # ] }
+            depth -= 1
+    return False
+
+
 def normalize(
     content_type: str, raw: bytes, total: int | None = None, more: bool = False
 ) -> tuple[str, bool]:
@@ -76,7 +100,7 @@ def normalize(
     """
     size = len(raw) if total is None else total
     whole = size == len(raw) and not more
-    if whole and "json" in content_type.lower():
+    if whole and "json" in content_type.lower() and not _too_deep(raw):
         try:
             pretty = json.dumps(json.loads(raw), indent=2, sort_keys=True, ensure_ascii=False)
         except (ValueError, RecursionError):
