@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/Endika/specster/compare/specster-v0.11.1...specster-v0.11.2) (2026-10-01)
+
+
+### Documentation
+
+* publish the harder build cases and model escalation results ([79f9dd3](https://github.com/Endika/specster/commit/79f9dd327f28d076ee343a2d7286137876571919))
+
 ## [0.11.1](https://github.com/Endika/specster/compare/specster-v0.11.0...specster-v0.11.1) (2026-10-01)
 
 
