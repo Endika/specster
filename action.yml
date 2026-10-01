@@ -41,7 +41,8 @@ outputs:
   outcome:
     description: >-
       questions, spec, refused, pr_opened, not_approved, build_failed, error,
-      budget_exhausted, or skipped when the event is not for Specster
+      budget_exhausted, cleaned when a closed pull request's evidence was removed,
+      or skipped when the event is not for Specster
 runs:
   using: docker
   image: docker://ghcr.io/endika/specster:v0.10.1 # x-release-please-version

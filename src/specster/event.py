@@ -4,7 +4,7 @@ from typing import Any, Literal, cast
 
 from specster.config import LabelsConfig
 
-RunPhase = Literal["spec", "build"]
+RunPhase = Literal["spec", "build", "cleanup"]
 
 
 class EventError(Exception):
@@ -14,11 +14,12 @@ class EventError(Exception):
 @dataclass(frozen=True)
 class Trigger:
     issue_number: int
-    kind: Literal["labeled", "dispatch"]
+    kind: Literal["labeled", "dispatch", "closed"]
     label: str | None
     sender: str
     sender_type: str
     dispatch_phase: RunPhase = "spec"
+    head_ref: str = ""
 
 
 def parse_event(
@@ -36,6 +37,12 @@ def parse_event(
         if phase not in ("spec", "build"):
             raise EventError("workflow_dispatch phase must be spec or build")
         return Trigger(int(dispatch_issue), "dispatch", None, login, kind, cast(RunPhase, phase))
+    if event_name == "pull_request":
+        if payload.get("action") != "closed":
+            raise EventError(f"unsupported event {event_name}/{payload.get('action')}")
+        pr = payload["pull_request"]
+        head_ref = str(pr["head"]["ref"])
+        return Trigger(int(pr["number"]), "closed", None, login, kind, head_ref=head_ref)
     if event_name != "issues" or payload.get("action") != "labeled":
         raise EventError(f"unsupported event {event_name}/{payload.get('action')}")
     issue = payload["issue"]
@@ -45,6 +52,9 @@ def parse_event(
 
 
 def skip_reason(trigger: Trigger, labels: LabelsConfig) -> str | None:
+    # Bots merge and close pull requests too, and a cleanup never writes to the issue.
+    if trigger.kind == "closed":
+        return None
     if trigger.sender_type == "Bot":
         return f"sender {trigger.sender} is a bot"
     if trigger.kind == "labeled" and trigger.label not in (labels.spec, labels.build):
@@ -55,6 +65,8 @@ def skip_reason(trigger: Trigger, labels: LabelsConfig) -> str | None:
 def phase_of(trigger: Trigger, labels: LabelsConfig) -> RunPhase:
     if trigger.kind == "dispatch":
         return trigger.dispatch_phase
+    if trigger.kind == "closed":
+        return "cleanup"
     if trigger.label == labels.build:
         return "build"
     return "spec"

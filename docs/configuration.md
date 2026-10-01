@@ -43,6 +43,8 @@ useful for re-running a failed job without re-labeling.
 
 - `actions/checkout` must run before Specster, or it has no repository to explore.
 - The `concurrency` group is per issue: two labelings of the same issue queue instead of racing.
+  A closed pull request joins the group of its own number, so its cleanup queues behind a run
+  that shares that number instead of racing it on the evidence branch.
   `cancel-in-progress: false` because a half-finished run must not be killed mid-comment.
 - The `spec` job's `permissions` is the minimum: `contents: read` to explore the repo, `issues:
   write` to comment and change labels. The `build` job needs more: `contents: write` to push the
@@ -51,10 +53,14 @@ useful for re-running a failed job without re-labeling.
   `GITHUB_TOKEN`, opening pull requests from an Action also needs "Allow GitHub Actions to create
   and approve pull requests" turned on in the repository's Settings > Actions > General; without
   it, the branch is still pushed but the pull request step is refused (see [Permissions](build.md#permissions)).
+  The `cleanup` job only needs `contents: write`, to remove the closed pull request's folder from
+  the `specster-evidence` branch; it never comments on the pull request or the issue.
 - Each job's `if` keeps other labels, other issue events and the other phase from ever starting
   the container; the label is also checked again inside Specster against `labels.spec` and
   `labels.build` in the config. If you rename either label, change the matching `if:` too, or the
-  job never starts.
+  job never starts. The `cleanup` job starts only when a pull request from a `specster/issue-*`
+  branch is closed, merged or not, whoever closed it, bots included; Specster checks the branch
+  again and skips any other.
 - The `build` job's `timeout-minutes: 120` gives parallel workers, correction rounds and the final
   test run room; the `spec` job only ever makes one model call, so 20 minutes is generous already.
   Keep `build.max_minutes` (default 100) below the build job's `timeout-minutes`: at that limit
@@ -64,7 +70,8 @@ useful for re-running a failed job without re-labeling.
   once it has passed.
 - The step's `outcome` output is `questions`, `spec`, `refused`, `pr_opened`, `not_approved`,
   `build_failed`, `error` or `budget_exhausted`, or `skipped` when the event was not for Specster
-  (another label, a bot sender).
+  (another label, a bot sender). A cleanup ends `cleaned`, `skipped` when there was nothing to
+  remove, or `error`.
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see [Your own bot identity](#your-own-bot-identity)). A
   build refuses only when neither `identity.bot_login` nor the token's own login (asked over
@@ -93,7 +100,7 @@ Everything `Endika/specster@v0` accepts. Pass the key(s) of whichever provider(s
 
 | Output | Values |
 |---|---|
-| `outcome` | `questions`, `spec`, `refused`, `pr_opened`, `not_approved`, `build_failed`, `error`, `budget_exhausted`, or `skipped` when the event was not for Specster |
+| `outcome` | `questions`, `spec`, `refused`, `pr_opened`, `not_approved`, `build_failed`, `error`, `budget_exhausted`, `cleaned` (a closed pull request's evidence removed), or `skipped` when the event was not for Specster |
 
 Providers that take no key input:
 

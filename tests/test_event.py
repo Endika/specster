@@ -60,3 +60,21 @@ def test_build_label_and_dispatch_phase_select_the_build_phase() -> None:
 def test_unknown_dispatch_phase_is_rejected() -> None:
     with pytest.raises(EventError, match="phase"):
         parse_event("workflow_dispatch", SENDER, "3", "deploy")
+
+
+def test_closed_pull_request_is_a_cleanup() -> None:
+    payload = {
+        "action": "closed",
+        "pull_request": {"number": 5, "head": {"ref": "specster/issue-3"}},
+        "sender": {"login": "renovate[bot]", "type": "Bot"},
+    }
+    t = parse_event("pull_request", payload, None)
+    assert (t.issue_number, t.kind, t.head_ref) == (5, "closed", "specster/issue-3")
+    assert skip_reason(t, LabelsConfig()) is None
+    assert phase_of(t, LabelsConfig()) == "cleanup"
+
+
+def test_other_pull_request_actions_are_unsupported() -> None:
+    payload = {"action": "opened", "pull_request": {"number": 1, "head": {"ref": "x"}}}
+    with pytest.raises(EventError):
+        parse_event("pull_request", payload, None)
