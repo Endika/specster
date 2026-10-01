@@ -42,6 +42,9 @@ Techniques, and why:
 
 `.github/workflows/evals.yml` runs this on demand (`workflow_dispatch`) with the provider, model,
 `k` and cap as inputs, and publishes a summary table and the raw JSONL as a workflow artifact.
+`cases` narrows a run to the cases matching a pytest `-k` expression. The summary counts a run
+that failed on a provider or account error (overloaded, rate limit, no credit) apart, never as a
+failure of the model under test.
 
 ## Benchmark results (2026-09-29)
 

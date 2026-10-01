@@ -19,6 +19,7 @@ on:
         options: ["on", "off"]
         default: "on"
       escalation: { description: For the build suite, a stronger worker for failed tasks (empty for none), default: "" }
+      cases: { description: Only the cases matching this pytest -k expression (empty for all), default: "" }
 
 permissions:
   contents: read
@@ -43,10 +44,11 @@ jobs:
           SUITE: ${{ inputs.suite }}
           EVAL_K: ${{ inputs.k }}
           EVAL_MAX_USD: ${{ inputs.max_usd }}
+          CASES: ${{ inputs.cases }}
         run: >
           case "$SUITE" in all) target=evals;; calibration) target=evals/test_judge_calibration.py;;
           *) target="evals/test_$SUITE.py";; esac;
-          uv run pytest "$target" -m eval -v
+          uv run pytest "$target" -m eval -v ${CASES:+-k "$CASES"}
           --eval-k "$EVAL_K" --eval-max-usd "$EVAL_MAX_USD"
           --eval-out "$RUNNER_TEMP/specster-evals.jsonl"
       # Builds run sandbox slots, so the build suite runs as root inside the image.
@@ -61,14 +63,15 @@ jobs:
           SPECSTER_EVAL_ESCALATION: ${{ inputs.escalation }}
           EVAL_K: ${{ inputs.k }}
           EVAL_MAX_USD: ${{ inputs.max_usd }}
+          CASES: ${{ inputs.cases }}
         run: >
           git ls-files -z | tar --null -T - -cf - | docker run -i --rm --entrypoint /usr/bin/tini
           -e ANTHROPIC_API_KEY -e SPECSTER_EVAL_MODEL -e SPECSTER_EVAL_SKILLS
-          -e SPECSTER_EVAL_ESCALATION -e EVAL_K -e EVAL_MAX_USD
+          -e SPECSTER_EVAL_ESCALATION -e EVAL_K -e EVAL_MAX_USD -e CASES
           -e UV_PROJECT_ENVIRONMENT=/work/.venv -e PYTHONPATH=/work
           -v "$RUNNER_TEMP:/out" specster:evals -- sh -c
           'mkdir /work && cd /work && tar xf - && uv sync --all-groups --locked &&
-          uv run pytest evals/test_build_bench.py -m eval -v --eval-k "$EVAL_K"
+          uv run pytest evals/test_build_bench.py -m eval -v ${CASES:+-k "$CASES"} --eval-k "$EVAL_K"
           --eval-max-usd "$EVAL_MAX_USD" --eval-out /out/specster-evals.jsonl'
       - name: summary table
         if: always()
