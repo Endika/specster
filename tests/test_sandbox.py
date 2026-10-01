@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import shutil
@@ -552,3 +553,64 @@ def test_restoring_the_owner_gives_back_what_root_wrote_never_through_a_symlink(
     moved = sandbox.restore_owner(git_dir, 4321, 4321)
     assert f"{git_dir}/config" in moved and f"{git_dir}/link" in moved
     assert owners(git_dir) == {(4321, 4321)} and outside.stat().st_uid == 0
+
+
+def test_started_server_runs_until_stopped(sandbox_dir: Path) -> None:
+    sb = box(sandbox_dir)
+    home = sb.new_home(sandbox_dir, "home")
+    marker = sandbox_dir / "alive"
+    code = (
+        f"import time,pathlib; pathlib.Path({str(marker)!r}).write_text('x');"
+        " print('up', flush=True); time.sleep(60)"
+    )
+    server = sb.start([PY, "-c", code], sandbox_dir, home, "serve")
+    deadline = time.monotonic() + 10
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert server.alive()
+    result = server.stop()
+    assert not server.alive()
+    assert "up" in result.output
+    assert server.stop() == result
+
+
+def test_stop_kills_a_server_that_forks(sandbox_dir: Path) -> None:
+    sb = box(sandbox_dir)
+    home = sb.new_home(sandbox_dir, "home")
+    pidfile = sandbox_dir / "child.pid"
+    code = (
+        "import subprocess,sys,time;"
+        "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
+        f"open({str(pidfile)!r},'w').write(str(p.pid)); time.sleep(60)"
+    )
+    server = sb.start([PY, "-c", code], sandbox_dir, home, "serve")
+    deadline = time.monotonic() + 10
+    while not pidfile.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    child = int(pidfile.read_text())
+    server.stop()
+    stat_file = Path(f"/proc/{child}/stat")
+    deadline = time.monotonic() + 10
+    while stat_file.exists() and time.monotonic() < deadline:
+        with contextlib.suppress(OSError):
+            if stat_file.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                break
+        time.sleep(0.05)
+    with contextlib.suppress(OSError):
+        assert stat_file.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+
+
+def test_stop_of_a_server_that_already_exited_gives_its_own_code(sandbox_dir: Path) -> None:
+    sb = box(sandbox_dir)
+    home = sb.new_home(sandbox_dir, "home")
+    server = sb.start([PY, "-c", "print('bye'); raise SystemExit(3)"], sandbox_dir, home, "serve")
+    deadline = time.monotonic() + 10
+    while server.alive() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    result = server.stop()
+    assert result.exit_code == 3 and "bye" in result.output and not result.timed_out
+
+
+def test_a_server_needs_the_lock_down_first(tmp_path: Path) -> None:
+    with pytest.raises(SandboxError, match="lock_down"):
+        Sandbox(None, 20, 10_000, {}).start([PY, "-c", "pass"], tmp_path, home(tmp_path), "s")
