@@ -197,5 +197,9 @@ The details and the known limits: [Security model](docs/security.md).
   [Toolchains](docs/build.md#toolchains-for-other-languages).
 - **Cost and quality benchmark (done).** A calibrated judge and hidden build tests: see
   [Benchmark results](docs/evals.md#benchmark-results-2026-09-29).
+- **Before/after evidence, part 1 (done).** With `build.preview` set, the pull request shows how
+  the app's HTTP and JSON responses change: see
+  [Before/after evidence](docs/build.md#beforeafter-evidence). Screenshots, and evidence on any
+  pull request rather than only Specster's, are still to come.
 - **Next - harder build cases and model escalation**, so workers are ranked on quality too, and a
   task or review that keeps failing moves to a stronger model.
