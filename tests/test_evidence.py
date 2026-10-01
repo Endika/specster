@@ -1,5 +1,6 @@
 import json
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -13,6 +14,7 @@ import pytest
 from specster.config import PreviewConfig
 from specster.evidence import (
     BODY_MAX_BYTES,
+    JSON_MAX_DEPTH,
     OUT_OF_TIME,
     Capture,
     EvidenceItem,
@@ -197,6 +199,32 @@ def test_deeply_nested_json_falls_back_to_the_text() -> None:
     raw = b"[" * 100_000 + b"]" * 100_000
     text, cut = normalize("application/json", raw)
     assert cut and text.startswith("[[[") and f"of {len(raw):,} bytes]" in text
+
+
+def test_deep_json_never_reaches_the_parser_even_with_an_unlimited_stack() -> None:
+    # With no stack limit, as on GitHub's runners, Python 3.14 recurses through any depth and
+    # takes gigabytes before the kernel kills the whole run.
+    code = (
+        "import resource\n"
+        "inf = resource.RLIM_INFINITY\n"
+        "resource.setrlimit(resource.RLIMIT_STACK, (inf, inf))\n"
+        "from specster.evidence import normalize\n"
+        "normalize('application/json', b'[' * 100_000 + b']' * 100_000)\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], timeout=30, check=False)
+    assert done.returncode == 0
+
+
+def test_json_at_the_depth_limit_is_still_indented() -> None:
+    raw = b"[" * JSON_MAX_DEPTH + b"]" * JSON_MAX_DEPTH
+    assert normalize("application/json", raw)[0].startswith("[\n  [")
+    deeper = b"[" * (JSON_MAX_DEPTH + 1) + b"]" * (JSON_MAX_DEPTH + 1)
+    assert normalize("application/json", deeper)[0] == deeper.decode()
+
+
+def test_brackets_inside_strings_do_not_count_as_depth() -> None:
+    raw = b'{"a": "' + b"[" * (JSON_MAX_DEPTH + 5) + b'\\"["}'
+    assert normalize("application/json", raw)[0].startswith('{\n  "a": ')
 
 
 def test_the_json_check_ignores_case() -> None:
