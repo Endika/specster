@@ -140,9 +140,10 @@ ready says why, with the tail of its log.
 ## Toolchains for other languages
 
 The image carries [mise](https://mise.jdx.dev), pinned and checked against its release's sha256.
-When a build has a `setup_command` or `test_command`, it installs the toolchains the repository
-declares at its root (`mise.toml`, `.tool-versions`, `.nvmrc`, `.node-version`, `.ruby-version`,
-`.java-version`, `.go-version`, `.bun-version`) plus anything `build.tools` names:
+When a build has a `setup_command` or `test_command`, or collects evidence through
+`build.preview`, it installs the toolchains the repository declares at its root (`mise.toml`,
+`.tool-versions`, `.nvmrc`, `.node-version`, `.ruby-version`, `.java-version`, `.go-version`,
+`.bun-version`) plus anything `build.tools` names:
 
 ```yaml
 build:
