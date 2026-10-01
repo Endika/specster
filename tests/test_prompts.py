@@ -1,6 +1,13 @@
+import dataclasses
+from datetime import UTC, datetime
+
+from specster.approved import ApprovedSpec
 from specster.config import PersonaConfig
-from specster.prompts import review_block, system_prompt
-from specster.schemas import PlanTask
+from specster.github import Comment
+from specster.prompts import review_block, revision_block, system_prompt
+from specster.schemas import EvidenceRequest, PlanTask
+
+T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def test_concise_is_the_default_and_caps_questions() -> None:
@@ -74,3 +81,13 @@ def test_prompt_asks_for_evidence_only_with_preview() -> None:
     assert "evidence" not in system_prompt(PersonaConfig(), [], preview=False)
     text = system_prompt(PersonaConfig(), [], preview=True)
     assert "evidence" in text and "GET" in text
+
+
+def test_revision_block_replays_the_approved_evidence() -> None:
+    task = PlanTask(id="a", title="A", description="d", files=["app.py"], acceptance=["x"])
+    ev = EvidenceRequest(name="list-users", method="GET", path="/users", why="x")
+    comment = Comment(1, "specster[bot]", "Bot", "NONE", "b", T0, T0)
+    plain = ApprovedSpec(comment, [task], "0" * 64, "Spec.")
+    assert "Approved evidence" not in revision_block(plain, "n")
+    block = revision_block(dataclasses.replace(plain, evidence=(ev,)), "n")
+    assert "Approved evidence (JSON):" in block and '"/users"' in block

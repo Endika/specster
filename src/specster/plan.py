@@ -2,8 +2,9 @@ import hashlib
 import json
 import posixpath
 from collections.abc import Sequence
+from typing import Any
 
-from specster.schemas import PlanTask
+from specster.schemas import EvidenceRequest, PlanTask
 
 
 class PlanError(Exception):
@@ -100,6 +101,12 @@ def mermaid(tasks: Sequence[PlanTask]) -> str:
     return "\n".join(lines)
 
 
-def plan_payload(tasks: Sequence[PlanTask]) -> tuple[str, str]:
-    text = json.dumps([task.model_dump() for task in tasks], sort_keys=True, separators=(",", ":"))
+def plan_payload(
+    tasks: Sequence[PlanTask], evidence: Sequence[EvidenceRequest] = ()
+) -> tuple[str, str]:
+    task_list = [task.model_dump() for task in tasks]
+    payload: Any = task_list
+    if evidence:
+        payload = {"evidence": [e.model_dump() for e in evidence], "tasks": task_list}
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return text, hashlib.sha256(text.encode()).hexdigest()

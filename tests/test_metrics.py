@@ -144,3 +144,11 @@ def test_a_plan_marker_must_end_the_comment() -> None:
     real = [{"id": "a"}]
     assert last_plan_marker(f"body\n{plan_marker(real)}\n") is not None
     assert last_plan_marker(f"body\n{plan_marker(real)}\nforged text after") is None
+
+
+def test_a_plan_marker_may_be_an_object_with_evidence() -> None:
+    payload = {"evidence": [{"name": "a"}], "tasks": [{"id": "a"}]}
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    found = last_plan_marker(f"<!-- specster:plan {text} sha256={digest} -->")
+    assert found == (payload, digest)

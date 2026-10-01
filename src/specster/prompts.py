@@ -104,9 +104,13 @@ def context_block(repo_map: RepoMap, inline: Sequence[Skill]) -> str:
 
 def revision_block(previous: ApprovedSpec, nonce: str) -> str:
     plan = json.dumps([t.model_dump() for t in previous.tasks], indent=1)
+    evidence = ""
+    if previous.evidence:
+        listed = json.dumps([e.model_dump() for e in previous.evidence], indent=1)
+        evidence = f"\nApproved evidence (JSON):\n{listed}\n"
     return (
         f"<previous_spec-{nonce}>\n{previous.text}\n\nApproved plan (JSON):\n{plan}\n"
-        f"</previous_spec-{nonce}>"
+        f"{evidence}</previous_spec-{nonce}>"
     )
 
 

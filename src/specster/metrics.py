@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field, ValidationError
 _METRICS_OPEN = "<!-- specster:metrics "
 _PLAN_OPEN = "<!-- specster:plan "
 _MARKER = re.compile(r"<!-- specster:metrics (\{.*?\}) -->", re.DOTALL)
-_PLAN_MARKER = re.compile(r"<!-- specster:plan (\[.*?\]) sha256=([0-9a-f]{64}) -->", re.DOTALL)
+_PLAN_MARKER = re.compile(
+    r"<!-- specster:plan (\[.*?\]|\{.*?\}) sha256=([0-9a-f]{64}) -->", re.DOTALL
+)
 
 
 class RoleMetrics(BaseModel):
@@ -96,7 +98,7 @@ def last_marker(body: str) -> RunMetrics | None:
         return None
 
 
-def last_plan_marker(body: str) -> tuple[list[dict[str, Any]], str] | None:
+def last_plan_marker(body: str) -> tuple[Any, str] | None:
     """The approved plan of a spec comment (its last plan marker), if its sha256 still matches."""
     start = body.rfind(_PLAN_OPEN)
     match = _PLAN_MARKER.match(body, start) if start != -1 else None
@@ -105,14 +107,17 @@ def last_plan_marker(body: str) -> tuple[list[dict[str, Any]], str] | None:
     if body[match.end() :].strip():
         return None
     try:
-        tasks = json.loads(match.group(1))
+        payload = json.loads(match.group(1))
     except json.JSONDecodeError:
         return None
-    canonical = json.dumps(tasks, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     digest = match.group(2)
-    if not isinstance(tasks, list) or hashlib.sha256(canonical.encode()).hexdigest() != digest:
+    if (
+        not isinstance(payload, (list, dict))
+        or hashlib.sha256(canonical.encode()).hexdigest() != digest
+    ):
         return None
-    return tasks, digest
+    return payload, digest
 
 
 def strip_markers(body: str) -> str:

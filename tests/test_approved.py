@@ -11,6 +11,7 @@ from specster.approved import (
     comments_after,
     identity_warnings,
     latest_spec_comment,
+    load_spec,
 )
 from specster.config import BuildConfig, LabelsConfig, TrustConfig
 from specster.github import Comment, Issue
@@ -268,3 +269,33 @@ def test_a_plan_that_changes_specsters_own_config_is_refused_unless_allowed(
     assert "build.allow_config_changes: true" in e.value.hint
     allowed = approve_with(["app.py", path], BuildConfig(allow_config_changes=True), config_path)
     assert path in allowed[0].tasks[0].files
+
+
+EVIDENCE = [{"name": "list-users", "method": "GET", "path": "/users", "why": "x", "body": None}]
+
+
+def loaded(body: str) -> ApprovedSpec:
+    return load_spec(bot_comment(1, body, T0))
+
+
+def test_spec_without_evidence_keeps_todays_marker() -> None:
+    body = spec_comment_body(SPEC)
+    assert "<!-- specster:plan [" in body
+    assert loaded(body).evidence == ()
+
+
+def test_spec_carries_its_evidence() -> None:
+    spec = loaded(spec_comment_body(SPEC, evidence=EVIDENCE))
+    assert [(e.name, e.path) for e in spec.evidence] == [("list-users", "/users")]
+
+
+def test_edited_evidence_breaks_the_marker() -> None:
+    body = spec_comment_body(SPEC, evidence=EVIDENCE).replace("/users", "/admin")
+    with pytest.raises(BuildRefused, match="does not match its sha256"):
+        loaded(body)
+
+
+def test_marker_with_an_unsafe_evidence_path_is_refused() -> None:
+    ev = [EVIDENCE[0] | {"path": "//evil.test/"}]
+    with pytest.raises(BuildRefused, match="cannot be built"):
+        loaded(spec_comment_body(SPEC, evidence=ev, validate=False))

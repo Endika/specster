@@ -25,7 +25,7 @@ from specster.render import (
     spec_title,
 )
 from specster.sandbox import RunResult
-from specster.schemas import Finding, PlanTask, QuestionsResult, SpecResult
+from specster.schemas import EvidenceRequest, Finding, PlanTask, QuestionsResult, SpecResult
 from specster.thread import HiddenItem
 
 M = RunMetrics(
@@ -612,3 +612,16 @@ def test_a_span_across_lines_or_left_open_is_escaped_like_prose(text: str) -> No
 
 def test_the_spec_title_keeps_what_the_model_wrote_inside_a_code_span() -> None:
     assert spec_title("### Use `a &amp; <b>` &amp; &#64;x\n") == "Use `a &amp; <b>` & @x"
+
+
+def test_evidence_is_rendered_for_the_human_to_approve_and_absent_when_empty() -> None:
+    spec, tasks = spec_and_tasks()
+    assert "Evidence" not in render_spec(spec, tasks, [], ctx())
+    post = EvidenceRequest(name="make", method="POST", path="/users", body={"a": 1}, why="y")
+    get = EvidenceRequest(name="list-users", method="GET", path="/users", why="x")
+    with_evidence = spec.model_copy(update={"evidence": [get, post]})
+    out = render_spec(with_evidence, tasks, [], ctx())
+    assert "**Evidence (requests run before and after the change)**" in out
+    assert "| `list-users` | `GET /users` | x |" in out
+    assert "| `make` | `POST /users` + JSON body | y |" in out
+    assert '`make`:\n```json\n{\n "a": 1\n}\n```' in out
