@@ -540,7 +540,8 @@ class _Build:
         return None
 
     def _final_tests(self, round_no: int | None) -> tuple[RunResult, bool]:
-        """The integrated branch's test result and whether it is the failed setup's."""
+        """The integration branch's test result, at the base commit when round_no is None, and
+        whether it is the failed setup's."""
         with span("final_tests", {} if round_no is None else {"specster.round": round_no}):
             return self._run_final_tests("base" if round_no is None else str(round_no))
 
