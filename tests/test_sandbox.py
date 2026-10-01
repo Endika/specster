@@ -1,4 +1,3 @@
-import contextlib
 import json
 import os
 import shutil
@@ -589,15 +588,19 @@ def test_stop_kills_a_server_that_forks(sandbox_dir: Path) -> None:
         time.sleep(0.05)
     child = int(pidfile.read_text())
     server.stop()
-    stat_file = Path(f"/proc/{child}/stat")
     deadline = time.monotonic() + 10
-    while stat_file.exists() and time.monotonic() < deadline:
-        with contextlib.suppress(OSError):
-            if stat_file.read_text().rsplit(")", 1)[1].split()[0] == "Z":
-                break
+    while not _dead(child) and time.monotonic() < deadline:
         time.sleep(0.05)
-    with contextlib.suppress(OSError):
-        assert stat_file.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    assert _dead(child)
+
+
+def _dead(pid: int) -> bool:
+    """Gone, a zombie (Z), or being reaped (X): every way /proc shows a process that is over."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except OSError:
+        return True
+    return state in ("Z", "X")
 
 
 def test_stop_of_a_server_that_already_exited_gives_its_own_code(sandbox_dir: Path) -> None:
