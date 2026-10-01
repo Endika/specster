@@ -10,6 +10,8 @@ import httpx
 from specster.schemas import EvidenceRequest
 
 BODY_MAX_BYTES = 64 * 1024
+# Past this the rest of a body is not even counted.
+COUNT_MAX_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -47,27 +49,38 @@ class EvidenceRun:
     logs: Mapping[str, str]
 
 
-def normalize(content_type: str, raw: bytes) -> tuple[str, bool]:
-    """Sorted, indented JSON when the whole body parses; else the text, cut at BODY_MAX_BYTES."""
-    size = len(raw)
-    if "json" in content_type:
+def normalize(
+    content_type: str, raw: bytes, total: int | None = None, more: bool = False
+) -> tuple[str, bool]:
+    """Sorted, indented JSON when the whole body parses; else the text, cut at BODY_MAX_BYTES.
+
+    `raw` may be only the start of a body of `total` bytes; `more` means reading stopped before
+    the end, so `total` is a lower bound.
+    """
+    size = len(raw) if total is None else total
+    whole = size == len(raw) and not more
+    if whole and "json" in content_type.lower():
         try:
-            parsed = json.loads(raw)
-        except ValueError:
+            pretty = json.dumps(json.loads(raw), indent=2, sort_keys=True, ensure_ascii=False)
+        except (ValueError, RecursionError):
             pass
         else:
-            raw = (json.dumps(parsed, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode()
-    cut = len(raw) > BODY_MAX_BYTES
+            raw = (pretty + "\n").encode()
+    over = len(raw) > BODY_MAX_BYTES
+    cut = over or not whole
+    of = f"more than {size:,}" if more else f"{size:,}"
     kept = raw[:BODY_MAX_BYTES]
     try:
         text = kept.decode()
     except UnicodeDecodeError as e:
         # Only a character split by the cut itself is dropped; anything else is binary.
         if not (cut and e.reason == "unexpected end of data"):
-            return f"<{size} bytes, binary>", False
+            return f"<{of} bytes, binary>", cut
         text = kept[: e.start].decode()
-    if cut:
-        text += f"\n[cut to the first {BODY_MAX_BYTES // 1024} KB of {size:,} bytes]\n"
+    if over:
+        text += f"\n[cut to the first {BODY_MAX_BYTES // 1024} KB of {of} bytes]\n"
+    elif cut:
+        text += f"\n[cut after {len(raw):,} bytes: the response did not end in time]\n"
     return text, cut
 
 
@@ -85,28 +98,44 @@ def wait_ready(
         if not alive():
             return "the server exited before it was ready"
         try:
-            if client.get(url, timeout=2).status_code < 500:
-                return None
+            # Status and headers only: a body that never ends must not stall the poll.
+            with client.stream("GET", url, timeout=2) as response:
+                if response.status_code < 500:
+                    return None
         except httpx.HTTPError:
             pass
         time.sleep(pause)
     return f"not ready after {timeout_s:g} s"
 
 
-def capture(client: httpx.Client, origin: str, request: EvidenceRequest) -> Capture:
+def capture(
+    client: httpx.Client, origin: str, request: EvidenceRequest, deadline_s: float = 30.0
+) -> Capture:
+    """At most `deadline_s` overall, and at most BODY_MAX_BYTES of the body kept in memory."""
+    stop = time.monotonic() + deadline_s
+    kept = bytearray()
+    total = 0
+    more = False
     try:
-        response = client.request(
+        with client.stream(
             request.method,
             origin + request.path,
             json=request.body,
-            timeout=30,
+            timeout=deadline_s,
             follow_redirects=False,
-        )
+        ) as response:
+            kind = response.headers.get("content-type", "")
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                kept += chunk[: BODY_MAX_BYTES + 1 - len(kept)]
+                if total >= COUNT_MAX_BYTES or time.monotonic() >= stop:
+                    more = True
+                    break
+            status = response.status_code
     except httpx.HTTPError as e:
         return Capture(None, "", "", False, f"{type(e).__name__}: {e}")
-    kind = response.headers.get("content-type", "")
-    text, cut = normalize(kind, response.content)
-    return Capture(response.status_code, kind, text, cut)
+    text, cut = normalize(kind, bytes(kept), total, more)
+    return Capture(status, kind, text, cut)
 
 
 def _side(capture: Capture | None) -> list[str]:
