@@ -25,6 +25,8 @@ LABELS: dict[str, dict[str, str]] = {
         "evidence_pr": "Before and after",
         "evidence_files": "Full responses and server logs: {url}",
         "evidence_cut": "`{name}` {side} response cut to 64 KB",
+        "evidence_cut_time": "`{name}` {side} response cut: it did not end in time",
+        "evidence_failed": "`{name}` {side} request failed: `{why}`",
         "evidence_upload_failed": "The evidence files could not be uploaded: {why}",
         "evidence_link_failed": (
             "The evidence files are on `specster-evidence` but the pull request could not be "
@@ -127,6 +129,8 @@ LABELS: dict[str, dict[str, str]] = {
         "evidence_pr": "Antes y despu\u00e9s",
         "evidence_files": "Respuestas completas y logs del servidor: {url}",
         "evidence_cut": "Respuesta {side} de `{name}` cortada a 64 KB",
+        "evidence_cut_time": "Respuesta {side} de `{name}` cortada: no termin\u00f3 a tiempo",
+        "evidence_failed": "La petici\u00f3n {side} de `{name}` fall\u00f3: `{why}`",
         "evidence_upload_failed": "No se pudieron subir los ficheros de evidencia: {why}",
         "evidence_link_failed": (
             "Los ficheros de evidencia est\u00e1n en `specster-evidence`, pero no se pudo "

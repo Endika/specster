@@ -674,12 +674,28 @@ def test_pr_body_says_why_a_side_has_no_evidence() -> None:
     assert "Traceback: no database" in body
 
 
-def test_a_capture_that_failed_shows_error_and_a_cut_response_says_so() -> None:
+def test_a_capture_that_failed_says_why_and_a_cut_response_says_so() -> None:
     failed = Capture(None, "", "", False, "ReadTimeout: timed out")
     cut = Capture(200, "application/json", "{", True)
     body = render_pr_body(view(evidence=evidence_run(item("users", failed, cut))), bare())
     assert "| `users` | `GET /users` | error → 200 | yes |" in body
+    assert "`users` base request failed: `ReadTimeout: timed out`" in body
     assert "`users` head response cut to 64 KB" in body
+    assert "-status: none (ReadTimeout: timed out)" in body
+
+
+@pytest.mark.parametrize(
+    ("lang", "said"),
+    [
+        ("en", "`users` head response cut: it did not end in time"),
+        ("es", "Respuesta head de `users` cortada: no terminó a tiempo"),
+    ],
+)
+def test_a_response_cut_for_time_says_so_not_64_kb(lang: str, said: str) -> None:
+    late = Capture(200, "text/plain", "x", True, late=True)
+    run = evidence_run(item("users", json_capture("{}\n"), late))
+    body = render_pr_body(view(evidence=run), ctx(language=lang))
+    assert said in body and "64 KB" not in body
 
 
 def test_long_diff_is_cut_in_the_body_and_says_so() -> None:
