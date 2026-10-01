@@ -111,3 +111,46 @@ def test_the_escalation_model_is_off_unless_set(tmp_path: Path) -> None:
     assert load_config(write(tmp_path, "")).models.escalation is None
     cfg = load_config(write(tmp_path, "models:\n  escalation: {model: claude-opus-5-5}\n"))
     assert cfg.models.escalation is not None and cfg.models.escalation.model == "claude-opus-5-5"
+
+
+def test_preview_is_off_by_default() -> None:
+    assert Config().build.preview is None
+
+
+def test_preview_reads_its_keys(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        "build:\n  preview:\n    serve_command: [python, -m, app]\n"
+        "    ready_url: http://127.0.0.1:8000/health\n    seed_command: [python, seed.py]\n",
+    )
+    preview = load_config(path).build.preview
+    assert preview is not None
+    assert preview.serve_command == ["python", "-m", "app"]
+    assert preview.origin == "http://127.0.0.1:8000"
+    assert preview.ready_timeout_s == 60
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1:8000/",  # http only: the app runs locally
+        "http://example.com:8000/",
+        "http://127.0.0.1/",  # the port must be explicit
+        "http://user:pw@127.0.0.1:8000/",
+        "127.0.0.1:8000",
+    ],
+)
+def test_preview_refuses_a_ready_url_off_loopback(tmp_path: Path, url: str) -> None:
+    path = write(tmp_path, f"build:\n  preview:\n    serve_command: [x]\n    ready_url: '{url}'\n")
+    with pytest.raises(ConfigError, match=r"build\.preview\.ready_url"):
+        load_config(path)
+
+
+def test_preview_timeout_is_capped(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        "build:\n  preview:\n    serve_command: [x]\n"
+        "    ready_url: http://localhost:3000/\n    ready_timeout_s: 301\n",
+    )
+    with pytest.raises(ConfigError, match=r"build\.preview\.ready_timeout_s"):
+        load_config(path)

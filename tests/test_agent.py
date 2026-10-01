@@ -3,11 +3,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from specster.agent import AgentError, NotYet, SubmissionError, run_agent, run_loop
 from specster.config import SkillsConfig
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
-from specster.schemas import QuestionsResult, SpecResult
+from specster.schemas import EvidenceRequest, QuestionsResult, SpecResult
 from specster.skills import SkillBook, load_skills
 from specster.workspace import Workspace
 from tests.fakes import ScriptedModel
@@ -221,3 +222,47 @@ def test_the_nudge_is_the_callers_and_handlers_answer_other_tools() -> None:
     )
     assert out.value == 1 and model.nudges == ["Call submit_x now."]
     assert model.received[2][0].content == "hi"
+
+
+EVIDENCE = [{"name": "list-users", "method": "GET", "path": "/users?limit=2", "why": "New field."}]
+
+
+def plan_with(
+    tmp_path: Path, submissions: list[dict[str, Any]], preview: bool
+) -> tuple[Any, ScriptedModel]:
+    ws, skills = setup(tmp_path)
+    model = ScriptedModel([[ToolCall(str(i), "submit_spec", s)] for i, s in enumerate(submissions)])
+    return run_agent(model, "s", "c", "t", ws, skills, max_turns=5, preview=preview), model
+
+
+def test_spec_with_evidence_is_refused_without_preview(tmp_path: Path) -> None:
+    out, model = plan_with(tmp_path, [SPEC | {"evidence": EVIDENCE}, SPEC], preview=False)
+    assert out.result.evidence == []
+    assert model.received[1][0].is_error and "build.preview" in model.received[1][0].content
+
+
+def test_spec_keeps_evidence_with_preview(tmp_path: Path) -> None:
+    out, _ = plan_with(tmp_path, [SPEC | {"evidence": EVIDENCE}], preview=True)
+    assert [e.name for e in out.result.evidence] == ["list-users"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"name": "Bad Name", "method": "GET", "path": "/", "why": "x"},
+        {"name": "a", "method": "TRACE", "path": "/", "why": "x"},
+        {"name": "a", "method": "GET", "path": "http://evil.test/", "why": "x"},
+        {"name": "a", "method": "GET", "path": "//evil.test/", "why": "x"},
+        {"name": "a", "method": "GET", "path": "/ space", "why": "x"},
+    ],
+)
+def test_evidence_request_rejects(bad: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        EvidenceRequest.model_validate(bad)
+
+
+def test_evidence_names_must_be_unique(tmp_path: Path) -> None:
+    twice = SPEC | {"evidence": EVIDENCE * 2}
+    out, model = plan_with(tmp_path, [twice, SPEC | {"evidence": EVIDENCE}], preview=True)
+    assert len(out.result.evidence) == 1
+    assert "unique" in model.received[1][0].content

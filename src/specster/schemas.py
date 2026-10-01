@@ -58,6 +58,23 @@ class PlanTask(_Out):
     )
 
 
+EVIDENCE_MAX = 10
+
+
+class EvidenceRequest(_Out):
+    name: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9-]*$", max_length=40, description="Short slug, e.g. list-users."
+    )
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+    path: str = Field(
+        pattern=r"^/([^\s#/][^\s#]*)?$",
+        max_length=300,
+        description="Path and query on the app, e.g. /api/users?limit=2; never a host.",
+    )
+    body: dict[str, Any] | list[Any] | None = Field(default=None, description="JSON body, if any.")
+    why: str = _text(200, "What this request shows about the change, one sentence.")
+
+
 class SpecResult(_Out):
     title: str = _text(120)
     objective: str = _text(1000)
@@ -68,6 +85,11 @@ class SpecResult(_Out):
     risks: list[Item]
     test_strategy: str = _text(2000, _MARKDOWN)
     tasks: list[PlanTask] = Field(min_length=1)
+    evidence: list[EvidenceRequest] = Field(
+        default=[],
+        max_length=EVIDENCE_MAX,
+        description="HTTP requests run against the app before and after the change.",
+    )
     changes: list[Item] = Field(
         default=[],
         max_length=20,
