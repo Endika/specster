@@ -84,6 +84,7 @@ class Env:
     ref: str = ""
     dispatch_phase: str | None = None
     sha: str = ""
+    run_attempt: str = "1"
 
 
 class Failure(Exception):

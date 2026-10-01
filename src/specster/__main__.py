@@ -7,6 +7,7 @@ from specster.llm.factory import build_chat_model
 from specster.run import env_from, main
 from specster.sandbox import slot_identity
 from specster.skills import http_fetch
+from specster.telemetry import configure
 
 SUPPORTED_FLAGS = ("--version", "--self-check", "--isolation-check", "--help")
 USAGE = f"usage: python -m specster [{' | '.join(SUPPORTED_FLAGS)}]"
@@ -47,13 +48,20 @@ def cli(argv: list[str]) -> int:
     env = env_from(os.environ)
     os.environ.update(env.process_env)
     tracker = GitHubRest(env.repo, env.token, env.api_url, env.graphql_url)
-    return main(
-        env,
-        tracker,
-        lambda cfg: build_chat_model(cfg, env.secrets),
-        http_fetch,
-        identity=slot_identity,
-    )
+    telemetry = configure(os.environ, __version__, f"{env.run_id}-{env.run_attempt}")
+    if telemetry is not None:
+        telemetry.install()
+    try:
+        return main(
+            env,
+            tracker,
+            lambda cfg: build_chat_model(cfg, env.secrets),
+            http_fetch,
+            identity=slot_identity,
+        )
+    finally:
+        if telemetry is not None:
+            telemetry.shutdown()
 
 
 if __name__ == "__main__":
