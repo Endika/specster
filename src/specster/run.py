@@ -80,6 +80,7 @@ def env_from(environ: Mapping[str, str]) -> Env:
         ref=environ.get("GITHUB_REF", ""),
         dispatch_phase=environ.get("INPUT_PHASE") or None,
         sha=environ.get("GITHUB_SHA", ""),
+        run_attempt=environ.get("GITHUB_RUN_ATTEMPT", "1"),
     )
 
 
