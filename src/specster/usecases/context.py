@@ -61,7 +61,7 @@ Outcome = Literal[
 ]
 
 
-StepOutcome = Outcome | Literal["skipped"]
+StepOutcome = Outcome | Literal["skipped", "cleaned"]
 
 
 @dataclass(frozen=True)

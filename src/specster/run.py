@@ -15,6 +15,7 @@ from specster.sandbox import (
 )
 from specster.skills import Fetch
 from specster.usecases.build_phase import BuildPhase
+from specster.usecases.cleanup_phase import CleanupPhase
 from specster.usecases.context import (
     UNEXPECTED_HINT,
     Env,
@@ -108,6 +109,10 @@ def main(
     try:
         cfg = load_config(env.workspace / env.config_path)
     except ConfigError as e:
+        if phase_of(trigger, LabelsConfig()) == "cleanup":
+            log(f"{e} (not reported: the pull request is closed)")
+            write_outcome(env, "error")
+            return 1
         # A broken config cannot tell us the spec label, so only answer events that are
         # ours under the defaults; anything else (other labels, bots) stays silent.
         default_skip = skip_reason(trigger, LabelsConfig())
@@ -125,6 +130,8 @@ def main(
         return 0
     phase = phase_of(trigger, cfg.labels)
     run = RunContext(env, tracker, cfg, trigger.issue_number, started, timer, phase)
+    if phase == "cleanup":
+        return CleanupPhase(run, trigger).execute()
     try:
         if phase == "build":
             return BuildPhase(run, trigger, make_model, fetch, identity).execute()

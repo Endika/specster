@@ -18,6 +18,8 @@ name: Specster
 on:
   issues:
     types: [labeled]
+  pull_request:
+    types: [closed]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -34,7 +36,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: specster-issue-${{ github.event.issue.number || inputs.issue_number }}
+  group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
   cancel-in-progress: false
 
 jobs:
@@ -66,6 +68,18 @@ jobs:
           issue_number: ${{ inputs.issue_number }}
           phase: ${{ inputs.phase || 'build' }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  cleanup:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'specster/issue-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Endika/specster@v0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 **2. Add your model key** as a repository secret named `ANTHROPIC_API_KEY` (Settings > Secrets
