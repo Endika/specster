@@ -1,15 +1,30 @@
 import json
 import socket
+import sys
 import threading
 import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import httpx
 import pytest
 
-from specster.evidence import BODY_MAX_BYTES, Capture, capture, diff_text, normalize, wait_ready
+from specster.config import PreviewConfig
+from specster.evidence import (
+    BODY_MAX_BYTES,
+    OUT_OF_TIME,
+    Capture,
+    Side,
+    capture,
+    collect,
+    diff_text,
+    normalize,
+    wait_ready,
+)
+from specster.sandbox import Server
 from specster.schemas import EvidenceRequest
+from tests.test_sandbox import box
 
 LOCAL = pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
 ROUTES: dict[str, tuple[str, bytes]] = {
@@ -201,3 +216,67 @@ def test_wait_ready_never_reads_an_endless_body(app: str) -> None:
     with httpx.Client() as client:
         assert wait_ready(client, f"{app}/forever", 10, alive=lambda: True) is None
     assert time.monotonic() - started < 2
+
+
+TWO = [
+    EvidenceRequest(name="root", method="GET", path="/", why="w"),
+    EvidenceRequest(name="gone", method="GET", path="/gone", why="w"),
+]
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port: int = sock.getsockname()[1]
+    return port
+
+
+class Countdown:
+    """Plenty of time for the first `calls` checks, none after."""
+
+    def __init__(self, calls: int) -> None:
+        self.calls = calls
+
+    def __call__(self) -> float:
+        self.calls -= 1
+        return 3600.0 if self.calls >= 0 else 0.0
+
+
+def test_collect_out_of_time_starts_no_side() -> None:
+    started: list[Side] = []
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        started.append(side)
+        return None, "unreachable"
+
+    preview = PreviewConfig(serve_command=["x"], ready_url="http://127.0.0.1:1/")
+    with httpx.Client() as client:
+        run = collect(start_side, preview, TWO, client, lambda: 0.0)
+    assert started == [] and [(p.side, p.reason) for p in run.problems] == [
+        ("base", OUT_OF_TIME),
+        ("head", OUT_OF_TIME),
+    ]
+    assert all(i.base is None and i.head is None and not i.changed for i in run.items)
+
+
+@LOCAL
+def test_collect_keeps_what_it_got_before_the_time_ran_out(tmp_path: Path) -> None:
+    port = free_port()
+    sb = box(tmp_path)
+    home = sb.new_home(tmp_path, "home")
+    serve = [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"]
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        return sb.start(serve, tmp_path, home, f"serve {side}"), None
+
+    preview = PreviewConfig(serve_command=serve, ready_url=f"http://127.0.0.1:{port}/")
+    # collect, the ready wait and the first request see time left; the second request does not.
+    with httpx.Client() as client:
+        run = collect(start_side, preview, TWO, client, Countdown(3))
+    assert [(p.side, p.reason) for p in run.problems] == [
+        ("base", f"{OUT_OF_TIME}: 1 of 2 requests made"),
+        ("head", OUT_OF_TIME),
+    ]
+    root, gone = run.items
+    assert root.base is not None and root.base.status == 200 and root.head is None
+    assert gone.base is None and set(run.logs) == {"base"}

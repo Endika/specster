@@ -1,15 +1,21 @@
 import difflib
 import json
+import math
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 import httpx
 
+from specster.config import PreviewConfig
+from specster.sandbox import Server
 from specster.schemas import EvidenceRequest
 
 BODY_MAX_BYTES = 64 * 1024
+CAPTURE_MAX_S = 30.0
+LOG_TAIL_CHARS = 4000
+OUT_OF_TIME = "the build is out of time"
 # Past this the rest of a body is not even counted.
 COUNT_MAX_BYTES = 16 * 1024 * 1024
 
@@ -151,3 +157,62 @@ def diff_text(name: str, base: Capture | None, head: Capture | None) -> str:
         _side(base), _side(head), fromfile=f"{name} (base)", tofile=f"{name} (head)"
     )
     return "".join(line if line.endswith("\n") else line + "\n" for line in lines)
+
+
+Side = Literal["base", "head"]
+
+
+def _serve(
+    client: httpx.Client,
+    preview: PreviewConfig,
+    requests: Sequence[EvidenceRequest],
+    time_left: Callable[[], float],
+    server: Server,
+    got: list[Capture | None],
+) -> str | None:
+    """Fills `got` from a started server; why it stopped short, if it did."""
+    left = time_left()
+    if left <= 0:
+        return OUT_OF_TIME
+    why = wait_ready(client, preview.ready_url, min(preview.ready_timeout_s, left), server.alive)
+    if why is not None:
+        return f"{why}: {OUT_OF_TIME}" if left < preview.ready_timeout_s else why
+    for i, request in enumerate(requests):
+        left = time_left()
+        if left <= 0:
+            return f"{OUT_OF_TIME}: {i} of {len(requests)} requests made"
+        got[i] = capture(client, preview.origin, request, min(CAPTURE_MAX_S, left))
+    return None
+
+
+def collect(
+    start_side: Callable[[Side], tuple[Server | None, str | None]],
+    preview: PreviewConfig,
+    requests: Sequence[EvidenceRequest],
+    client: httpx.Client,
+    time_left: Callable[[], float] = lambda: math.inf,
+) -> EvidenceRun:
+    """Each request against the base's server, then the head's; a side that fails says why."""
+    captures: dict[Side, list[Capture | None]] = {}
+    problems: list[SideProblem] = []
+    logs: dict[str, str] = {}
+    sides: tuple[Side, ...] = ("base", "head")
+    for side in sides:
+        got: list[Capture | None] = [None] * len(requests)
+        why = OUT_OF_TIME if time_left() <= 0 else None
+        server = None
+        if why is None:
+            server, why = start_side(side)
+        if server is not None:
+            try:
+                why = _serve(client, preview, requests, time_left, server, got)
+            finally:
+                logs[side] = server.stop().output
+        if why is not None:
+            problems.append(SideProblem(side, why, logs.get(side, "")[-LOG_TAIL_CHARS:]))
+        captures[side] = got
+    items = tuple(
+        EvidenceItem(r, b, h, diff_text(r.name, b, h))
+        for r, b, h in zip(requests, captures["base"], captures["head"], strict=True)
+    )
+    return EvidenceRun(items, tuple(problems), logs)
