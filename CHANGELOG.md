@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/Endika/specster/compare/specster-v0.12.0...specster-v0.12.1) (2026-10-01)
+
+
+### Documentation
+
+* open the README with a minimal try-it setup and list every setting ([e6ba18e](https://github.com/Endika/specster/commit/e6ba18edc6f10110c3e4d9a28f67f9afde9a4892))
+
 ## [0.12.0](https://github.com/Endika/specster/compare/specster-v0.11.2...specster-v0.12.0) (2026-10-01)
 
 
