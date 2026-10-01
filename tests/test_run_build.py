@@ -2,6 +2,7 @@ import dataclasses
 import json
 import os
 import sys
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from datetime import timedelta
 from pathlib import Path
@@ -11,7 +12,7 @@ import pytest
 
 from specster.config import ModelConfig
 from specster.git import BOT_EMAIL, Author, Git
-from specster.github import Issue
+from specster.github import GitHubError, Issue, PullRequest
 from specster.llm.base import ChatModel, ToolCall
 from specster.metrics import RunMetrics, encode_marker, last_marker
 from specster.run import Env, main
@@ -570,4 +571,49 @@ def test_upload_failure_keeps_the_pr_and_says_why(tmp_path: Path) -> None:
     assert make_repo_log(remote) == ["chore: init", "feat(app): set A"]
     assert "could not be uploaded" in tr.posted[-1] and "pull/1" in tr.posted[-1]
     m = last_marker(tr.posted[-1])
+    assert m is not None and m.outcome == "pr_opened"
+
+
+class _BlockedScratch(FakeTracker):
+    """Puts a file where the evidence upload wants its scratch directory, once the PR exists."""
+
+    def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest:
+        pull = super().create_pull(title, body, head, base)
+        (scratch,) = Path(tempfile.gettempdir()).glob("specster-build-*")
+        (scratch / "evidence-branch").write_text("in the way")
+        return pull
+
+
+@pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+def test_an_os_error_in_the_upload_still_finishes_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    e, tr, _ = evidence_world(tmp_path)
+    tr = _BlockedScratch(**{f.name: getattr(tr, f.name) for f in dataclasses.fields(tr)})
+    assert go(e, tr, book(), approve()) == 0
+    assert "Before and after" in tr.pulls[0][1] and "specster-evidence" not in tr.pulls[0][1]
+    assert "could not be uploaded" in tr.posted[-1] and "File exists" in tr.posted[-1]
+    m = last_marker(tr.posted[-1])
+    assert m is not None and m.outcome == "pr_opened" and tr.issue.labels == ("ai-pr",)
+
+
+class _NoPatch(FakeTracker):
+    def update_pull(self, number: int, body: str) -> None:
+        raise GitHubError("Validation Failed", 422)
+
+
+@pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+def test_a_failed_link_says_the_files_are_on_the_branch(tmp_path: Path) -> None:
+    e, tr, remote = evidence_world(tmp_path)
+    tr = _NoPatch(**{f.name: getattr(tr, f.name) for f in dataclasses.fields(tr)})
+    assert go(e, tr, book(), approve()) == 0
+    assert "pr-1/users.diff" in ls_tree(remote, "specster-evidence")
+    assert "specster-evidence" not in tr.pulls[0][1]
+    comment = tr.posted[-1]
+    assert "could not be uploaded" not in comment
+    assert "the pull request could not be updated with the link: Validation Failed" in comment
+    m = last_marker(comment)
     assert m is not None and m.outcome == "pr_opened"

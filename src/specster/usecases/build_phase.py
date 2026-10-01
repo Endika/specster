@@ -475,12 +475,17 @@ class BuildPhase:
                 evidence_files(evidence),
                 scratch / "evidence-branch",
             )
-            link = f"{env.server_url}/{env.repo}/tree/{EVIDENCE_BRANCH}/{folder}"
-            linked = dataclasses.replace(view, evidence_links={"folder": link})
-            run.tracker.update_pull(number, render_pr_body(linked, run.context(m)))
-        except (GitError, EvidenceBranchError, GitHubError) as e:
+        except (GitError, EvidenceBranchError, GitHubError, OSError) as e:
             log(f"could not upload the evidence files: {e}")
             note = hint(self.lang, "evidence_upload_failed", why=str(e))
+            return dataclasses.replace(view, evidence_note=note)
+        link = f"{env.server_url}/{env.repo}/tree/{EVIDENCE_BRANCH}/{folder}"
+        linked = dataclasses.replace(view, evidence_links={"folder": link})
+        try:
+            run.tracker.update_pull(number, render_pr_body(linked, run.context(m)))
+        except GitHubError as e:
+            log(f"could not link the evidence files from the pull request: {e}")
+            note = hint(self.lang, "evidence_link_failed", why=str(e))
             return dataclasses.replace(view, evidence_note=note)
         return linked
 
