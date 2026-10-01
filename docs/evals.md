@@ -91,3 +91,31 @@ here; with tasks this small that shows they did not help, not that they cannot. 
 cases are needed before a quality ranking of workers means anything.
 
 The whole benchmark cost about $8.
+
+## Harder build cases and model escalation (2026-10-01)
+
+Every worker passed the first four build cases, so three harder ones were added: a bug fixed
+from its symptom with the cause in another file, a CSV round trip with quoting, line endings and
+a byte order mark, and an exporter registry split into two dependent tasks across five files.
+Each worker built all seven cases twice with skills on and Opus 5.5 reviewing, and Haiku and
+Sonnet ran a second time with `models.escalation` set to Opus 5.5.
+
+| Worker | Passed | Escalated | Review rounds | Minor findings | Mean cost per build | Mean time |
+|---|---|---|---|---|---|---|
+| Haiku 4.5 | 14/14 | - | 0.3 | 33 | $0.111 | 101 s |
+| Sonnet 5 (default) | 13/14 | - | 0.4 | 21 | $0.130 | 62 s |
+| Opus 5.5 | 14/14 | - | 0.0 | 4 | $0.101 | 42 s |
+| Haiku 4.5, escalation to Opus 5.5 | 14/14 | 1 | 0.4 | 34 | $0.139 | 114 s |
+| Sonnet 5, escalation to Opus 5.5 | 14/14 | 0 | 0.1 | 20 | $0.107 | 87 s |
+
+The one failure is Sonnet on the exporter registry: an important finding was still open after
+two correction rounds. Opus 5.5 was the cheapest and fastest worker and never needed a
+correction round; Haiku passed everything but took longest, and its fewer dollars per token
+did not make its builds cheaper. Escalation fired once in 28 builds, on Haiku's exporter
+registry, which then passed; with this few escalations the benchmark cannot say how much it
+helps, only that it costs nothing while it does not fire.
+
+Six of the first 76 runs failed on the provider or the account, not the model: three ran out of
+API credit and three got `overloaded` from the reviewer after every retry. Those runs were
+rerun alone, and the table counts only the 70 that ran clean. The evals summary now sets such
+runs apart by itself. This round cost about $8.9.
