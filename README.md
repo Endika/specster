@@ -8,9 +8,43 @@ what is missing or posts a spec with a task plan. Label it `ai-build`: worker mo
 task, a reviewer model checks the result, and you get a pull request. Every comment says what it
 cost.
 
-## Install
+## Try it
 
-**1. Add the workflow** as `.github/workflows/specster.yml`:
+Two minutes, one file and one secret, no config. Specster only writes specs here; building
+pull requests comes in [Full setup](#full-setup).
+
+1. Save this as `.github/workflows/specster.yml`:
+
+   ```yaml
+   name: Specster
+   on:
+     issues:
+       types: [labeled]
+   permissions:
+     contents: read
+     issues: write
+   jobs:
+     spec:
+       if: github.event.label.name == 'ai-spec'
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v7
+         - uses: Endika/specster@v0
+           with:
+             github_token: ${{ secrets.GITHUB_TOKEN }}
+             anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+   ```
+
+2. Add your key as a repository secret named `ANTHROPIC_API_KEY` (Settings > Secrets and
+   variables > Actions).
+3. Open an issue and add the label `ai-spec`, creating it the first time. In about a minute
+   Specster answers with questions or a spec, and the footer says what it cost.
+
+## Full setup
+
+Specs, builds, evidence cleanup and a manual trigger.
+
+**1. Add the workflow** as `.github/workflows/specster.yml`, in place of the one above:
 
 ```yaml
 name: Specster
@@ -128,7 +162,151 @@ trust:
   comments: collaborators   # whose comments count: all, collaborators or owner
 ```
 
-Every key, its default and what it does: [Configuration](docs/configuration.md#configuration).
+### Every setting
+
+<details>
+<summary>All config keys and their defaults</summary>
+
+Optional file at `.github/specster/config.yml` (path set by the `config_path` input). A missing
+file or a missing key uses the default shown below. An unknown key or an invalid value fails the
+run with a message naming the key. Action inputs (`github_token`, `config_path`, the `*_api_key`
+inputs, `skills_auth_token`) always take precedence over this file.
+
+```yaml
+models:
+  planner:                     # writes the spec and the task plan
+    provider: anthropic        # anthropic | openai | openai-compatible | azure-openai | bedrock | vertex-anthropic | gemini | vertex-gemini
+    model: claude-opus-5-5
+    max_tokens: 16000
+    effort: null                # low | medium | high | xhigh | max, provider-specific; null leaves the SDK default
+    base_url: null               # required for openai-compatible and azure-openai; rejected for bedrock, vertex-anthropic, gemini, vertex-gemini
+    region: null                 # required for bedrock, vertex-anthropic, vertex-gemini
+    project: null                # required for vertex-anthropic, vertex-gemini
+    api_version: null            # required for azure-openai
+    api_key_env: null            # overrides which environment variable carries the API key
+    token_param: null            # max_tokens | max_completion_tokens; provider default otherwise
+    max_retries: 4
+  worker:                       # writes one task's code in the build phase; same fields as planner
+    provider: anthropic
+    model: claude-opus-5-5
+  reviewer:                     # reviews the build's diff before the pull request; same fields as planner
+    provider: anthropic
+    model: claude-opus-5-5
+    effort: medium
+  escalation: null              # a stronger worker for one more try at a failed or twice-blocked task;
+                                # e.g. {provider: anthropic, model: claude-opus-5-5}; see docs/build.md
+
+labels:
+  spec: ai-spec                 # trigger label for the spec phase
+  needs_human: needs-human      # applied when Specster asks questions, or a build needs a human
+  ready: spec-ready             # applied when Specster publishes a spec
+  build: ai-build                # trigger label for the build phase
+  built: ai-pr                    # applied when a build opens a pull request
+
+trust:
+  comments: collaborators       # all | collaborators | owner: who counts, by author_association
+  issue_author: true             # the issue author's comments count too, whatever their association
+  snapshot_at_label: true        # only count comments that existed before the triggering label event
+
+identity:
+  bot_login: null                # the login Specster comments as, e.g. specster-endika[bot];
+                                  # null asks the token, which an App installation token may not
+                                  # answer. A build refuses outright when neither gives an answer.
+
+skills:
+  autodiscover: true             # pick up AGENTS.md, CLAUDE.md, .github/copilot-instructions.md,
+                                  # .cursorrules, .cursor/rules/*.mdc, CONTRIBUTING.md,
+                                  # .github/specster/skills/*.md
+  sources: []                    # extra skills, e.g.:
+                                  #   - path: docs/spec-style.md
+                                  #   - url: https://raw.githubusercontent.com/org/repo/main/skill.md
+                                  #     sha256: "<64 hex chars>"
+                                  #     phases: [spec]        # spec | build | review; default: all three
+  load: always                    # always: every skill of the phase is loaded (up to max_tokens)
+                                  # model_decides: the model sees names only and may read none
+  max_tokens: 20000                # token budget for skills inlined when load: always
+
+repo_map:
+  max_tokens: 8000
+  exclude: ["node_modules/", "dist/", "build/", "vendor/", "*.lock", "*.min.js"]
+
+persona:
+  name: Specster
+  avatar_url: https://raw.githubusercontent.com/Endika/specster/main/assets/specster-avatar.png
+  header: true
+  humor: light                    # off | light | spooky; only ever shows up in closing_line
+  closing_line: generated          # off | generated | fixed
+  closing_text: ""                  # required when closing_line: fixed
+  language: en                      # language of questions, spec and build text
+  style: concise                    # concise | detailed: how much text the comments carry
+  max_questions: 3                  # 1-5 questions per round
+
+budget:
+  max_usd_per_issue: 8.0             # null removes the cap; sums every run on the issue, spec and build alike
+  max_usd_per_build: 5.0              # null removes the cap; this one build's own spend
+  max_turns: 30                       # hard stop on the agent loop (any role), independent of cost
+
+build:
+  max_parallel: 2                     # workers running at once, 1-8; also the sandbox slots created
+  max_turns_per_task: 40              # hard stop on one worker's agent loop
+  max_review_rounds: 2                 # correction rounds after a blocked review before giving up
+  setup_command: null                  # argv list run once before test_command, as the sandbox uid; null skips it
+  test_command: null                   # argv list run as the sandbox uid; null means no tests ever run
+  test_env: {}                         # extra environment variables for setup_command and test_command (not HOME or TMPDIR)
+  tools: {}                            # toolchains mise installs, e.g. {node: "22", java: "21"}; see docs/build.md
+  test_timeout_s: 600                  # wall-clock limit per invocation of either command
+  test_output_max_kb: 20               # tail kept of each command's combined stdout+stderr
+  test_output_max_file_mb: 1024        # RLIMIT_FSIZE per process; a file over this kills the command
+  max_minutes: 100                     # wall-clock limit on the whole build; keep it below the job's timeout-minutes
+  close_issue: true                    # the pull request body carries "Closes #<issue>"
+  allow_comments_after_spec: false     # true lets a build run despite trusted comments posted after the spec
+  allow_failing_base: false            # true builds even when test_command already fails before any task
+  allow_workflow_changes: false        # true lets a task change .github/workflows/** and .github/actions/**
+  allow_config_changes: false          # true lets a task change .github/specster/** and the config_path file
+  # Before/after evidence for the pull request (off unless set): Specster starts the app at
+  # the base commit and at the branch head and sends both the requests the spec lists.
+  preview:
+    serve_command: [python, -m, app]           # runs in the sandbox; must keep running
+    ready_url: http://127.0.0.1:8000/health    # polled until it answers; loopback only
+    seed_command: [python, seed.py]            # optional, before serve_command; no real data
+    ready_timeout_s: 60                        # at most 300
+
+pricing: {}                            # override or add prices, USD per million tokens:
+                                        #   claude-haiku-4-5: {input: 1.0, output: 5.0, cache_read: 0.1, cache_write: 1.25}
+```
+
+`skills.sources[].phases` defaults to `all` (spec, build and review); with `load: always` every
+skill scoped to the phase that is running is inlined into the prompt, up to `skills.max_tokens`.
+`budget.max_usd_per_build` and `budget.max_usd_per_issue` (5.0 and 8.0 by default) are safety
+caps chosen before any build's real cost was measured, not expected spend - see [what it costs](#what-it-costs).
+
+</details>
+
+<details>
+<summary>Action inputs and outputs</summary>
+
+Everything `Endika/specster@v0` accepts. Pass the key(s) of whichever provider(s) `models.planner`,
+`models.worker` and `models.reviewer` are set to (they can differ); unused key inputs stay empty.
+
+| Input | Required | Default | What it is |
+|---|---|---|---|
+| `github_token` | yes | | Reads the issue and comments; a build also pushes and opens a pull request. `GITHUB_TOKEN` comments as github-actions[bot]; a GitHub App token comments as your bot. |
+| `config_path` | no | `.github/specster/config.yml` | Path of the config file in the repository. |
+| `issue_number` | no | | Issue to process when the workflow runs from `workflow_dispatch`. |
+| `phase` | no | `spec` | Phase to run when triggered by `workflow_dispatch`: `spec` or `build`. Ignored for the `issues: labeled` event, where the label itself decides the phase. |
+| `anthropic_api_key` | no | | Key for provider `anthropic`. |
+| `openai_api_key` | no | | Key for provider `openai`. |
+| `gemini_api_key` | no | | Key for provider `gemini` (and for `openai-compatible` pointed at Gemini with `api_key_env: GEMINI_API_KEY`). |
+| `azure_openai_api_key` | no | | Key for provider `azure-openai`. |
+| `skills_auth_token` | no | | Token for skills stored in private GitHub repositories; only sent to GitHub hosts. |
+
+| Output | Values |
+|---|---|
+| `outcome` | `questions`, `spec`, `refused`, `pr_opened`, `not_approved`, `build_failed`, `error`, `budget_exhausted`, `cleaned` (a closed pull request's evidence removed), or `skipped` when the event was not for Specster |
+
+Providers that take no key input, and how each one logs in: [Providers](docs/configuration.md#providers).
+
+</details>
 
 ## What it costs
 
