@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import PurePosixPath
+from typing import Any
 
 import pathspec
 from pydantic import ValidationError
@@ -11,7 +12,7 @@ from specster.github import Comment, Issue
 from specster.metrics import last_marker, last_plan_marker
 from specster.plan import PlanError, levels, norm_path, normalize_plan
 from specster.sanitize import sanitize
-from specster.schemas import TASK_ID_MAX, PlanTask
+from specster.schemas import TASK_ID_MAX, EvidenceRequest, PlanTask
 from specster.thread import is_specster, is_trusted, own_text
 from specster.workspace import (
     CONFIG_PATH,
@@ -39,6 +40,7 @@ class ApprovedSpec:
     tasks: list[PlanTask]
     sha256: str
     text: str
+    evidence: tuple[EvidenceRequest, ...] = ()
 
 
 class BuildRefused(Exception):
@@ -94,7 +96,13 @@ def load_spec(comment: Comment) -> ApprovedSpec:
     found = last_plan_marker(comment.body)
     if found is None:
         raise BuildRefused(BAD_MARKER, hint)
-    raw, digest = found
+    payload, digest = found
+    raw: Any = payload
+    raw_evidence: Any = []
+    if isinstance(payload, dict):
+        raw, raw_evidence = payload.get("tasks"), payload.get("evidence")
+    if not isinstance(raw, list) or not isinstance(raw_evidence, list):
+        raise BuildRefused(BAD_MARKER, hint)
     too_long = next(
         (
             t["id"]
@@ -112,6 +120,7 @@ def load_spec(comment: Comment) -> ApprovedSpec:
     try:
         tasks = [PlanTask.model_validate(t) for t in raw]
         normalized, fixes = normalize_plan(tasks)
+        evidence = tuple(EvidenceRequest.model_validate(e) for e in raw_evidence)
     except (ValidationError, PlanError, TypeError) as e:
         raise BuildRefused(f"{CANNOT_BUILD}{e}", hint) from e
     unsafe = sorted({f for t in tasks for f in t.files if not _safe_path(f)})
@@ -120,7 +129,7 @@ def load_spec(comment: Comment) -> ApprovedSpec:
     if fixes or normalized != tasks:
         raise BuildRefused(f"{CANNOT_BUILD}its order is not normalized", hint)
     _check_levels_disjoint(tasks)
-    return ApprovedSpec(comment, tasks, digest, sanitize(own_text(comment.body)).text)
+    return ApprovedSpec(comment, tasks, digest, sanitize(own_text(comment.body)).text, evidence)
 
 
 def comments_after(

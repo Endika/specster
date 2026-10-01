@@ -1,3 +1,5 @@
+import hashlib
+import json
 import socket
 import threading
 from collections.abc import Mapping, Sequence
@@ -149,13 +151,29 @@ class ScriptBook:
         return session
 
 
-def spec_comment_body(spec: Mapping[str, Any], outcome: str = "spec") -> str:
-    result = SpecResult.model_validate(spec)
+def spec_comment_body(
+    spec: Mapping[str, Any],
+    outcome: str = "spec",
+    evidence: list[dict[str, Any]] | None = None,
+    validate: bool = True,
+) -> str:
+    result = SpecResult.model_validate(
+        {**spec, **({"evidence": evidence} if validate and evidence else {})}
+    )
     tasks, fixes = normalize_plan(result.tasks)
     metrics = RunMetrics.model_validate(
         {"run_id": "1", "outcome": outcome, "provider": "fake", "model": "fake-1"}
     )
-    return render_spec(result, tasks, fixes, RenderContext(PersonaConfig(), metrics, (), ()))
+    body = render_spec(result, tasks, fixes, RenderContext(PersonaConfig(), metrics, (), ()))
+    if validate or not evidence:
+        return body
+    text = json.dumps(
+        {"evidence": evidence, "tasks": [t.model_dump() for t in tasks]},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    marker = f"<!-- specster:plan {text} sha256={hashlib.sha256(text.encode()).hexdigest()} -->"
+    return body[: body.rindex("<!-- specster:plan ")] + marker
 
 
 def bot_comment(id: int, body: str, at: datetime) -> Comment:

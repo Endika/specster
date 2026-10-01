@@ -1,6 +1,7 @@
 """The spec phase's comments: questions, specs, refusals, errors and budget stops."""
 
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
 
 from specster.closing import rewrite_references
 from specster.plan import levels, mermaid, plan_payload
@@ -9,6 +10,7 @@ from specster.render.common import (
     _NONE,
     RenderContext,
     _bullets,
+    _cell,
     _code,
     _indent,
     _l,
@@ -20,7 +22,7 @@ from specster.render.common import (
     fence,
 )
 from specster.render.labels import LABELS
-from specster.schemas import PlanTask, QuestionsResult, SpecResult
+from specster.schemas import EvidenceRequest, PlanTask, QuestionsResult, SpecResult
 
 
 def render_questions(result: QuestionsResult, ctx: RenderContext) -> str:
@@ -33,6 +35,29 @@ def render_questions(result: QuestionsResult, ctx: RenderContext) -> str:
             body.append("   " + _DOT.join(f"`{_code(o)}`" for o in q.options))
     body += ["", lab["next_questions"].format(label=ctx.spec_label)]
     return _wrap(ctx, body, result.closing_line)
+
+
+def _evidence(evidence: Sequence[EvidenceRequest], lab: Mapping[str, str]) -> list[str]:
+    out = [
+        "",
+        f"**{lab['evidence']}**",
+        "",
+        f"| {lab['evidence_request']} | | {lab['evidence_why']} |",
+        "|---|---|---|",
+    ]
+    for e in evidence:
+        json_body = " + JSON body" if e.body is not None else ""
+        out.append(
+            f"| `{_code(e.name)}` | `{e.method} {_code(e.path)}`{json_body} | {_cell(e.why)} |"
+        )
+    for e in evidence:
+        if e.body is not None:
+            out += [
+                "",
+                f"`{_code(e.name)}`:",
+                fence(json.dumps(e.body, indent=1, sort_keys=True), "json"),
+            ]
+    return out
 
 
 def render_spec(
@@ -83,8 +108,10 @@ def render_spec(
         body.append(f"- `{_code(t.id)}` {_prose(' '.join(t.title.split()))}")
         body += _indent(t.description)
         body += [f"  - {_prose(a)}" for a in t.acceptance]
+    if result.evidence:
+        body += _evidence(result.evidence, lab)
     body += ["", lab["next_spec"].format(label=ctx.build_label)]
-    payload, digest = plan_payload(tasks)
+    payload, digest = plan_payload(tasks, result.evidence)
     safe = payload.replace("<", "\\u003c").replace(">", "\\u003e")
     plan_marker = f"<!-- specster:plan {safe} sha256={digest} -->"
     return _wrap(ctx, body, result.closing_line) + "\n" + plan_marker
