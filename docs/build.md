@@ -116,6 +116,27 @@ models:
   says it was not escalated and why. The task table marks the task "escalated to <model>".
 - It is off by default, since it spends money nobody asked for.
 
+## Before/after evidence
+
+With `build.preview` set (see [Configuration](configuration.md#configuration)) and a spec that
+lists evidence requests, an approved build shows what the change does to the running app, not
+only to the code. In the final-tests slot (slot 0) it runs `setup_command`, `seed_command` and
+`serve_command` on the base commit, sends every request, stops that server, then does the same on
+the branch head. The pull request gets a "Before and after" section: one row per request with its
+status on each side, and each changed response's diff, collapsed. A side whose server never got
+ready says why, with the tail of its log.
+
+- It never fails the build. A server that does not start, a request that errors or a failed
+  upload is reported in the pull request or the issue comment; the build's outcome and exit code
+  stay what the build and review decided.
+- The full responses, diffs and server logs go to the `specster-evidence` branch, an orphan branch
+  with one folder per pull request (`pr-<N>/`), and the pull request links that folder. Its
+  commits say `[skip ci]`, and a folder is removed when its pull request is closed.
+- Limits: each response keeps its first 64 KB, each diff its first 4,000 characters in the body
+  (the whole diff is in the files), and a body that would pass GitHub's limit leaves out the
+  last diffs and says so. The app is reached on loopback only, with no authentication. On a
+  public repository, anything the seed puts in the app is published: seed fake data only.
+
 ## Toolchains for other languages
 
 The image carries [mise](https://mise.jdx.dev), pinned and checked against its release's sha256.

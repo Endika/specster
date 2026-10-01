@@ -2,9 +2,10 @@ import dataclasses
 import json
 import os
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,18 +28,25 @@ from tests.fakes import (
     unix_socket,
 )
 from tests.test_approved import SPEC, T0, TASK, human
+from tests.test_build import BASE_ROUTES, HEAD_ROUTES, app, free_port
+from tests.test_evidence_branch import ls_tree
 from tests.test_sandbox import ROOT_ONLY
 
 CHECK = json.dumps([sys.executable, "-c", "import app; assert app.A == 1"])
 
 
 def world(
-    tmp_path: Path, config: str = "", gate_base: bool = False
+    tmp_path: Path,
+    config: str = "",
+    gate_base: bool = False,
+    files: Mapping[str, str] | None = None,
+    evidence: list[dict[str, Any]] | None = None,
 ) -> tuple[Env, FakeTracker, Path]:
     # CHECK fails on the base on purpose, so only the base-gate tests gate.
     allow = "" if gate_base else "  allow_failing_base: true\n"
     text = f"build:\n  test_command: {CHECK}\n{allow}{config}"
-    make_repo(tmp_path / "repo", {"app.py": "A = 0\n", ".github/specster/config.yml": text})
+    tree = {"app.py": "A = 0\n", ".github/specster/config.yml": text, **(files or {})}
+    make_repo(tmp_path / "repo", tree)
     remote = make_remote(tmp_path / "remote" / "o" / "r.git")
     event = tmp_path / "event.json"
     event.write_text(
@@ -70,7 +78,7 @@ def world(
     )
     tr = FakeTracker(
         issue=Issue(7, "CSV export", "b", "ana", "NONE", ("ai-build", "spec-ready")),
-        comments=[bot_comment(1, spec_comment_body(SPEC), T0)],
+        comments=[bot_comment(1, spec_comment_body(SPEC, evidence=evidence), T0)],
         label_events={"ai-build": T0 + timedelta(hours=1)},
         login="specster[bot]",
     )
@@ -504,3 +512,62 @@ def test_the_build_footer_names_the_build_and_review_skills(tmp_path: Path) -> N
     assert m is not None and m.skills_available == ["tdd", "arch"]
     assert m.skills_inlined == ["tdd", "arch"]
     assert "- Skills: 2 available; loaded: tdd, arch;" in tr.posted[-1]
+
+
+# serve.py runs the base routes until the task sets A = 1.
+SERVE = 'import runpy, app\nrunpy.run_path("base_app.py" if app.A == 0 else "head_app.py")\n'
+EVIDENCE = [
+    {"name": "users", "method": "GET", "path": "/users", "why": "w"},
+    {"name": "new", "method": "GET", "path": "/new", "why": "w"},
+]
+
+
+def evidence_world(tmp_path: Path) -> tuple[Env, FakeTracker, Path]:
+    port = free_port()
+    serve = json.dumps([sys.executable, "serve.py"])
+    config = f"  preview:\n    serve_command: {serve}\n"
+    config += f"    ready_url: http://127.0.0.1:{port}/users\n"
+    files = {
+        "serve.py": SERVE,
+        "base_app.py": app(port, BASE_ROUTES),
+        "head_app.py": app(port, HEAD_ROUTES),
+    }
+    return world(tmp_path, config, files=files, evidence=EVIDENCE)
+
+
+@pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+def test_pr_gets_evidence_files_and_links(tmp_path: Path) -> None:
+    e, tr, remote = evidence_world(tmp_path)
+    assert go(e, tr, book(), approve()) == 0
+    body = tr.pulls[0][1]
+    assert ls_tree(remote, "specster-evidence") == [
+        "pr-1/new.base.txt",
+        "pr-1/new.diff",
+        "pr-1/new.head.json",
+        "pr-1/server-base.log",
+        "pr-1/server-head.log",
+        "pr-1/users.base.json",
+        "pr-1/users.diff",
+        "pr-1/users.head.json",
+    ]
+    assert f"{tmp_path}/remote/o/r/tree/specster-evidence/pr-1" in body
+    assert "Before and after" in body and "| `new` | `GET /new` | 404 → 200 | yes |" in body
+    assert "could not be uploaded" not in tr.posted[-1]
+
+
+@pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+def test_upload_failure_keeps_the_pr_and_says_why(tmp_path: Path) -> None:
+    e, tr, remote = evidence_world(tmp_path)
+    hook = remote / "hooks" / "pre-receive"
+    hook.write_text(
+        "#!/bin/sh\nwhile read old new ref; do\n"
+        '  [ "$ref" = refs/heads/specster-evidence ] && exit 1\ndone\nexit 0\n'
+    )
+    hook.chmod(0o755)
+    assert go(e, tr, book(), approve()) == 0
+    body = tr.pulls[0][1]
+    assert "Before and after" in body and "specster-evidence" not in body
+    assert make_repo_log(remote) == ["chore: init", "feat(app): set A"]
+    assert "could not be uploaded" in tr.posted[-1] and "pull/1" in tr.posted[-1]
+    m = last_marker(tr.posted[-1])
+    assert m is not None and m.outcome == "pr_opened"

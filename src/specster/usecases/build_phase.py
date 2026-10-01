@@ -16,6 +16,9 @@ from specster.build import FINAL_SLOT, BuildReport, BuildSetup, run_build
 from specster.closing import rewrite_references
 from specster.config import ModelConfig
 from specster.event import Trigger
+from specster.evidence import EvidenceRun
+from specster.evidence import files as evidence_files
+from specster.evidence_branch import EVIDENCE_BRANCH, EvidenceBranchError, publish
 from specster.git import Author, Git, GitError, noreply_email
 from specster.github import Comment, GitHubError, Issue
 from specster.ledger import Ledger
@@ -210,7 +213,7 @@ class BuildPhase:
             built = self._build(approval, tools, scratch)
             if isinstance(built, int):
                 return built
-            return self._publish(approval, tools, *built)
+            return self._publish(approval, tools, scratch, *built)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
             if self.git is not None:
@@ -383,7 +386,13 @@ class BuildPhase:
         return git, report, ledger
 
     def _publish(
-        self, approval: _Approval, tools: _Tools, git: Git, report: BuildReport, ledger: Ledger
+        self,
+        approval: _Approval,
+        tools: _Tools,
+        scratch: Path,
+        git: Git,
+        report: BuildReport,
+        ledger: Ledger,
     ) -> int:
         """Push what was committed, open the pull request if approved, and comment."""
         run = self.run
@@ -428,6 +437,8 @@ class BuildPhase:
                 else:
                     fix = hint(self.lang, "hint_pull_other", status=e.status, label=labels.build)
                 raise Failure(str(e), fix) from e
+            if report.evidence is not None and report.evidence.items:
+                view = self._upload_evidence(view, git, pull.number, report.evidence, scratch, m)
             view = dataclasses.replace(view, pr_url=pull.url)
             body = render_build(view, run.context(m))
             run.finish(
@@ -442,6 +453,36 @@ class BuildPhase:
             outcome, render_build(view, run.context(m)), [labels.build], [labels.needs_human]
         )
         return 0
+
+    def _upload_evidence(
+        self,
+        view: BuildView,
+        git: Git,
+        number: int,
+        evidence: EvidenceRun,
+        scratch: Path,
+        m: RunMetrics,
+    ) -> BuildView:
+        """Publish the evidence files and link them from the pull request; never fails the run."""
+        run, env = self.run, self.run.env
+        folder = f"pr-{number}"
+        try:
+            publish(
+                git,
+                f"{env.server_url}/{env.repo}.git",
+                env.token,
+                folder,
+                evidence_files(evidence),
+                scratch / "evidence-branch",
+            )
+            link = f"{env.server_url}/{env.repo}/tree/{EVIDENCE_BRANCH}/{folder}"
+            linked = dataclasses.replace(view, evidence_links={"folder": link})
+            run.tracker.update_pull(number, render_pr_body(linked, run.context(m)))
+        except (GitError, EvidenceBranchError, GitHubError) as e:
+            log(f"could not upload the evidence files: {e}")
+            note = hint(self.lang, "evidence_upload_failed", why=str(e))
+            return dataclasses.replace(view, evidence_note=note)
+        return linked
 
 
 def _give_back(workspace: Path) -> None:

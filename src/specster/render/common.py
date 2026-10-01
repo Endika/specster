@@ -254,6 +254,7 @@ class _Cuts:
     output: bool = True
     findings: int | None = None
     unapplied: int | None = None
+    evidence: int | None = None
     rows: int | None = None
 
 
@@ -282,11 +283,14 @@ def _fit(
     steps: tuple[tuple[str, Callable[[_Cuts, int], _Cuts]], ...] = (
         ("findings", lambda c, k: replace(c, findings=k)),
         ("unapplied", lambda c, k: replace(c, unapplied=k)),
+        ("evidence", lambda c, k: replace(c, evidence=k)),
         ("rows", lambda c, k: replace(c, rows=k)),
     )
     for name, cut in steps:
         if len(out) <= BODY_MAX:
             break
+        if name not in sizes:
+            continue
         low, high = 0, sizes[name]
         while low < high:
             mid = (low + high + 1) // 2

@@ -105,6 +105,7 @@ budget:
 build:
   setup_command: [uv, sync, --locked]          # run once before the tests
   test_command: [uv, run, pytest, -q]          # without it, no test ever runs
+  # preview: {serve_command: [uv, run, app], ready_url: "http://127.0.0.1:8000/"}  # PR evidence
 persona:
   language: en              # questions, specs and pull requests in this language
 trust:

@@ -15,10 +15,13 @@ from specster.evidence import (
     BODY_MAX_BYTES,
     OUT_OF_TIME,
     Capture,
+    EvidenceItem,
+    EvidenceRun,
     Side,
     capture,
     collect,
     diff_text,
+    files,
     normalize,
     wait_ready,
 )
@@ -280,3 +283,28 @@ def test_collect_keeps_what_it_got_before_the_time_ran_out(tmp_path: Path) -> No
     root, gone = run.items
     assert root.base is not None and root.base.status == 200 and root.head is None
     assert gone.base is None and set(run.logs) == {"base"}
+
+
+def test_files_name_each_side_by_its_content_type_and_skip_a_missing_side() -> None:
+    def item(name: str, base: Capture | None, head: Capture | None) -> EvidenceItem:
+        request = EvidenceRequest(name=name, method="GET", path="/", why="w")
+        return EvidenceItem(request, base, head, diff_text(name, base, head))
+
+    users = item(
+        "users",
+        Capture(404, "text/plain", "missing", False),
+        Capture(200, "Application/JSON; charset=utf-8", "{}\n", False),
+    )
+    lone = item("lone", None, Capture(None, "", "", False, "ReadTimeout: timed out"))
+    out = files(EvidenceRun((users, lone), (), {"head": "listening\n"}))
+    assert sorted(out) == [
+        "lone.diff",
+        "lone.head.txt",
+        "server-head.log",
+        "users.base.txt",
+        "users.diff",
+        "users.head.json",
+    ]
+    assert out["users.head.json"] == b"{}\n" and out["users.base.txt"] == b"missing"
+    assert out["lone.head.txt"] == b"ReadTimeout: timed out\n"
+    assert out["users.diff"] == users.diff.encode() and out["server-head.log"] == b"listening\n"
