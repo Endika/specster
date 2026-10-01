@@ -165,11 +165,12 @@ a calibrated judge and by hidden tests:
 | Role | Haiku 4.5 | Sonnet 5 | Opus 5.5 |
 |---|---|---|---|
 | Planner: spec and injection cases passed | 7/21 | 15/21 | **21/21** |
-| Worker: builds passed (reviewer + hidden test) | 8/8 | **8/8** | 8/8 |
-| Worker: mean cost per build, reviewer included | $0.078 | **$0.060** | $0.067 |
+| Worker: [builds passed](docs/evals.md#harder-build-cases-and-model-escalation-2026-10-01) (reviewer + hidden test) | 14/14 | **13/14** | 14/14 |
+| Worker: mean cost per build, reviewer included | $0.111 | **$0.130** | $0.101 |
 
 Opus 5.5 is the only planner that passed every case, and the only one no injected comment
-steered. Every worker passed every build case, so those cases rank workers on cost alone.
+steered. As a worker it was also the cheapest and fastest on the seven build cases, and the only
+one the reviewer never sent back.
 
 ## Safety in short
 
@@ -201,5 +202,6 @@ The details and the known limits: [Security model](docs/security.md).
   the app's HTTP and JSON responses change: see
   [Before/after evidence](docs/build.md#beforeafter-evidence). Screenshots, and evidence on any
   pull request rather than only Specster's, are still to come.
-- **Next - harder build cases and model escalation**, so workers are ranked on quality too, and a
-  task or review that keeps failing moves to a stronger model.
+- **Harder build cases and model escalation (done).** A task or review that keeps failing can
+  move to a stronger model: see [Model escalation](docs/build.md#model-escalation) and the
+  [results](docs/evals.md#harder-build-cases-and-model-escalation-2026-10-01).
