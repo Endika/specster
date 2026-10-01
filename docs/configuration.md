@@ -101,6 +101,10 @@ Providers that take no key input:
 
 Every key and its default: [All config keys](../README.md#every-setting) in the README.
 
+## Telemetry
+
+Metrics and traces are exported over OTLP when the standard `OTEL_EXPORTER_OTLP_*` environment variables are set on the Specster step. There is no `config.yml` key for it; see [Telemetry](telemetry.md).
+
 ## Providers
 
 Every provider sits behind the same tool-calling interface. Each block below lists what
