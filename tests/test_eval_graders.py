@@ -216,6 +216,29 @@ def test_summary_renders_one_row_per_case(tmp_path: Path) -> None:
     assert table[3] == "| behavior | vague | 1/1 (100%) | unknown | 4.0 | - |"
 
 
+def test_summary_sets_api_failures_apart_from_the_pass_rate(tmp_path: Path) -> None:
+    overloaded = record("build", False, 0.05, ["approved"])
+    overloaded["checks"][0]["detail"] = "reviewer: APIStatusError: {'type': 'overloaded_error'}"
+    no_credit = record("build", False, 0.02, [])
+    no_credit["error"] = "BadRequestError: Error code: 400 - Your credit balance is too low"
+    only_failures = record("cut", False, 0.01, ["approved"])
+    only_failures["checks"][0]["detail"] = "add-registry: RateLimitError: 429"
+    rows = [record("build", True, 0.1, []), overloaded, no_credit, only_failures]
+    path = tmp_path / "results.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    table = render(load(path)).splitlines()
+    assert table[2] == ("| behavior | build | 1/1 (100%) + 2 API failures | $0.1000 | 4.0 | - |")
+    assert table[3] == "| behavior | cut | - (1 API failure) | - | - | - |"
+
+
+def test_summary_counts_a_model_failure_that_mentions_no_api_error(tmp_path: Path) -> None:
+    refused = record("build", False, 0.05, ["approved"])
+    refused["checks"][0]["detail"] = "1 blocking finding left after 2 correction rounds"
+    path = tmp_path / "results.jsonl"
+    path.write_text(json.dumps(refused) + "\n")
+    assert render(load(path)).splitlines()[2].startswith("| behavior | build | 0/1 (0%) |")
+
+
 def test_summary_without_results_says_so(tmp_path: Path) -> None:
     assert render(load(tmp_path / "missing.jsonl")) == "No eval results.\n"
 

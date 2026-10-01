@@ -1,8 +1,26 @@
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+# Failures of the provider or the account, not of the model under test.
+_API_FAILURE = re.compile(
+    r"\b(APIStatusError|APIConnectionError|APITimeoutError|RateLimitError|InternalServerError"
+    r"|ServerError)\b|credit balance is too low"
+)
+
+
+def api_failure(record: dict[str, Any]) -> bool:
+    if record["passed"]:
+        return False
+    texts = [record.get("error") or "", *(c["detail"] for c in record["checks"] if not c["ok"])]
+    return any(_API_FAILURE.search(t) for t in texts)
+
+
+def _api_failures(n: int) -> str:
+    return f"{n} API failure{'' if n == 1 else 's'}"
 
 
 def _mean(values: list[float]) -> float | None:
@@ -19,7 +37,12 @@ def render(records: list[dict[str, Any]]) -> str:
         "| suite | case | pass rate | mean cost | mean turns | failing checks |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
-    for (suite, case), runs in groups.items():
+    for (suite, case), all_runs in groups.items():
+        runs = [r for r in all_runs if not api_failure(r)]
+        dropped = len(all_runs) - len(runs)
+        if not runs:
+            lines.append(f"| {suite} | {case} | - ({_api_failures(dropped)}) | - | - | - |")
+            continue
         passed = sum(bool(r["passed"]) for r in runs)
         costs = [r["cost_usd"] for r in runs]
         known = [c for c in costs if c is not None]
@@ -30,10 +53,10 @@ def render(records: list[dict[str, Any]]) -> str:
         turns = sum(r["turns"] for r in runs) / len(runs)
         failing = Counter(c["name"] for r in runs for c in r["checks"] if not c["ok"])
         failing_text = ", ".join(f"{name} x{n}" for name, n in sorted(failing.items())) or "-"
-        lines.append(
-            f"| {suite} | {case} | {passed}/{len(runs)} ({passed / len(runs):.0%}) | {cost_text} "
-            f"| {turns:.1f} | {failing_text} |"
-        )
+        rate = f"{passed}/{len(runs)} ({passed / len(runs):.0%})"
+        if dropped:
+            rate += f" + {_api_failures(dropped)}"
+        lines.append(f"| {suite} | {case} | {rate} | {cost_text} | {turns:.1f} | {failing_text} |")
     return "\n".join(lines) + "\n"
 
 
