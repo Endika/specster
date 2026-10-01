@@ -7,6 +7,7 @@ import pytest
 
 from specster.build import BuildReport, Commit, TaskRecord
 from specster.config import PersonaConfig
+from specster.evidence import Capture, EvidenceItem, EvidenceRun, SideProblem, diff_text
 from specster.metrics import RoleMetrics, RunMetrics, extract_markers
 from specster.plan import plan_payload
 from specster.render import (
@@ -24,6 +25,7 @@ from specster.render import (
     spec_objective,
     spec_title,
 )
+from specster.render.common import BODY_MAX
 from specster.sandbox import RunResult
 from specster.schemas import EvidenceRequest, Finding, PlanTask, QuestionsResult, SpecResult
 from specster.thread import HiddenItem
@@ -287,7 +289,7 @@ A = PlanTask(id="a", title="A", description="d", files=["app.py"], acceptance=["
 MINOR = Finding(task_id="a", file="app.py", severity="minor", description="rename <x>")
 
 
-def view(**kw: Any) -> BuildView:
+def view(evidence: EvidenceRun | None = None, **kw: Any) -> BuildView:
     report = BuildReport(
         "approved",
         "",
@@ -304,6 +306,7 @@ def view(**kw: Any) -> BuildView:
         1,
         [],
         [],
+        evidence=evidence,
     )
     default = BuildView(
         report,
@@ -625,3 +628,79 @@ def test_evidence_is_rendered_for_the_human_to_approve_and_absent_when_empty() -
     assert "| `list-users` | `GET /users` | x |" in out
     assert "| `make` | `POST /users` + JSON body | y |" in out
     assert '`make`:\n```json\n{\n "a": 1\n}\n```' in out
+
+
+def get(name: str, path: str) -> EvidenceRequest:
+    return EvidenceRequest(name=name, method="GET", path=path, why="w")
+
+
+def json_capture(text: str, status: int = 200) -> Capture:
+    return Capture(status, "application/json", text, False)
+
+
+def item(name: str, base: Capture | None, head: Capture | None) -> EvidenceItem:
+    return EvidenceItem(get(name, f"/{name}"), base, head, diff_text(name, base, head))
+
+
+USERS = item("users", json_capture('{\n  "users": []\n}\n'), json_capture('{\n    "id": 1\n}\n'))
+NEW = item("new", Capture(404, "text/plain", "missing", False), json_capture("{}\n"))
+
+
+def evidence_run(*items: EvidenceItem, problems: tuple[SideProblem, ...] = ()) -> EvidenceRun:
+    return EvidenceRun(tuple(items), problems, {})
+
+
+def test_pr_body_shows_the_evidence_table_and_diffs() -> None:
+    body = render_pr_body(view(evidence=evidence_run(USERS, NEW)), bare())
+    assert "| `users` | `GET /users` | 200 → 200 | yes |" in body
+    assert "| `new` | `GET /new` | 404 → 200 | yes |" in body
+    assert "<details><summary><code>users</code></summary>" in body
+    assert '+    "id": 1' in body
+    assert body.index("**Before and after**") < body.index("**Minor findings**")
+
+
+def test_pr_body_links_the_files_once_uploaded() -> None:
+    links = {"folder": "https://github.com/o/r/tree/specster-evidence/pr-5"}
+    body = render_pr_body(view(evidence=evidence_run(USERS), evidence_links=links), bare())
+    assert "https://github.com/o/r/tree/specster-evidence/pr-5" in body
+    assert "specster-evidence" not in render_pr_body(view(evidence=evidence_run(USERS)), bare())
+
+
+def test_pr_body_says_why_a_side_has_no_evidence() -> None:
+    lone = item("users", None, json_capture("{}\n"))
+    problem = SideProblem("base", "not ready after 60 s", "Traceback: no database")
+    body = render_pr_body(view(evidence=evidence_run(lone, problems=(problem,))), bare())
+    assert "base: not ready after 60 s" in body and "— → 200" in body
+    assert "Traceback: no database" in body
+
+
+def test_a_capture_that_failed_shows_error_and_a_cut_response_says_so() -> None:
+    failed = Capture(None, "", "", False, "ReadTimeout: timed out")
+    cut = Capture(200, "application/json", "{", True)
+    body = render_pr_body(view(evidence=evidence_run(item("users", failed, cut))), bare())
+    assert "| `users` | `GET /users` | error → 200 | yes |" in body
+    assert "`users` head response cut to 64 KB" in body
+
+
+def test_long_diff_is_cut_in_the_body_and_says_so() -> None:
+    big = item("users", json_capture("a\n"), json_capture("b" * 10_000 + "\n"))
+    body = render_pr_body(view(evidence=evidence_run(big)), bare())
+    assert "diff cut to its first 4,000 of" in body and "b" * 4_001 not in body
+
+
+def test_body_over_the_limit_drops_evidence_items_with_a_note() -> None:
+    items = [
+        item(f"r{i}", json_capture("a\n"), json_capture("b" * 3_900 + "\n")) for i in range(60)
+    ]
+    body = render_pr_body(view(evidence=evidence_run(*items)), bare())
+    assert len(body) <= BODY_MAX and "evidence requests left out" in body
+    assert "Closes #7" in body and "| `r59` |" in body
+
+
+def test_no_evidence_no_section() -> None:
+    assert "Before and after" not in render_pr_body(view(), bare())
+
+
+def test_the_build_comment_carries_the_evidence_upload_note() -> None:
+    note = "The evidence files could not be uploaded: rejected"
+    assert note in render_build(view(evidence_note=note), bare())

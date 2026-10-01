@@ -216,3 +216,23 @@ def collect(
         for r, b, h in zip(requests, captures["base"], captures["head"], strict=True)
     )
     return EvidenceRun(items, tuple(problems), logs)
+
+
+def _body(capture: Capture) -> tuple[str, bytes]:
+    ext = "json" if "json" in capture.content_type.lower() else "txt"
+    text = capture.text if capture.status is not None else capture.error + "\n"
+    return ext, text.encode()
+
+
+def files(run: EvidenceRun) -> dict[str, bytes]:
+    """The evidence branch's files: each side's response, each diff and each server log."""
+    out: dict[str, bytes] = {}
+    for item in run.items:
+        for side, got in (("base", item.base), ("head", item.head)):
+            if got is not None:
+                ext, data = _body(got)
+                out[f"{item.request.name}.{side}.{ext}"] = data
+        out[f"{item.request.name}.diff"] = item.diff.encode()
+    for side, log in sorted(run.logs.items()):
+        out[f"server-{side}.log"] = log.encode()
+    return out

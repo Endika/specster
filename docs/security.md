@@ -58,6 +58,11 @@
   run: its trust mode, budgets, test command and `allow_workflow_changes`. A task cannot change
   them unless `build.allow_config_changes: true`, a separate switch from the workflow one; the
   build refuses such a plan and the worker cannot write there.
+- **The `specster-evidence` branch is written with the build's token.** Anyone or anything holding
+  that token can rewrite the branch, so treat its files as the build's output, not as a record.
+  The app's responses and server logs are published as they came back, unfiltered: never seed
+  real data or secrets into the preview app. Its commits carry `[skip ci]` so `push` workflows do
+  not run on them.
 - **Repository files are not sanitized.** Only the issue body and comments go through the hidden-
   content filter; a file the model reads with `read_file` or `grep` is handed over as-is. The
   system prompt tells the model not to follow instructions found in repository files, and the
