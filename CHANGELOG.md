@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.0](https://github.com/Endika/specster/compare/specster-v0.12.1...specster-v0.13.0) (2026-10-01)
+
+
+### Features
+
+* push a run's telemetry to an OTLP endpoint when one is set ([3b795c1](https://github.com/Endika/specster/commit/3b795c162ee00cd6dc8cec97758887d738893048))
+* record each run's metrics as OTLP gauges ([6b6d4a9](https://github.com/Endika/specster/commit/6b6d4a9f9e06202ac25ef2361c05c3d66e457600))
+* trace each run, model call, tool call and build step ([f1544e1](https://github.com/Endika/specster/commit/f1544e1095cc266cfe6cfb9af463310895ab2ead))
+
+
+### Documentation
+
+* explain how to send Specster's metrics and traces to Datadog or Grafana ([7d121c0](https://github.com/Endika/specster/commit/7d121c01474ef428b086bb2cb9c7a5376949f95d))
+* say the final tests also gate the base commit ([b8fa019](https://github.com/Endika/specster/commit/b8fa019b5b06a57d6bec3020c7b9c4b9b5e123f0))
+
 ## [0.12.1](https://github.com/Endika/specster/compare/specster-v0.12.0...specster-v0.12.1) (2026-10-01)
 
 
