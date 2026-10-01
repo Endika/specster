@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from specster.git import Git
 
@@ -293,6 +293,42 @@ class Sandbox:
         self._tool_paths = tuple(bin_dirs)
 
     def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
+        timeout: float = self._timeout_s
+        if self._time_left is not None:
+            # The build's wall-clock limit shortens the run; a second at least, so it still runs.
+            timeout = min(timeout, max(1.0, self._time_left()))
+        started = time.monotonic()
+        with tempfile.TemporaryFile() as out:
+            proc = self._spawn(argv, cwd, home, out)
+            if isinstance(proc, RunResult):
+                return proc
+            timed_out = False
+            code: int | None = None
+            try:
+                code = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+            finally:
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+                self._reap_slot()
+            return self._collect(argv, code, timed_out, out, label, started)
+
+    def start(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> "Server":
+        """Run `argv` in the background until `Server.stop`; no timeout applies meanwhile."""
+        started = time.monotonic()
+        out = tempfile.TemporaryFile()  # noqa: SIM115 - Server.stop closes it
+        try:
+            proc = self._spawn(argv, cwd, home, out)
+        except BaseException:
+            out.close()
+            raise
+        return Server(self, proc, out, argv, label, started)
+
+    def _spawn(
+        self, argv: Sequence[str], cwd: Path, home: Path, out: IO[bytes]
+    ) -> subprocess.Popen[bytes] | RunResult:
         if not self._locked:
             raise SandboxError("refusing to run a test command before lock_down of the workspace")
         env = {
@@ -305,42 +341,38 @@ class Sandbox:
         ids: dict[str, Any] = {}
         if self._identity is not None:
             ids = {"user": self._identity.uid, "group": self._identity.gid, "extra_groups": []}
-        timeout: float = self._timeout_s
-        if self._time_left is not None:
-            # The build's wall-clock limit shortens the run; a second at least, so it still runs.
-            timeout = min(timeout, max(1.0, self._time_left()))
-        started = time.monotonic()
-        with tempfile.TemporaryFile() as out:
-            try:
-                proc = subprocess.Popen(
-                    [*self._limited(), *argv],
-                    cwd=cwd,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=out,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                    close_fds=True,
-                    **ids,
-                )
-            except OSError as e:
-                return RunResult(tuple(argv), 127, f"{type(e).__name__}: {e}", False, None, 0.0)
-            timed_out = False
-            code: int | None = None
-            try:
-                code = proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-            finally:
-                with contextlib.suppress(ProcessLookupError, PermissionError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-                if self._identity is not None:
-                    _reap(self._identity)
-            total = out.seek(0, os.SEEK_END)
-            keep = min(total, self._max)
-            out.seek(total - keep)
-            data = out.read()
+        try:
+            return subprocess.Popen(
+                [*self._limited(), *argv],
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+                **ids,
+            )
+        except OSError as e:
+            return RunResult(tuple(argv), 127, f"{type(e).__name__}: {e}", False, None, 0.0)
+
+    def _reap_slot(self) -> None:
+        if self._identity is not None:
+            _reap(self._identity)
+
+    def _collect(
+        self,
+        argv: Sequence[str],
+        code: int | None,
+        timed_out: bool,
+        out: IO[bytes],
+        label: str,
+        started: float,
+    ) -> RunResult:
+        total = out.seek(0, os.SEEK_END)
+        keep = min(total, self._max)
+        out.seek(total - keep)
+        data = out.read()
         cut = None
         if total > keep:
             # Drop a multi-byte character split by the cut instead of decoding it into U+FFFD.
@@ -355,6 +387,49 @@ class Sandbox:
             text += "\n"
         duration = round(time.monotonic() - started, 3)
         return RunResult(tuple(argv), code, text, timed_out, cut, duration)
+
+
+class Server:
+    def __init__(
+        self,
+        sandbox: Sandbox,
+        proc: subprocess.Popen[bytes] | RunResult,
+        out: IO[bytes],
+        argv: Sequence[str],
+        label: str,
+        started: float,
+    ) -> None:
+        self._sandbox = sandbox
+        self._spawned = proc
+        self._out = out
+        self._argv = tuple(argv)
+        self._label = label
+        self._started = started
+        self._result: RunResult | None = None
+        if isinstance(proc, RunResult):
+            out.close()
+
+    def alive(self) -> bool:
+        proc = self._spawned
+        return self._result is None and not isinstance(proc, RunResult) and proc.poll() is None
+
+    def stop(self) -> RunResult:
+        """Kill the server and everything it started; later calls return the same result."""
+        proc = self._spawned
+        if isinstance(proc, RunResult):
+            return proc
+        if self._result is None:
+            try:
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                code = proc.wait()
+                self._sandbox._reap_slot()
+                self._result = self._sandbox._collect(
+                    self._argv, code, False, self._out, self._label, self._started
+                )
+            finally:
+                self._out.close()
+        return self._result
 
 
 def lock_down(
