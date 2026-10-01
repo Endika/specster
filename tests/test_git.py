@@ -298,3 +298,69 @@ def test_files_in_names_only_what_a_commit_changed(tmp_path: Path) -> None:
     (tmp_path / "repo" / "util.py").write_text("B = 1\n")
     sha = git.commit_paths(tmp_path / "repo", ["util.py"], "feat: b")
     assert sha is not None and git.files_in(sha) == {"util.py"}
+
+
+def test_push_invocation_default_is_unchanged() -> None:
+    args, _ = push_invocation("https://github.com/o/r.git", "b", "t")
+    assert "--force-with-lease=refs/heads/b:" in args and "refs/heads/b:refs/heads/b" in args
+
+
+def test_push_invocation_can_push_a_sha_under_a_lease() -> None:
+    args, _ = push_invocation("https://github.com/o/r.git", "b", TOKEN, source="abc", expect="def")
+    assert args[-3:] == [
+        "--force-with-lease=refs/heads/b:def",
+        "https://github.com/o/r.git",
+        "abc:refs/heads/b",
+    ]
+
+
+def test_a_tree_of_files_is_committed_without_a_worktree(tmp_path: Path) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
+    index = tmp_path / "index"
+    first = git.commit_tree_files(None, {"d/a": b"1", "e/b": b"\x00\xff"}, None, "m1", index)
+    assert git.run("log", "-1", "--format=%P%x00%s", first) == "\x00m1\n"
+    second = git.commit_tree_files(first, {"d/c": b"3"}, "d/", "m2", index)
+    assert git.present(second, ["d", "e"]) == ["d/c", "e/b"]
+    assert git.run("log", "-1", "--format=%P", second).strip() == first
+    assert git.run("cat-file", "blob", f"{first}:d/a") == "1"
+    assert not index.exists() and git.run("status", "--porcelain") == ""
+    assert git.run("rev-parse", "HEAD").strip() == git.head()
+
+
+def test_remote_head_fetch_and_a_leased_update(tmp_path: Path) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
+    remote = make_remote(tmp_path / "remote.git")
+    url, index = str(remote), tmp_path / "index"
+    assert git.remote_head(url, "ev", TOKEN) is None
+    one = git.commit_tree_files(None, {"a": b"1"}, None, "one", index)
+    assert git.push_update(url, one, "ev", TOKEN, None) is True
+    assert git.remote_head(url, "ev", TOKEN) == one
+    assert git.remote_head(url, "e", TOKEN) is None
+    git.fetch_ref(url, "ev", TOKEN, "refs/specster/x")
+    assert git.run("rev-parse", "refs/specster/x").strip() == one
+    two = git.commit_tree_files(one, {"b": b"2"}, None, "two", index)
+    assert git.push_update(url, two, "ev", TOKEN, None) is False
+    assert git.push_update(url, two, "ev", TOKEN, two) is False
+    assert git.remote_head(url, "ev", TOKEN) == one
+    assert git.push_update(url, two, "ev", TOKEN, one) is True
+    assert git.remote_head(url, "ev", TOKEN) == two
+    assert all(TOKEN not in a for argv in git.argv_log for a in argv)
+
+
+def test_a_push_update_that_fails_for_another_reason_is_a_git_error(tmp_path: Path) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
+    with pytest.raises(GitError, match="push failed"):
+        git.push_update(str(tmp_path / "missing.git"), git.head(), "ev", TOKEN, None)
+
+
+def test_remote_reads_carry_the_token_only_in_the_env(tmp_path: Path) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
+    header = base64.b64encode(f"x-access-token:{TOKEN}".encode()).decode()
+    url = "http://127.0.0.1:99999/o/r.git"
+    with pytest.raises(GitError, match="ls-remote failed") as e:
+        git.remote_head(url, "b", TOKEN)
+    with pytest.raises(GitError, match="fetch failed") as f:
+        git.fetch_ref(url, "b", TOKEN, "refs/specster/x")
+    for err in (e, f):
+        assert TOKEN not in str(err.value) and header not in str(err.value)
+    assert not any(TOKEN in a or header in a for argv in git.argv_log for a in argv)

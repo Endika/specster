@@ -8,6 +8,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 from urllib.parse import urlsplit
 
 BOT_EMAIL = "specster@users.noreply.github.com"
@@ -75,34 +76,63 @@ def _without_userinfo(value: str, bare_host: bool = False) -> str:
     return f"{m.group(1) or ''}{m.group(2).rpartition('@')[2]}{m.group(3)}"
 
 
-def push_invocation(url: str, branch: str, token: str) -> tuple[list[str], dict[str, str]]:
-    """The push's argv (after `git` and the base options) and the env that carries the token."""
-    header = "AUTHORIZATION: basic " + base64.b64encode(f"x-access-token:{token}".encode()).decode()
+def _auth_env(url: str, token: str) -> dict[str, str]:
+    """The env that hands the token to git as an http extraheader, never through argv."""
     parts = urlsplit(url)
-    extra: dict[str, str] = {}
-    if parts.scheme in ("http", "https"):
-        host = parts.netloc.rpartition("@")[2]
-        extra = {
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": f"http.{parts.scheme}://{host}/.extraheader",
-            "GIT_CONFIG_VALUE_0": header,
-        }
+    if parts.scheme not in ("http", "https"):
+        return {}
+    header = "AUTHORIZATION: basic " + base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    host = parts.netloc.rpartition("@")[2]
+    return {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"http.{parts.scheme}://{host}/.extraheader",
+        "GIT_CONFIG_VALUE_0": header,
+    }
+
+
+def _auth_secrets(token: str, env: Mapping[str, str]) -> tuple[str, ...]:
+    header = env.get("GIT_CONFIG_VALUE_0", "")
+    return (token, header, header.rpartition(" ")[2])
+
+
+_REMOTE_OPTS = (
+    "-c",
+    "credential.helper=",
+    "-c",
+    "http.lowSpeedLimit=1000",
+    "-c",
+    "http.lowSpeedTime=60",
+)
+
+
+def push_invocation(
+    url: str, branch: str, token: str, *, source: str | None = None, expect: str = ""
+) -> tuple[list[str], dict[str, str]]:
+    """The push's argv (after `git` and the base options) and the env that carries the token."""
     ref = f"refs/heads/{branch}"
     # An empty expected value makes the lease "the ref must not exist": create, never update.
     args = [
-        "-c",
-        "credential.helper=",
-        "-c",
-        "http.lowSpeedLimit=1000",
-        "-c",
-        "http.lowSpeedTime=60",
+        *_REMOTE_OPTS,
         "push",
         "--porcelain",
-        f"--force-with-lease={ref}:",
+        f"--force-with-lease={ref}:{expect}",
         url,
-        f"{ref}:{ref}",
+        f"{source or ref}:{ref}",
     ]
-    return args, extra
+    return args, _auth_env(url, token)
+
+
+def _lease_lost(porcelain: str, ref: str) -> bool:
+    """Whether the push's only failure is the ref moving away from the expected value."""
+    for line in porcelain.splitlines():
+        flag, _, rest = line.partition("\t")
+        target, _, status = rest.partition("\t")
+        if flag == "!" and target.endswith(f":{ref}"):
+            return "(stale info)" in status or (
+                "[remote rejected]" in status
+                and ("cannot lock ref" in status or "incorrect old value" in status)
+            )
+    return False
 
 
 class Git:
@@ -145,6 +175,7 @@ class Git:
         extra_env: Mapping[str, str] | None,
         secrets: Sequence[str],
         timeout: float = DEFAULT_TIMEOUT_S,
+        stdin: IO[bytes] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         argv = self.argv(*args)
         if any(s and s in a for s in secrets for a in argv):
@@ -156,7 +187,7 @@ class Git:
             argv,
             cwd=cwd or self.repo,
             env=self._env(extra_env),
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL if stdin is None else stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
@@ -191,8 +222,9 @@ class Git:
         extra_env: Mapping[str, str] | None = None,
         secrets: Sequence[str] = (),
         timeout: float = DEFAULT_TIMEOUT_S,
+        stdin: IO[bytes] | None = None,
     ) -> str:
-        proc = self._exec(args, cwd, extra_env, secrets, timeout)
+        proc = self._exec(args, cwd, extra_env, secrets, timeout, stdin)
         if proc.returncode != 0:
             raise self._fail(args, proc, secrets)
         return proc.stdout
@@ -316,6 +348,85 @@ class Git:
 
     def push(self, url: str, branch: str, token: str) -> None:
         args, extra = push_invocation(url, branch, token)
-        header = extra.get("GIT_CONFIG_VALUE_0", "")
-        secrets = (token, header, header.rpartition(" ")[2])
-        self.run(*args, extra_env=extra, secrets=secrets, timeout=PUSH_TIMEOUT_S)
+        self.run(
+            *args, extra_env=extra, secrets=_auth_secrets(token, extra), timeout=PUSH_TIMEOUT_S
+        )
+
+    def remote_head(self, url: str, branch: str, token: str) -> str | None:
+        env = _auth_env(url, token)
+        ref = f"refs/heads/{branch}"
+        out = self.run(
+            *_REMOTE_OPTS,
+            "ls-remote",
+            "--heads",
+            url,
+            ref,
+            extra_env=env,
+            secrets=_auth_secrets(token, env),
+        )
+        for line in out.splitlines():
+            sha, _, name = line.partition("\t")
+            if name == ref:
+                return sha
+        return None
+
+    def fetch_ref(self, url: str, branch: str, token: str, into: str) -> None:
+        env = _auth_env(url, token)
+        self.run(
+            *_REMOTE_OPTS,
+            "fetch",
+            "-q",
+            "--no-tags",
+            "--no-write-fetch-head",
+            url,
+            f"+refs/heads/{branch}:{into}",
+            extra_env=env,
+            secrets=_auth_secrets(token, env),
+            timeout=PUSH_TIMEOUT_S,
+        )
+
+    def commit_tree_files(
+        self,
+        parent: str | None,
+        files: Mapping[str, bytes],
+        drop_prefix: str | None,
+        message: str,
+        index: Path,
+    ) -> str:
+        """Commit `files` over the parent's tree, minus `drop_prefix`, through a throwaway index."""
+        env = {"GIT_INDEX_FILE": str(index)}
+        blob = index.with_name(f"{index.name}.blob")
+        index.unlink(missing_ok=True)
+        try:
+            if parent is None:
+                self.run("read-tree", "--empty", extra_env=env)
+            else:
+                self.run("read-tree", "--end-of-options", parent, extra_env=env)
+            if drop_prefix:
+                listed = self.run("ls-files", "-z", extra_env=env).split("\0")
+                gone = [p for p in listed if p.startswith(drop_prefix)]
+                if gone:
+                    self.run("update-index", "--force-remove", "--", *gone, extra_env=env)
+            for path, data in files.items():
+                blob.write_bytes(data)
+                with blob.open("rb") as source:
+                    sha = self.run("hash-object", "-w", "--stdin", stdin=source).strip()
+                info = f"100644,{sha},{path}"
+                self.run("update-index", "--add", "--cacheinfo", info, extra_env=env)
+            tree = self.run("write-tree", extra_env=env).strip()
+        finally:
+            index.unlink(missing_ok=True)
+            blob.unlink(missing_ok=True)
+        lineage = ["-p", parent] if parent else []
+        return self.run("commit-tree", *lineage, "-m", message, tree).strip()
+
+    def push_update(self, url: str, sha: str, branch: str, token: str, expect: str | None) -> bool:
+        """Point the remote branch at `sha` if it still is at `expect` (None: absent)."""
+        args, extra = push_invocation(url, branch, token, source=sha, expect=expect or "")
+        secrets = _auth_secrets(token, extra)
+        proc = self._exec(args, None, extra, secrets, PUSH_TIMEOUT_S)
+        if proc.returncode == 0:
+            return True
+        if _lease_lost(proc.stdout, f"refs/heads/{branch}"):
+            return False
+        raise self._fail(args, proc, secrets)

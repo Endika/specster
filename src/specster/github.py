@@ -54,6 +54,7 @@ class IssueTracker(Protocol):
     def default_branch(self) -> str: ...
     def branch_exists(self, branch: str) -> bool: ...
     def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest: ...
+    def update_pull(self, number: int, body: str) -> None: ...
 
 
 def _ts(value: str) -> datetime:
@@ -227,6 +228,11 @@ class GitHubRest:
             f"create pull request: HTTP {resp.status_code}: {_error_message(resp)}",
             resp.status_code,
         )
+
+    def update_pull(self, number: int, body: str) -> None:
+        self._http.patch(
+            f"/repos/{self._repo}/pulls/{number}", json={"body": body}
+        ).raise_for_status()
 
 
 def _error_message(resp: httpx.Response) -> str:

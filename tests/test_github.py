@@ -15,6 +15,7 @@ class FakeGitHubServer:
         self.branches = {"specster/issue-3"}
         self.pulls: list[dict[str, object]] = []
         self.pull_refused: set[str] = set()
+        self.patched: dict[int, dict[str, object]] = {}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
@@ -107,6 +108,9 @@ class FakeGitHubServer:
             return httpx.Response(
                 201, json={"number": 12, "html_url": "https://github.com/o/r/pull/12"}
             )
+        if path.startswith("/repos/o/r/pulls/") and method == "PATCH":
+            self.patched[int(path.rsplit("/", 1)[-1])] = json.loads(request.content)
+            return httpx.Response(200, json={})
         return httpx.Response(500, json={"message": f"unexpected {method} {path}"})
 
     @staticmethod
@@ -221,3 +225,17 @@ def test_a_created_pull_without_its_url_is_an_error() -> None:
     )
     with pytest.raises(GitHubError, match="HTTP 201 without a number and url"):
         gh.create_pull("t", "b", "h", "main")
+
+
+def test_update_pull_patches_only_its_body() -> None:
+    server = FakeGitHubServer()
+    client(server).update_pull(5, "new body")
+    assert server.patched == {5: {"body": "new body"}}
+
+
+def test_a_refused_pull_update_raises() -> None:
+    gh = GitHubRest(
+        "o/r", "tok", transport=httpx.MockTransport(lambda _: httpx.Response(404, json={}))
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        gh.update_pull(5, "b")
