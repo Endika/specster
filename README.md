@@ -70,13 +70,15 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   cleanup:
-    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'specster/issue-')
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'specster/issue-') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
       - uses: Endika/specster@v0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,12 +1,13 @@
 """The cleanup phase: drop a closed pull request's evidence from the evidence branch."""
 
 import shutil
+import traceback
 
 from specster.event import Trigger
 from specster.evidence_branch import EVIDENCE_BRANCH, EvidenceBranchError, remove
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.sandbox import scratch_dir
-from specster.usecases.context import RunContext, log, write_outcome
+from specster.usecases.context import RunContext, describe, log, write_outcome
 
 _BRANCH_PREFIX = "specster/issue-"
 
@@ -31,6 +32,11 @@ class CleanupPhase:
             removed = remove(git, f"{env.server_url}/{env.repo}.git", env.token, folder, scratch)
         except (GitError, EvidenceBranchError, OSError) as e:
             log(f"could not remove {folder} from {EVIDENCE_BRANCH}: {e}")
+            write_outcome(env, "error")
+            return 1
+        except Exception as e:
+            traceback.print_exc()
+            log(f"could not remove {folder} from {EVIDENCE_BRANCH}: {describe(e)}")
             write_outcome(env, "error")
             return 1
         finally:
