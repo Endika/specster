@@ -3,6 +3,7 @@ import os
 import shutil
 import signal
 import stat
+import subprocess
 import sys
 import time
 from collections.abc import Iterator
@@ -617,3 +618,19 @@ def test_stop_of_a_server_that_already_exited_gives_its_own_code(sandbox_dir: Pa
 def test_a_server_needs_the_lock_down_first(tmp_path: Path) -> None:
     with pytest.raises(SandboxError, match="lock_down"):
         Sandbox(None, 20, 10_000, {}).start([PY, "-c", "pass"], tmp_path, home(tmp_path), "s")
+
+
+@ROOT_ONLY
+def test_the_recheck_kills_what_is_left_and_reports_nothing_once_it_is_gone() -> None:
+    uid = SANDBOX_BASE_UID + 9
+    proc = subprocess.Popen([PY, "-c", "import time; time.sleep(60)"], user=uid, group=uid)
+    try:
+        deadline = time.monotonic() + 10
+        while not sandbox._live_pids(uid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert sandbox._live_pids(uid) == [proc.pid]
+        assert sandbox._recheck(uid, 2.0) == {}
+        assert proc.wait(timeout=5) == -signal.SIGKILL
+    finally:
+        proc.kill()
+        proc.wait()
