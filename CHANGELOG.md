@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/Endika/specster/compare/specster-v0.11.0...specster-v0.11.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* recheck the slot before reporting processes that survived the kill ([d5bf44a](https://github.com/Endika/specster/commit/d5bf44a4d7928feaef84a1328fe8ecdee039704c))
+
 ## [0.11.0](https://github.com/Endika/specster/compare/specster-v0.10.1...specster-v0.11.0) (2026-10-01)
 
 
