@@ -78,6 +78,10 @@ class FakeTracker:
         n = len(self.pulls)
         return PullRequest(n, f"https://github.com/o/r/pull/{n}")
 
+    def update_pull(self, number: int, body: str) -> None:
+        title, _, head, base = self.pulls[number - 1]
+        self.pulls[number - 1] = (title, body, head, base)
+
 
 def _with_labels(issue: Issue, labels: set[str]) -> Issue:
     return Issue(
