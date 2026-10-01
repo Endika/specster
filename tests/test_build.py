@@ -1,5 +1,6 @@
 import os
 import re
+import socket
 import stat
 import sys
 import threading
@@ -20,13 +21,20 @@ from specster.build import (
     commit_changes,
     run_build,
 )
-from specster.config import BudgetConfig, BuildConfig, Config, ModelConfig, SkillsConfig
+from specster.config import (
+    BudgetConfig,
+    BuildConfig,
+    Config,
+    ModelConfig,
+    PreviewConfig,
+    SkillsConfig,
+)
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel, ToolCall, ToolResult, ToolSpec, Turn, Usage
 from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
-from specster.schemas import PlanTask
+from specster.schemas import EvidenceRequest, PlanTask
 from specster.skills import load_skills
 from specster.workspace import CONFIG_PATH
 from tests.fakes import ScriptBook, ScriptedModel, make_repo
@@ -76,6 +84,7 @@ def setup(
     gate_base: bool = False,
     files: Mapping[str, str] | None = None,
     escalation: ChatModel | None = None,
+    evidence: Sequence[EvidenceRequest] = (),
 ) -> BuildSetup:
     repo = tmp_path / "repo"
     git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n", **(files or {})})
@@ -88,7 +97,7 @@ def setup(
             update={"models": cfg.models.model_copy(update={"escalation": stronger})}
         )
     skills = load_skills(repo, SkillsConfig(), "build", lambda *_: b"", None)
-    spec = ApprovedSpec(human(1, T0), tasks, "0" * 64, "The spec text.")
+    spec = ApprovedSpec(human(1, T0), tasks, "0" * 64, "The spec text.", tuple(evidence))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
 
@@ -942,3 +951,189 @@ def test_the_time_limit_stops_after_the_final_tests(tmp_path: Path) -> None:
     report = run_build(late_setup(tmp_path, clock, [task("a", "app.py")], book))
     assert report.status == "budget_exhausted" and report.out_of_time and report.commits == 1
     assert report.final_tests is not None and report.review is None
+
+
+LOCAL = pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+EVIDENCE = [
+    EvidenceRequest(name="users", method="GET", path="/users", why="w"),
+    EvidenceRequest(name="new", method="GET", path="/new", why="w"),
+]
+# {start} runs before the server; {routes} maps a path to its JSON answer.
+APP = """\
+import json, os, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+{start}
+ROUTES = {routes!r}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        found = self.path in ROUTES
+        body = json.dumps(ROUTES[self.path]).encode() if found else b"missing"
+        self.send_response(200 if found else 404)
+        self.send_header("Content-Type", "application/json" if found else "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+HTTPServer(("127.0.0.1", {port}), Handler).serve_forever()
+"""
+BASE_ROUTES: dict[str, object] = {"/users": {"users": []}}
+HEAD_ROUTES: dict[str, object] = {"/users": {"users": [{"id": 1}]}, "/new": {"ok": True}}
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port: int = sock.getsockname()[1]
+    return port
+
+
+def app(port: int, routes: Mapping[str, object], start: str = "") -> str:
+    return APP.format(port=port, routes=dict(routes), start=start)
+
+
+def preview_for(port: int, serve: list[str] | None = None) -> PreviewConfig:
+    return PreviewConfig(
+        serve_command=serve or [sys.executable, "app.py"],
+        ready_url=f"http://127.0.0.1:{port}/users",
+    )
+
+
+def evidence_setup(
+    tmp_path: Path,
+    base_app: str,
+    head_app: str,
+    preview: PreviewConfig | None,
+    reviewer: ChatModel | None = None,
+    time_left: Callable[[], float] | None = None,
+) -> BuildSetup:
+    book = ScriptBook({'id="a"': [[write("app.py", head_app), done("feat(a): list users")]]})
+    return setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        reviewer or ScriptedModel([verdict("approve")]),
+        build=BuildConfig(preview=preview, max_review_rounds=0),
+        files={"app.py": base_app},
+        evidence=EVIDENCE,
+        time_left=time_left,
+    )
+
+
+@LOCAL
+def test_approved_build_collects_evidence(tmp_path: Path) -> None:
+    port = free_port()
+    s = evidence_setup(tmp_path, app(port, BASE_ROUTES), app(port, HEAD_ROUTES), preview_for(port))
+    report = run_build(s)
+    assert report.status == "approved"
+    ev = report.evidence
+    assert ev is not None and not ev.problems
+    users, new = ev.items
+    assert users.base is not None and users.base.status == 200
+    assert users.changed and '"id": 1' in users.diff
+    assert new.base is not None and new.base.status == 404
+    assert new.head is not None and new.head.status == 200
+    assert set(ev.logs) == {"base", "head"}
+    assert not [p for p in (tmp_path / "scratch").iterdir() if p.name.startswith("evidence-")]
+
+
+@LOCAL
+def test_base_that_never_gets_ready_still_gives_head_evidence(tmp_path: Path) -> None:
+    port = free_port()
+    broken = app(port, BASE_ROUTES, start="sys.exit('no database')")
+    s = evidence_setup(tmp_path, broken, app(port, HEAD_ROUTES), preview_for(port))
+    report = run_build(s)
+    assert report.status == "approved"
+    ev = report.evidence
+    assert ev is not None and [p.side for p in ev.problems] == ["base"]
+    assert ev.problems[0].reason == "the server exited before it was ready"
+    assert "no database" in ev.problems[0].log_tail
+    head = ev.items[0].head
+    assert ev.items[0].base is None and head is not None and head.status == 200
+
+
+@LOCAL
+def test_a_failing_seed_command_is_the_sides_problem_with_its_log(tmp_path: Path) -> None:
+    port = free_port()
+    seed = [
+        sys.executable,
+        "-c",
+        "import os, sys; os.path.exists('app.py') and sys.exit('no seed')",
+    ]
+    preview = preview_for(port).model_copy(update={"seed_command": seed})
+    s = evidence_setup(tmp_path, app(port, BASE_ROUTES), app(port, HEAD_ROUTES), preview)
+    ev = run_build(s).evidence
+    assert ev is not None
+    assert [(p.side, p.reason) for p in ev.problems] == [
+        ("base", "seed_command failed (exit 1)"),
+        ("head", "seed_command failed (exit 1)"),
+    ]
+    assert "no seed" in ev.problems[0].log_tail and "no seed" in ev.logs["head"]
+    assert all(i.base is None and i.head is None for i in ev.items)
+
+
+@LOCAL
+def test_a_server_that_forks_a_listener_frees_the_port_for_the_head(tmp_path: Path) -> None:
+    port = free_port()
+    # The listener is a child in the background; the serve command's own shell just waits.
+    serve = ["/bin/sh", "-c", f"{sys.executable} app.py & wait"]
+    s = evidence_setup(
+        tmp_path, app(port, BASE_ROUTES), app(port, HEAD_ROUTES), preview_for(port, serve)
+    )
+    ev = run_build(s).evidence
+    assert ev is not None and not ev.problems
+    head = ev.items[1].head
+    assert head is not None and head.status == 200
+
+
+def test_no_preview_means_no_evidence_run(tmp_path: Path) -> None:
+    s = evidence_setup(tmp_path, "A = 0\n", "A = 1\n", None)
+    report = run_build(s)
+    assert report.status == "approved" and report.evidence is None
+    assert any("build.preview" in w for w in report.warnings)
+
+
+def test_not_approved_build_runs_no_evidence(tmp_path: Path) -> None:
+    bad = {"task_id": "a", "file": "app.py", "severity": "critical", "description": "wrong"}
+    port = free_port()
+    s = evidence_setup(
+        tmp_path,
+        app(port, BASE_ROUTES),
+        app(port, HEAD_ROUTES),
+        preview_for(port),
+        reviewer=ScriptedModel([verdict("changes", bad)]),
+    )
+    report = run_build(s)
+    assert report.status == "not_approved" and report.evidence is None
+    assert not any("evidence" in w for w in report.warnings)
+
+
+class ApproveThenLate(ScriptedModel):
+    """Approves, and the build's time runs out while it does."""
+
+    def __init__(self, clock: Clock) -> None:
+        super().__init__([verdict("approve")])
+        self.clock = clock
+
+    def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+        turn = super().send(results, user_text)
+        self.clock.left = 0.0
+        return turn
+
+
+def test_a_build_out_of_time_skips_the_evidence_and_says_so(tmp_path: Path) -> None:
+    clock = Clock("never")
+    port = free_port()
+    s = evidence_setup(
+        tmp_path,
+        app(port, BASE_ROUTES),
+        app(port, HEAD_ROUTES),
+        preview_for(port),
+        reviewer=ApproveThenLate(clock),
+        time_left=clock.time_left,
+    )
+    report = run_build(s)
+    assert report.status == "approved" and report.evidence is None
+    assert "evidence skipped: the build is out of time" in report.warnings

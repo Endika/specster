@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import queue
 import secrets
@@ -9,13 +10,16 @@ import threading
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
 
+import httpx
+
 from specster.agent import TIME_UP, AgentError, attached_usage
 from specster.approved import ApprovedSpec
-from specster.config import BudgetConfig, Config, ModelConfig, PersonaConfig
+from specster.config import BudgetConfig, Config, ModelConfig, PersonaConfig, PreviewConfig
+from specster.evidence import LOG_TAIL_CHARS, EvidenceRun, Side, collect
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel, Usage
@@ -29,7 +33,7 @@ from specster.prompts import (
 )
 from specster.repomap import RepoMap
 from specster.review import blocking, run_review
-from specster.sandbox import RunResult, Sandbox
+from specster.sandbox import RunResult, Sandbox, Server
 from specster.schemas import Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
 from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
@@ -101,6 +105,7 @@ class BuildReport:
     truncations: list[str]
     warnings: list[str]
     out_of_time: bool = False
+    evidence: EvidenceRun | None = None
 
     @property
     def commits(self) -> int:
@@ -587,6 +592,75 @@ class _Build:
             slot_box.use_tools(bins)
         return None
 
+    def _evidence(self) -> EvidenceRun | None:
+        """The approved requests at base and head; never raises, never changes the outcome."""
+        requests = self.s.spec.evidence
+        preview = self.cfg.build.preview
+        if not requests:
+            return None
+        if preview is None:
+            self.warnings.append(
+                "the spec lists evidence, but build.preview is not set: none collected"
+            )
+            return None
+        if self._time_stop() is not None:
+            self.warnings.append("evidence skipped: the build is out of time")
+            return None
+        enclosures: list[Path] = []
+        failed: dict[str, str] = {}
+        try:
+            if self._final is None:
+                self._final = self.s.make_sandbox(FINAL_SLOT)
+            sandbox = self._final
+
+            def start_side(side: Side) -> tuple[Server | None, str | None]:
+                return self._start_side(sandbox, preview, side, enclosures, failed)
+
+            with httpx.Client() as client:
+                run = collect(start_side, preview, requests, client, self.s.time_left or _forever)
+        except Exception as e:
+            self.warnings.append(f"evidence: {type(e).__name__}: {e}")
+            return None
+        finally:
+            for enclosure in enclosures:
+                shutil.rmtree(enclosure, ignore_errors=True)
+        problems = tuple(
+            replace(p, log_tail=failed[p.side][-LOG_TAIL_CHARS:]) if p.side in failed else p
+            for p in run.problems
+        )
+        return replace(run, problems=problems, logs={**run.logs, **failed})
+
+    def _start_side(
+        self,
+        sandbox: Sandbox,
+        preview: PreviewConfig,
+        side: Side,
+        enclosures: list[Path],
+        failed: dict[str, str],
+    ) -> tuple[Server | None, str | None]:
+        """The side's server, started after the setup and seed commands; else why not."""
+        commit = self.s.base if side == "base" else self.git.head(self.integration)
+        enclosure = self.s.scratch / f"evidence-{side}"
+        enclosures.append(enclosure)
+        tree = self._enclose(sandbox, enclosure, commit)
+        sandbox.hand_over(tree)
+        home = sandbox.new_home(enclosure, "home")
+        steps = [
+            ("setup_command", self.cfg.build.setup_command),
+            ("seed_command", preview.seed_command),
+        ]
+        for which, argv in steps:
+            if argv is None:
+                continue
+            res = sandbox.run(argv, tree, home, f"{which.removesuffix('_command')} {side}")
+            if res.truncation:
+                self.truncations.append(res.truncation)
+            if not res.ok:
+                failed[side] = res.output
+                timed_out = ", timed out" if res.timed_out else ""
+                return None, f"{which} failed (exit {res.exit_code}{timed_out})"
+        return sandbox.start(preview.serve_command, tree, home, f"serve {side}"), None
+
     def _review(self, tests: str) -> ReviewResult:
         head = self.git.head(self.integration)
         diff = self.git.diff(self.s.base, head)
@@ -641,7 +715,9 @@ class _Build:
         review: ReviewResult | None = None
         rounds = 0
 
-        def report(status: Outcome, reason: str) -> BuildReport:
+        def report(
+            status: Outcome, reason: str, evidence: EvidenceRun | None = None
+        ) -> BuildReport:
             last = review.findings if review is not None else []
             unpriced = [
                 f"{role} model has no price: the budget caps do not count it"
@@ -664,6 +740,7 @@ class _Build:
                 self.truncations,
                 [*self.warnings, *unpriced],
                 status == "budget_exhausted" and self._out_of_time,
+                evidence,
             )
 
         build = self.cfg.build
@@ -710,7 +787,7 @@ class _Build:
             blocked = blocking(review)
             tests_ok = final is None or final.ok
             if not blocked and tests_ok:
-                return report("approved", "")
+                return report("approved", "", self._evidence())
             if not blocked:
                 return report(
                     "not_approved", "tests fail on the branch and the reviewer named no task to fix"
@@ -735,6 +812,10 @@ class _Build:
             if stopped is not None:
                 return report(*stopped)
         raise AssertionError("unreachable: the last round always returns")
+
+
+def _forever() -> float:
+    return math.inf
 
 
 def run_build(setup: BuildSetup) -> BuildReport:
