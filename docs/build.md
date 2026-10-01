@@ -118,7 +118,7 @@ models:
 
 ## Before/after evidence
 
-With `build.preview` set (see [Configuration](configuration.md#configuration)) and a spec that
+With `build.preview` set (see [every setting](../README.md#every-setting)) and a spec that
 lists evidence requests, an approved build shows what the change does to the running app, not
 only to the code. In the final-tests slot (slot 0) it runs `setup_command`, `seed_command` and
 `serve_command` on the base commit, sends every request, stops that server, then does the same on
