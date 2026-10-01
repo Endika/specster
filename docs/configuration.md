@@ -43,9 +43,10 @@ useful for re-running a failed job without re-labeling.
 
 - `actions/checkout` must run before Specster, or it has no repository to explore.
 - The `concurrency` group is per issue: two labelings of the same issue queue instead of racing.
-  A closed pull request joins the group of its own number, so its cleanup queues behind a run
-  that shares that number instead of racing it on the evidence branch.
   `cancel-in-progress: false` because a half-finished run must not be killed mid-comment.
+  A closed pull request's cleanup uses the group of the pull request's number, so two closes of
+  the same pull request queue; against other runs, the evidence branch is protected by a leased
+  push that retries once.
 - The `spec` job's `permissions` is the minimum: `contents: read` to explore the repo, `issues:
   write` to comment and change labels. The `build` job needs more: `contents: write` to push the
   branch, `pull-requests: write` to open the PR, `issues: write` to comment, change labels and
@@ -59,8 +60,10 @@ useful for re-running a failed job without re-labeling.
   the container; the label is also checked again inside Specster against `labels.spec` and
   `labels.build` in the config. If you rename either label, change the matching `if:` too, or the
   job never starts. The `cleanup` job starts only when a pull request from a `specster/issue-*`
-  branch is closed, merged or not, whoever closed it, bots included; Specster checks the branch
-  again and skips any other.
+  branch of this repository (never a fork) is closed, merged or not, whoever closed it, bots
+  included, except a close done with the default `GITHUB_TOKEN`, which triggers no workflow;
+  Specster checks the branch again and skips any other. It checks out the default branch, not the
+  pull request, so a closed and unmerged pull request's code never runs with the job's token.
 - The `build` job's `timeout-minutes: 120` gives parallel workers, correction rounds and the final
   test run room; the `spec` job only ever makes one model call, so 20 minutes is generous already.
   Keep `build.max_minutes` (default 100) below the build job's `timeout-minutes`: at that limit

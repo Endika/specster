@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import tempfile
 from pathlib import Path
@@ -117,3 +118,12 @@ def test_a_broken_config_during_cleanup_only_logs(tmp_path: Path) -> None:
     assert go(e, tr) == 1
     assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-5/a.json"]
     assert tr.posted == [] and (tmp_path / "out.txt").read_text() == "outcome=error\n"
+
+
+def test_an_unexpected_cleanup_error_still_writes_the_outcome(tmp_path: Path) -> None:
+    e, _, _ = world(tmp_path, "specster/issue-3")
+    before, tr = scratches(), tracker()
+    # A NUL in the remote URL makes subprocess raise ValueError, outside git's own errors.
+    assert go(dataclasses.replace(e, repo="o/r\0"), tr) == 1
+    assert tr.posted == [] and (tmp_path / "out.txt").read_text() == "outcome=error\n"
+    assert scratches() <= before
