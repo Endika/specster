@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.11.0](https://github.com/Endika/specster/compare/specster-v0.10.1...specster-v0.11.0) (2026-10-01)
+
+
+### Features
+
+* carry the approved evidence in the spec's hashed plan marker ([23bc6ed](https://github.com/Endika/specster/commit/23bc6ed3cce5e9175ed9d3bb8705465319486272))
+* collect before and after evidence once the build is approved ([4f1f4b9](https://github.com/Endika/specster/commit/4f1f4b9157f8ddd36f0137e8adb2fa40ab0c8996))
+* let the spec list HTTP requests as evidence when build.preview is set ([a75d0fb](https://github.com/Endika/specster/commit/a75d0fbdfe7dc7d263735895a86b2089c86cd4fe))
+* publish files to an orphan evidence branch with a leased push ([2e3083f](https://github.com/Endika/specster/commit/2e3083fea77617c674f6f42bf07755fea28a6629))
+* put the before and after evidence in the pull request ([868cfb3](https://github.com/Endika/specster/commit/868cfb3ddb80f78457a4339f58d9d32686d91d92))
+* remove a pull request's evidence when it is closed ([f6936f8](https://github.com/Endika/specster/commit/f6936f8bb2056c8cc6400d64bca37f02d42facce))
+* run a server in the sandbox and capture HTTP responses for evidence ([37f9398](https://github.com/Endika/specster/commit/37f939860d9b043a0b1cb88daa0c213e2576e80d))
+
+
+### Bug Fixes
+
+* bound evidence reads and never let normalize raise ([a3a27b1](https://github.com/Endika/specster/commit/a3a27b16eb8e312e789163ebec4822efc47b0ae9))
+* keep evidence off runner proxies, print its unexpected errors and install toolchains for a preview ([9d906a6](https://github.com/Endika/specster/commit/9d906a63931e19689c7569387534a3245e573c2d))
+* keep the run finishing when evidence upload or linking fails ([e8afd80](https://github.com/Endika/specster/commit/e8afd80075e05e69b4c0cc54a6ab914e9ae6efc9))
+* raise GitHubError when a pull request update fails or never reaches GitHub ([8aed909](https://github.com/Endika/specster/commit/8aed9091a5b2ec9b5f9c51ca787f20622c268c55))
+* refuse an evidence body too long for the spec comment ([9d725b4](https://github.com/Endika/specster/commit/9d725b441a8585fbc9a6a62ca388682d42542227))
+* remove evidence from a throwaway repository instead of the checkout ([ac64b81](https://github.com/Endika/specster/commit/ac64b81ad9ce21ce508d62dda9d631793e370716))
+* run the evidence cleanup from the default branch and only for this repository's pull requests ([a520ec1](https://github.com/Endika/specster/commit/a520ec1ff089c6e5a12110202e738096833c6a71))
+* show deeply nested JSON as text instead of parsing it ([3bc9305](https://github.com/Endika/specster/commit/3bc930544f3f059a055a25cef53f93c1e4f612d4))
+* show why an evidence request failed, stop a side whose server exited, and say why a response was cut ([dceec9e](https://github.com/Endika/specster/commit/dceec9e984657f5973eb072a2f3856bbc81b364f))
+
+
+### Documentation
+
+* add before/after evidence to the roadmap ([b129d77](https://github.com/Endika/specster/commit/b129d77bbd91a9f680652d6e6183fd5dc32b3018))
+
 ## [0.10.1](https://github.com/Endika/specster/compare/specster-v0.10.0...specster-v0.10.1) (2026-09-29)
 
 
