@@ -112,7 +112,7 @@ settings most repos touch:
 ```yaml
 models:
   planner:  {provider: anthropic, model: claude-opus-5-5}                  # writes the spec
-  worker:   {provider: anthropic, model: claude-sonnet-5}                  # writes the code
+  worker:   {provider: anthropic, model: claude-opus-5-5}                  # writes the code
   reviewer: {provider: anthropic, model: claude-opus-5-5, effort: medium}  # reviews the build
   # escalation: {provider: anthropic, model: claude-opus-5-5}  # retry a failed task, off by default
 budget:
@@ -152,7 +152,7 @@ list price:
 | Role | Haiku 4.5 | Sonnet 5 | Opus 5.5 |
 |---|---|---|---|
 | Planner (the spec) | $0.037 | $0.074 | **$0.139** |
-| Worker (the code) | $0.034 | **$0.067** | $0.117 |
+| Worker (the code) | $0.034 | $0.067 | **$0.117** |
 | Reviewer | $0.023 | $0.046 | **$0.088** |
 
 Bold is the default. Prices are USD per million tokens (input / output / cache read / cache
@@ -165,12 +165,12 @@ a calibrated judge and by hidden tests:
 | Role | Haiku 4.5 | Sonnet 5 | Opus 5.5 |
 |---|---|---|---|
 | Planner: spec and injection cases passed | 7/21 | 15/21 | **21/21** |
-| Worker: [builds passed](docs/evals.md#harder-build-cases-and-model-escalation-2026-10-01) (reviewer + hidden test) | 14/14 | **13/14** | 14/14 |
-| Worker: mean cost per build, reviewer included | $0.111 | **$0.130** | $0.101 |
+| Worker: [builds passed](docs/evals.md#harder-build-cases-and-model-escalation-2026-10-01) (reviewer + hidden test) | 14/14 | 13/14 | **14/14** |
+| Worker: mean cost per build, reviewer included | $0.111 | $0.130 | **$0.101** |
 
 Opus 5.5 is the only planner that passed every case, and the only one no injected comment
 steered. As a worker it was also the cheapest and fastest on the seven build cases, and the only
-one the reviewer never sent back.
+one the reviewer never sent back, so it is the default worker too.
 
 ## Safety in short
 

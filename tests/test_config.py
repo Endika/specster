@@ -57,7 +57,7 @@ def test_question_cap_is_bounded(tmp_path: Path) -> None:
 
 def test_build_defaults_match_the_spec() -> None:
     cfg = Config()
-    assert cfg.models.worker.model == "claude-sonnet-5" and cfg.models.worker.effort is None
+    assert cfg.models.worker.model == "claude-opus-5-5" and cfg.models.worker.effort is None
     assert (cfg.models.reviewer.model, cfg.models.reviewer.effort) == ("claude-opus-5-5", "medium")
     assert (cfg.labels.build, cfg.labels.built) == ("ai-build", "ai-pr")
     b = cfg.build
@@ -71,7 +71,7 @@ def test_build_defaults_match_the_spec() -> None:
 
 def test_a_config_with_null_worker_and_reviewer_still_loads(tmp_path: Path) -> None:
     cfg = load_config(write(tmp_path, "models:\n  worker: null\n  reviewer: null\n"))
-    assert cfg.models.worker.model == "claude-sonnet-5"
+    assert cfg.models.worker.model == "claude-opus-5-5"
     assert cfg.models.reviewer.effort == "medium"
 
 

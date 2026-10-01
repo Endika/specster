@@ -50,7 +50,7 @@ class ModelConfig(_Strict):
 
 
 def _worker_default() -> ModelConfig:
-    return ModelConfig(model="claude-sonnet-5")
+    return ModelConfig(model="claude-opus-5-5")
 
 
 def _reviewer_default() -> ModelConfig:
