@@ -79,9 +79,9 @@ hidden test the worker never saw passes on the built branch.
 |---|---|---|---|---|---|---|
 | Haiku 4.5 | off | 8/8 | 0.1 | 8 | $0.078 | 39 s |
 | Haiku 4.5 | on | 8/8 | 0.2 | 18 | $0.081 | 53 s |
-| Sonnet 5 (default) | off | 8/8 | 0.1 | 13 | $0.060 | 39 s |
+| Sonnet 5 | off | 8/8 | 0.1 | 13 | $0.060 | 39 s |
 | Sonnet 5 | on | 8/8 | 0.1 | 12 | $0.098 | 46 s |
-| Opus 5.5 | off | 8/8 | 0.0 | 5 | $0.067 | 27 s |
+| Opus 5.5 (default) | off | 8/8 | 0.0 | 5 | $0.067 | 27 s |
 | Opus 5.5 | on | 8/8 | 0.0 | 4 | $0.087 | 30 s |
 
 Every build passed, so these four cases cannot tell workers apart on quality: the differences
@@ -103,8 +103,8 @@ Sonnet ran a second time with `models.escalation` set to Opus 5.5.
 | Worker | Passed | Escalated | Review rounds | Minor findings | Mean cost per build | Mean time |
 |---|---|---|---|---|---|---|
 | Haiku 4.5 | 14/14 | - | 0.3 | 33 | $0.111 | 101 s |
-| Sonnet 5 (default) | 13/14 | - | 0.4 | 21 | $0.130 | 62 s |
-| Opus 5.5 | 14/14 | - | 0.0 | 4 | $0.101 | 42 s |
+| Sonnet 5 | 13/14 | - | 0.4 | 21 | $0.130 | 62 s |
+| Opus 5.5 (default) | 14/14 | - | 0.0 | 4 | $0.101 | 42 s |
 | Haiku 4.5, escalation to Opus 5.5 | 14/14 | 1 | 0.4 | 34 | $0.139 | 114 s |
 | Sonnet 5, escalation to Opus 5.5 | 14/14 | 0 | 0.1 | 20 | $0.107 | 87 s |
 

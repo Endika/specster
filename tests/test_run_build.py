@@ -87,8 +87,13 @@ def world(
     return e, tr, remote
 
 
+# Worker and reviewer share a default model; only the reviewer's has an effort.
+def is_reviewer(cfg: ModelConfig) -> bool:
+    return cfg.effort is not None
+
+
 def models(worker: ChatModel, reviewer: ChatModel) -> Callable[[ModelConfig], ChatModel]:
-    return lambda cfg: worker if cfg.model == "claude-sonnet-5" else reviewer
+    return lambda cfg: reviewer if is_reviewer(cfg) else worker
 
 
 def unprivileged(_slot: int) -> Identity | None:
@@ -176,7 +181,9 @@ def test_a_configured_escalation_model_rescues_a_failed_task_and_the_comment_say
     reviewer = approve()
 
     def make(cfg: ModelConfig) -> ChatModel:
-        return {"claude-sonnet-5": stuck, "claude-opus-5": book()}.get(cfg.model, reviewer)
+        if cfg.model == "claude-opus-5":
+            return book()
+        return reviewer if is_reviewer(cfg) else stuck
 
     code = main(e, tr, make, lambda *_: b"", timer=lambda: 0.0, identity=unprivileged)
     assert code == 0 and tr.pulls

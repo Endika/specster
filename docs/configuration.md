@@ -139,7 +139,7 @@ models:
     max_retries: 4
   worker:                       # writes one task's code in the build phase; same fields as planner
     provider: anthropic
-    model: claude-sonnet-5
+    model: claude-opus-5-5
   reviewer:                     # reviews the build's diff before the pull request; same fields as planner
     provider: anthropic
     model: claude-opus-5-5
