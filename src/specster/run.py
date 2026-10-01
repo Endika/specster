@@ -2,8 +2,14 @@ import json
 import time
 import traceback
 from collections.abc import Callable, Mapping
+from contextvars import Token
 from datetime import UTC, datetime
 from pathlib import Path
+from types import TracebackType
+
+from opentelemetry import context, trace
+from opentelemetry.context import Context
+from opentelemetry.trace import StatusCode
 
 from specster.config import Config, ConfigError, LabelsConfig, ModelConfig, load_config
 from specster.event import EventError, Trigger, parse_event, phase_of, skip_reason
@@ -14,6 +20,7 @@ from specster.sandbox import (
     slot_identity,
 )
 from specster.skills import Fetch
+from specster.telemetry import mark_error
 from specster.telemetry_metrics import record_run
 from specster.usecases.build_phase import BuildPhase
 from specster.usecases.cleanup_phase import CleanupPhase
@@ -125,7 +132,8 @@ def main(
         phase = phase_of(trigger, LabelsConfig())
         run = RunContext(env, tracker, Config(), trigger.issue_number, started, timer, phase)
         try:
-            return run.fail(Failure(str(e), f"Fix {env.config_path} and add the label again."))
+            with _RootSpan(run):
+                return run.fail(Failure(str(e), f"Fix {env.config_path} and add the label again."))
         finally:
             _record(run)
     reason = skip_reason(trigger, cfg.labels)
@@ -136,19 +144,72 @@ def main(
     phase = phase_of(trigger, cfg.labels)
     run = RunContext(env, tracker, cfg, trigger.issue_number, started, timer, phase)
     try:
-        if phase == "cleanup":
-            return CleanupPhase(run, trigger).execute()
-        try:
-            if phase == "build":
-                return BuildPhase(run, trigger, make_model, fetch, identity).execute()
-            return SpecPhase(run, trigger, make_model, fetch, clock).execute()
-        except Failure as failure:
-            return run.fail(failure)
-        except Exception as e:
-            traceback.print_exc()
-            return run.fail(Failure(describe(e), UNEXPECTED_HINT, None))
+        with _RootSpan(run) as root:
+            if phase == "cleanup":
+                return CleanupPhase(run, trigger).execute()
+            try:
+                if phase == "build":
+                    return BuildPhase(run, trigger, make_model, fetch, identity).execute()
+                return SpecPhase(run, trigger, make_model, fetch, clock).execute()
+            except Failure as failure:
+                return run.fail(failure)
+            except Exception as e:
+                root.error(e)
+                traceback.print_exc()
+                return run.fail(Failure(describe(e), UNEXPECTED_HINT, None))
     finally:
         _record(run)
+
+
+class _RootSpan:
+    """The run's `specster.run` span; a tracing error is printed, never raised into the run."""
+
+    def __init__(self, run: RunContext) -> None:
+        self._run = run
+        self._span: trace.Span | None = None
+        self._token: Token[Context] | None = None
+
+    def __enter__(self) -> "_RootSpan":
+        try:
+            attributes = {
+                "specster.repo": self._run.env.repo,
+                "specster.phase": self._run.phase,
+                "specster.issue": self._run.number,
+            }
+            self._span = trace.get_tracer("specster").start_span(
+                "specster.run", attributes=attributes
+            )
+            self._token = context.attach(trace.set_span_in_context(self._span))
+        except Exception:
+            traceback.print_exc()
+        return self
+
+    def error(self, e: BaseException) -> None:
+        try:
+            if self._span is not None:
+                mark_error(self._span, e)
+        except Exception:
+            traceback.print_exc()
+
+    def __exit__(
+        self, kind: type[BaseException] | None, e: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        if e is not None:
+            self.error(e)
+        try:
+            if self._span is not None and self._run.final is not None:
+                self._span.set_attribute("specster.outcome", self._run.final[0])
+                if self._run.final[0] == "error":
+                    self._span.set_status(StatusCode.ERROR)
+        except Exception:
+            traceback.print_exc()
+        try:
+            if self._token is not None:
+                context.detach(self._token)
+            if self._span is not None:
+                self._span.end()
+        except Exception:
+            traceback.print_exc()
 
 
 def _record(run: RunContext) -> None:

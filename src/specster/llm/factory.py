@@ -8,6 +8,7 @@ from specster.llm.anthropic_chat import AnthropicChat
 from specster.llm.base import ChatModel
 from specster.llm.gemini_chat import GeminiChat
 from specster.llm.openai_chat import OpenAIChat
+from specster.llm.traced import TracedModel
 
 REPLAY_KEY = "replay-placeholder"
 _NO_BASE_URL = frozenset({"bedrock", "vertex-anthropic", "gemini", "vertex-gemini"})
@@ -144,4 +145,4 @@ def build_chat_model(cfg: ModelConfig, env: Mapping[str, str], replay: bool = Fa
     build = _ADAPTERS.get(p)
     if build is None:
         raise ProviderConfigError(f"provider {p} is not wired yet")
-    return build(cfg, env, replay)
+    return TracedModel(build(cfg, env, replay), p, cfg.model)

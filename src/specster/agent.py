@@ -16,6 +16,7 @@ from specster.schemas import (
     json_schema,
 )
 from specster.skills import SkillBook
+from specster.telemetry import span
 from specster.workspace import ToolError, Workspace
 
 NUDGE = "Call submit_questions or submit_spec now."
@@ -246,10 +247,13 @@ def run_loop[T](
                 if handler is None:
                     out.append(ToolResult(call.id, f"unknown tool {call.name}", True))
                     continue
-                try:
-                    out.append(ToolResult(call.id, handler(call.arguments)))
-                except (ToolError, KeyError, ValueError, TypeError, OSError) as e:
-                    out.append(ToolResult(call.id, str(e), True))
+                with span(f"tool {call.name}") as current:
+                    try:
+                        result = ToolResult(call.id, handler(call.arguments))
+                    except (ToolError, KeyError, ValueError, TypeError, OSError) as e:
+                        result = ToolResult(call.id, str(e), True)
+                    current.set_attribute("specster.tool.error", result.is_error)
+                out.append(result)
         except AgentError:
             raise
         except BaseException as e:
