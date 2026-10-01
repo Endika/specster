@@ -235,7 +235,19 @@ def test_update_pull_patches_only_its_body() -> None:
 
 def test_a_refused_pull_update_raises() -> None:
     gh = GitHubRest(
-        "o/r", "tok", transport=httpx.MockTransport(lambda _: httpx.Response(404, json={}))
+        "o/r",
+        "tok",
+        transport=httpx.MockTransport(lambda _: httpx.Response(502, json={"message": "Bad"})),
     )
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(GitHubError, match="update pull request: HTTP 502: Bad") as e:
+        gh.update_pull(5, "b")
+    assert e.value.status == 502
+
+
+def test_a_pull_update_that_never_reaches_github_raises() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection reset", request=request)
+
+    gh = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle))
+    with pytest.raises(GitHubError, match="update pull request: ConnectError: connection reset"):
         gh.update_pull(5, "b")

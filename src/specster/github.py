@@ -230,9 +230,15 @@ class GitHubRest:
         )
 
     def update_pull(self, number: int, body: str) -> None:
-        self._http.patch(
-            f"/repos/{self._repo}/pulls/{number}", json={"body": body}
-        ).raise_for_status()
+        try:
+            resp = self._http.patch(f"/repos/{self._repo}/pulls/{number}", json={"body": body})
+        except httpx.TransportError as e:
+            raise GitHubError(f"update pull request: {type(e).__name__}: {e}") from e
+        if not resp.is_success:
+            raise GitHubError(
+                f"update pull request: HTTP {resp.status_code}: {_error_message(resp)}",
+                resp.status_code,
+            )
 
 
 def _error_message(resp: httpx.Response) -> str:

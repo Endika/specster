@@ -8,11 +8,12 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from specster.config import ModelConfig
 from specster.git import BOT_EMAIL, Author, Git
-from specster.github import GitHubError, Issue, PullRequest
+from specster.github import GitHubRest, Issue, PullRequest
 from specster.llm.base import ChatModel, ToolCall
 from specster.metrics import RunMetrics, encode_marker, last_marker
 from specster.run import Env, main
@@ -601,8 +602,11 @@ def test_an_os_error_in_the_upload_still_finishes_the_run(
 
 
 class _NoPatch(FakeTracker):
+    """Updates the pull request through the real client, which GitHub answers with a 502."""
+
     def update_pull(self, number: int, body: str) -> None:
-        raise GitHubError("Validation Failed", 422)
+        down = httpx.MockTransport(lambda _: httpx.Response(502, json={"message": "Server Error"}))
+        GitHubRest("o/r", "tok", transport=down).update_pull(number, body)
 
 
 @pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
@@ -614,6 +618,6 @@ def test_a_failed_link_says_the_files_are_on_the_branch(tmp_path: Path) -> None:
     assert "specster-evidence" not in tr.pulls[0][1]
     comment = tr.posted[-1]
     assert "could not be uploaded" not in comment
-    assert "the pull request could not be updated with the link: Validation Failed" in comment
+    assert "could not be updated with the link: update pull request: HTTP 502" in comment
     m = last_marker(comment)
     assert m is not None and m.outcome == "pr_opened"
