@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,8 @@ LAST = "Last turn: submit now."
 
 
 TIME_UP = "the build reached its time limit (build.max_minutes)"
+# The spec comment shows each body twice and must stay under GitHub's 65,536 characters.
+EVIDENCE_BODY_MAX_CHARS = 2_000
 
 
 class TimeUp(Exception):
@@ -290,6 +293,13 @@ def run_agent(
         names = [e.name for e in result.evidence]
         if len(set(names)) != len(names):
             raise SubmissionError("evidence names must be unique")
+        for e in result.evidence:
+            size = len(json.dumps(e.body, sort_keys=True, separators=(",", ":")))
+            if size > EVIDENCE_BODY_MAX_CHARS:
+                raise SubmissionError(
+                    f"the body of evidence {e.name} is {size:,} characters as JSON; keep each "
+                    f"under {EVIDENCE_BODY_MAX_CHARS:,} with only the fields the change needs"
+                )
         tasks, fixes = normalize_plan(result.tasks)
         return result, tasks, fixes
 
