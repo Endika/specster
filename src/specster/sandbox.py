@@ -21,6 +21,8 @@ _REAP_PAUSE_S = 0.005
 # A killed process still needs the CPU to exit, and a starved runner can keep one in R for
 # seconds; it cannot fork meanwhile, so waiting for it is safe.
 _DYING_GRACE_S = 30.0
+# Survivors at the bound are scanned and killed once more before the reap reports them.
+_RECHECK_S = 2.0
 _KILL_SIGNAL = signal.SIGKILL
 
 
@@ -184,7 +186,7 @@ def _kill_all(identity: Identity) -> None:
         note(live)
         _signal_all(live, _KILL_SIGNAL)
         time.sleep(_REAP_PAUSE_S)
-    left = _slot_states(uid)
+    left = _recheck(uid, _RECHECK_S)
     if left:
         took = time.monotonic() - started
         detail = ", ".join(_survivor(pid, first_seen.get(pid, rounds)) for pid in sorted(left)[:12])
@@ -192,6 +194,18 @@ def _kill_all(identity: Identity) -> None:
             f"processes of sandbox uid {uid} survived the kill: {len(left)} left after {rounds} "
             f"rounds in {took:.1f} s; {detail}"
         )
+
+
+def _recheck(uid: int, settle_s: float) -> dict[int, str]:
+    """What is still alive after `settle_s` more kill rounds; at the bound most are dying."""
+    settle = time.monotonic() + settle_s
+    while time.monotonic() < settle:
+        live = _live_pids(uid)
+        if not live:
+            return {}
+        _signal_all(live, _KILL_SIGNAL)
+        time.sleep(_REAP_PAUSE_S)
+    return _slot_states(uid)
 
 
 def _survivor(pid: int, first_round: int) -> str:
