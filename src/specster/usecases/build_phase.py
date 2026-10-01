@@ -119,9 +119,12 @@ def _report_facts(
     return _skill_facts(books) | {
         "tasks_total": len(report.tasks),
         "tasks_done": sum(1 for r in report.tasks if r.status == "done"),
+        "tasks_escalated": sum(1 for r in report.tasks if r.escalated_to),
         "test_runs": report.test_runs,
         "parallel_used": report.parallel_used,
         "review_rounds": report.review_rounds,
+        "evidence_items": len(report.evidence.items) if report.evidence else 0,
+        "evidence_problems": len(report.evidence.problems) if report.evidence else 0,
         "truncations": report.truncations,
         "warnings": run.warnings + report.warnings,
     }
@@ -268,6 +271,7 @@ class BuildPhase:
                 "budget_exhausted",
                 render_budget(known, unknown, cap, run.context(m)),
                 [labels.build],
+                metrics=m,
             )
             return 0
         run.warnings += _low_budget(run, known)
@@ -446,11 +450,16 @@ class BuildPhase:
                 body,
                 [labels.build, labels.ready, labels.needs_human],
                 [labels.built],
+                metrics=m,
             )
             return 0
         outcome = _BUILD_OUTCOMES[report.status]
         run.finish(
-            outcome, render_build(view, run.context(m)), [labels.build], [labels.needs_human]
+            outcome,
+            render_build(view, run.context(m)),
+            [labels.build],
+            [labels.needs_human],
+            metrics=m,
         )
         return 0
 

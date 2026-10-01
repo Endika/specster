@@ -14,6 +14,7 @@ from specster.sandbox import (
     slot_identity,
 )
 from specster.skills import Fetch
+from specster.telemetry_metrics import record_run
 from specster.usecases.build_phase import BuildPhase
 from specster.usecases.cleanup_phase import CleanupPhase
 from specster.usecases.context import (
@@ -123,7 +124,10 @@ def main(
             return 1
         phase = phase_of(trigger, LabelsConfig())
         run = RunContext(env, tracker, Config(), trigger.issue_number, started, timer, phase)
-        return run.fail(Failure(str(e), f"Fix {env.config_path} and add the label again."))
+        try:
+            return run.fail(Failure(str(e), f"Fix {env.config_path} and add the label again."))
+        finally:
+            _record(run)
     reason = skip_reason(trigger, cfg.labels)
     if reason:
         log(f"skipped: {reason}")
@@ -131,14 +135,25 @@ def main(
         return 0
     phase = phase_of(trigger, cfg.labels)
     run = RunContext(env, tracker, cfg, trigger.issue_number, started, timer, phase)
-    if phase == "cleanup":
-        return CleanupPhase(run, trigger).execute()
     try:
-        if phase == "build":
-            return BuildPhase(run, trigger, make_model, fetch, identity).execute()
-        return SpecPhase(run, trigger, make_model, fetch, clock).execute()
-    except Failure as failure:
-        return run.fail(failure)
-    except Exception as e:
+        if phase == "cleanup":
+            return CleanupPhase(run, trigger).execute()
+        try:
+            if phase == "build":
+                return BuildPhase(run, trigger, make_model, fetch, identity).execute()
+            return SpecPhase(run, trigger, make_model, fetch, clock).execute()
+        except Failure as failure:
+            return run.fail(failure)
+        except Exception as e:
+            traceback.print_exc()
+            return run.fail(Failure(describe(e), UNEXPECTED_HINT, None))
+    finally:
+        _record(run)
+
+
+def _record(run: RunContext) -> None:
+    try:
+        m = run.final[1] if run.final else None
+        record_run(run.env.repo, m.phase if m is not None else run.phase, run.final)
+    except Exception:
         traceback.print_exc()
-        return run.fail(Failure(describe(e), UNEXPECTED_HINT, None))

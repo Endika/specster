@@ -130,6 +130,8 @@ class RunContext:
     warnings: list[str] = field(default_factory=list)
     # What the build has shown so far, for the footer of a run that fails part way.
     build_facts: dict[str, Any] = field(default_factory=dict)
+    # The outcome a run ended with and its metrics, for telemetry.
+    final: tuple[StepOutcome, RunMetrics | None] | None = None
 
     @property
     def trigger_label(self) -> str:
@@ -163,7 +165,7 @@ class RunContext:
         links = [(c.author, f"{base}#issuecomment-{c.id}") for c in r.comments]
         m = self.metrics("refused", 0.0, role=self._build_role(), warnings=self.warnings)
         body = render_refused(r.message, r.hint, self.context(m), links)
-        self.finish("refused", body, [self.trigger_label])
+        self.finish("refused", body, [self.trigger_label], metrics=m)
         return 1
 
     def context(self, metrics: RunMetrics, thread: Thread | None = None) -> RenderContext:
@@ -175,7 +177,13 @@ class RunContext:
         )
 
     def finish(
-        self, outcome: Outcome, body: str, remove: Sequence[str], add: Sequence[str] = ()
+        self,
+        outcome: Outcome,
+        body: str,
+        remove: Sequence[str],
+        add: Sequence[str] = (),
+        *,
+        metrics: RunMetrics,
     ) -> None:
         self.tracker.post_comment(self.number, body)
         for label in remove:
@@ -183,9 +191,11 @@ class RunContext:
         if add:
             self.tracker.add_labels(self.number, list(add))
         write_outcome(self.env, outcome)
+        self.final = (outcome, metrics)
 
     def fail(self, failure: Failure) -> int:
         log(failure.message)
+        self.final = ("error", None)
         try:
             if self.ledger is not None:
                 ledger = self.ledger
@@ -208,6 +218,7 @@ class RunContext:
                     warnings=self.warnings,
                     **usage_fields(failure.usage),
                 )
+            self.final = ("error", m)
             body = render_error(failure.message, failure.hint, self.context(m))
             self.tracker.post_comment(self.number, body)
         except Exception:
