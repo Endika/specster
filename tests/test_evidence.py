@@ -1,6 +1,7 @@
 import json
 import socket
 import threading
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -18,6 +19,9 @@ ROUTES: dict[str, tuple[str, bytes]] = {
     "/badjson": ("application/json", b"{nope"),
     "/big": ("application/json", json.dumps({"x": "y" * 100_000}).encode()),
 }
+# Endless bodies: (chunk, pause between chunks).
+ENDLESS = {"/forever": (b"x" * 4096, 0.005), "/drip": (b"x", 0.1)}
+HANGUP = threading.Event()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -29,7 +33,20 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        if self.path in ROUTES:
+        if self.path in ENDLESS:
+            chunk, pause = ENDLESS[self.path]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            # No Content-Length on HTTP/1.0: the body runs until the client hangs up.
+            while not HANGUP.is_set():
+                try:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except OSError:
+                    return
+                time.sleep(pause)
+        elif self.path in ROUTES:
             self._send(200, *ROUTES[self.path])
         else:
             self._send(404, "text/plain", b"missing")
@@ -47,7 +64,9 @@ def app() -> Iterator[str]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True)
     thread.start()
+    HANGUP.clear()
     yield f"http://127.0.0.1:{server.server_address[1]}"
+    HANGUP.set()
     server.shutdown()
     server.server_close()
     thread.join()
@@ -145,3 +164,40 @@ def test_a_status_change_alone_shows_in_the_diff() -> None:
     assert "-status: 200" in diff and "+status: 404" in diff
     assert diff_text("a", base, base) == ""
     assert "+status: none (error)" in diff_text("a", base, Capture(None, "", "", False, "boom"))
+
+
+def test_deeply_nested_json_falls_back_to_the_text() -> None:
+    raw = b"[" * 100_000 + b"]" * 100_000
+    text, cut = normalize("application/json", raw)
+    assert cut and text.startswith("[[[") and f"of {len(raw):,} bytes]" in text
+
+
+def test_the_json_check_ignores_case() -> None:
+    assert normalize("Application/JSON", b'{"b":1,"a":2}')[0] == '{\n  "a": 2,\n  "b": 1\n}\n'
+
+
+def test_a_body_that_stopped_early_says_how_much_came() -> None:
+    text, cut = normalize("application/json", b'{"a": 1}', total=8, more=True)
+    assert cut and text == '{"a": 1}\n[cut after 8 bytes: the response did not end in time]\n'
+    text, cut = normalize("text/plain", b"x" * (BODY_MAX_BYTES + 1), total=10**8, more=True)
+    assert cut and text.endswith("[cut to the first 64 KB of more than 100,000,000 bytes]\n")
+
+
+@LOCAL
+@pytest.mark.parametrize("path", ["/forever", "/drip"])
+def test_capture_of_an_endless_body_stops_at_the_deadline(app: str, path: str) -> None:
+    req = EvidenceRequest(name="a", method="GET", path=path, why="w")
+    started = time.monotonic()
+    with httpx.Client() as client:
+        got = capture(client, app, req, deadline_s=1)
+    assert time.monotonic() - started < 5
+    assert got.status == 200 and got.truncated and "[cut " in got.text
+    assert len(got.text.encode()) < BODY_MAX_BYTES + 200
+
+
+@LOCAL
+def test_wait_ready_never_reads_an_endless_body(app: str) -> None:
+    started = time.monotonic()
+    with httpx.Client() as client:
+        assert wait_ready(client, f"{app}/forever", 10, alive=lambda: True) is None
+    assert time.monotonic() - started < 2
