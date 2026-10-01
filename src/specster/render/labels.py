@@ -26,6 +26,10 @@ LABELS: dict[str, dict[str, str]] = {
         "evidence_files": "Full responses and server logs: {url}",
         "evidence_cut": "`{name}` {side} response cut to 64 KB",
         "evidence_upload_failed": "The evidence files could not be uploaded: {why}",
+        "evidence_link_failed": (
+            "The evidence files are on `specster-evidence` but the pull request could not be "
+            "updated with the link: {why}"
+        ),
         "evidence_changed": "Changed",
         "evidence_yes": "yes",
         "evidence_no": "no",
@@ -124,6 +128,10 @@ LABELS: dict[str, dict[str, str]] = {
         "evidence_files": "Respuestas completas y logs del servidor: {url}",
         "evidence_cut": "Respuesta {side} de `{name}` cortada a 64 KB",
         "evidence_upload_failed": "No se pudieron subir los ficheros de evidencia: {why}",
+        "evidence_link_failed": (
+            "Los ficheros de evidencia est\u00e1n en `specster-evidence`, pero no se pudo "
+            "a\u00f1adir el enlace a la pull request: {why}"
+        ),
         "evidence_changed": "Cambia",
         "evidence_yes": "s\u00ed",
         "evidence_no": "no",
