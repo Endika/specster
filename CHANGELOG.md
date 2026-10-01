@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/Endika/specster/compare/specster-v0.11.2...specster-v0.12.0) (2026-10-01)
+
+
+### Features
+
+* make Opus 5.5 the default worker ([51a4008](https://github.com/Endika/specster/commit/51a4008d37bcd3dc40d0fb98ee521e926c5ac1ff))
+
 ## [0.11.2](https://github.com/Endika/specster/compare/specster-v0.11.1...specster-v0.11.2) (2026-10-01)
 
 
