@@ -367,6 +367,7 @@ The details and the known limits: [Security model](docs/security.md).
 - [Build phase](docs/build.md): how a build runs, test isolation, permissions, metrics and budget.
 - [Security model](docs/security.md): what Specster defends against and what it cannot.
 - [Testing the AI](docs/evals.md): the evals and the contract cassettes.
+- [Telemetry](docs/telemetry.md): send each run's metrics and trace to Datadog or Grafana.
 
 ## Roadmap
 
