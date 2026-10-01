@@ -26,9 +26,11 @@ class CleanupPhase:
             return 0
         scratch = scratch_dir()
         try:
-            git = Git(
-                env.workspace, Author(self.run.cfg.persona.name, BOT_EMAIL), scratch / "git-home"
-            )
+            # A throwaway repository: root must never write objects or refs into the checkout.
+            repo = scratch / "evidence-repo"
+            repo.mkdir()
+            git = Git(repo, Author(self.run.cfg.persona.name, BOT_EMAIL), scratch / "git-home")
+            git.run("init", "-q", "--template=")
             removed = remove(git, f"{env.server_url}/{env.repo}.git", env.token, folder, scratch)
         except (GitError, EvidenceBranchError, OSError) as e:
             log(f"could not remove {folder} from {EVIDENCE_BRANCH}: {e}")

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from specster.config import ModelConfig
 from specster.evidence_branch import EVIDENCE_BRANCH, publish
-from specster.git import Git
+from specster.git import BOT_EMAIL, Author, Git
 from specster.github import Issue
 from specster.llm.base import ChatModel
 from specster.run import Env, main
@@ -47,7 +47,12 @@ def world(tmp_path: Path, head_ref: str, config: str = "") -> tuple[Env, Git, Pa
     return e, git, remote
 
 
-def seed(tmp_path: Path, git: Git, remote: Path, *folders: str) -> None:
+def seed(tmp_path: Path, remote: Path, *folders: str) -> None:
+    """Publishes from a repository of its own, so the checkout never holds the evidence."""
+    seeder = tmp_path / "seeder"
+    git = Git(seeder, Author("Specster", BOT_EMAIL), tmp_path / "seeder-home")
+    if not seeder.exists():
+        make_repo(seeder, {"a": ""})
     for folder in folders:
         publish(git, str(remote), "ghs_TOKEN", folder, {"a.json": b"{}"}, tmp_path / "seed")
 
@@ -68,21 +73,28 @@ def scratches() -> set[Path]:
     return set(Path(tempfile.gettempdir()).glob("specster-build-*"))
 
 
+def git_files(repo: Path) -> set[Path]:
+    return {p.relative_to(repo) for p in (repo / ".git").rglob("*")}
+
+
 def test_closing_a_specster_pr_removes_its_evidence(tmp_path: Path) -> None:
-    e, git, remote = world(tmp_path, "specster/issue-3")
-    seed(tmp_path, git, remote, "pr-5", "pr-6")
+    e, _, remote = world(tmp_path, "specster/issue-3")
+    seed(tmp_path, remote, "pr-5", "pr-6")
     before, tr = scratches(), tracker()
+    checkout = git_files(e.workspace)
     assert go(e, tr) == 0
     assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-6/a.json"]
     assert tr.posted == [] and (tmp_path / "out.txt").read_text() == "outcome=cleaned\n"
     assert scratches() <= before
+    assert git_files(e.workspace) == checkout
+    assert not (e.workspace / ".git" / "refs" / "specster").exists()
 
 
 def test_closing_a_pr_without_evidence_is_skipped(tmp_path: Path) -> None:
-    e, git, remote = world(tmp_path, "specster/issue-3")
+    e, _, remote = world(tmp_path, "specster/issue-3")
     tr = tracker()
     assert go(e, tr) == 0
-    seed(tmp_path, git, remote, "pr-6")
+    seed(tmp_path, remote, "pr-6")
     assert go(e, tr) == 0
     assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-6/a.json"]
     assert tr.posted == []
@@ -90,8 +102,8 @@ def test_closing_a_pr_without_evidence_is_skipped(tmp_path: Path) -> None:
 
 
 def test_closing_someone_elses_pr_touches_nothing(tmp_path: Path) -> None:
-    e, git, remote = world(tmp_path, "feature/x")
-    seed(tmp_path, git, remote, "pr-5")
+    e, _, remote = world(tmp_path, "feature/x")
+    seed(tmp_path, remote, "pr-5")
     tr = tracker()
     assert go(e, tr) == 0
     assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-5/a.json"]
@@ -99,8 +111,8 @@ def test_closing_someone_elses_pr_touches_nothing(tmp_path: Path) -> None:
 
 
 def test_cleanup_failure_never_comments(tmp_path: Path) -> None:
-    e, git, remote = world(tmp_path, "specster/issue-3")
-    seed(tmp_path, git, remote, "pr-5")
+    e, _, remote = world(tmp_path, "specster/issue-3")
+    seed(tmp_path, remote, "pr-5")
     hook = remote / "hooks" / "pre-receive"
     hook.write_text("#!/bin/sh\nexit 1\n")
     hook.chmod(0o755)
@@ -112,8 +124,8 @@ def test_cleanup_failure_never_comments(tmp_path: Path) -> None:
 
 
 def test_a_broken_config_during_cleanup_only_logs(tmp_path: Path) -> None:
-    e, git, remote = world(tmp_path, "specster/issue-3", "labels: [oops\n")
-    seed(tmp_path, git, remote, "pr-5")
+    e, _, remote = world(tmp_path, "specster/issue-3", "labels: [oops\n")
+    seed(tmp_path, remote, "pr-5")
     tr = tracker()
     assert go(e, tr) == 1
     assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-5/a.json"]
