@@ -132,10 +132,11 @@ ready says why, with the tail of its log.
 - The full responses, diffs and server logs go to the `specster-evidence` branch, an orphan branch
   with one folder per pull request (`pr-<N>/`), and the pull request links that folder. Its
   commits say `[skip ci]`, and a folder is removed when its pull request is closed.
-- Limits: each response keeps its first 64 KB, each diff its first 4,000 characters in the body
-  (the whole diff is in the files), and a body that would pass GitHub's limit leaves out the
-  last diffs and says so. The app is reached on loopback only, with no authentication. On a
-  public repository, anything the seed puts in the app is published: seed fake data only.
+- Limits: each request's JSON body stays under 2,000 characters, each response keeps its first
+  64 KB, each diff its first 4,000 characters in the body (the whole diff is in the files), and a
+  body that would pass GitHub's limit leaves out the last diffs and says so. The app is reached
+  on loopback only, with no authentication. On a public repository, anything the seed puts in
+  the app is published: seed fake data only.
 
 ## Toolchains for other languages
 

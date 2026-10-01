@@ -261,6 +261,18 @@ def test_evidence_request_rejects(bad: dict[str, object]) -> None:
         EvidenceRequest.model_validate(bad)
 
 
+def test_an_evidence_body_too_long_for_the_spec_comment_is_refused(tmp_path: Path) -> None:
+    big = EVIDENCE[0] | {"method": "POST", "body": {"rows": ["x" * 100] * 20}}
+    out, model = plan_with(tmp_path, [SPEC | {"evidence": [big]}, SPEC], preview=True)
+    assert out.result.evidence == []
+    refusal = model.received[1][0]
+    assert refusal.is_error and "list-users" in refusal.content and "2,000" in refusal.content
+    fits = EVIDENCE[0] | {"method": "POST", "body": {"rows": ["x" * 100] * 10}}
+    (tmp_path / "fits").mkdir()
+    out, _ = plan_with(tmp_path / "fits", [SPEC | {"evidence": [fits]}], preview=True)
+    assert out.result.evidence[0].body == {"rows": ["x" * 100] * 10}
+
+
 def test_evidence_names_must_be_unique(tmp_path: Path) -> None:
     twice = SPEC | {"evidence": EVIDENCE * 2}
     out, model = plan_with(tmp_path, [twice, SPEC | {"evidence": EVIDENCE}], preview=True)
