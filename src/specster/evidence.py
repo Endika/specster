@@ -15,6 +15,9 @@ from specster.schemas import EvidenceRequest
 BODY_MAX_BYTES = 64 * 1024
 CAPTURE_MAX_S = 30.0
 LOG_TAIL_CHARS = 4000
+ERROR_MAX_CHARS = 200
+# How long a server that broke a request gets to show it exited.
+EXIT_GRACE_S = 0.5
 OUT_OF_TIME = "the build is out of time"
 # Past this the rest of a body is not even counted.
 COUNT_MAX_BYTES = 16 * 1024 * 1024
@@ -27,6 +30,14 @@ class Capture:
     text: str
     truncated: bool
     error: str = ""
+    # Cut because the response did not end in time, rather than for its size.
+    late: bool = False
+
+    @property
+    def failure(self) -> str:
+        """The error on one line, short enough for a table or a diff."""
+        line = " ".join(self.error.split()) or "error"
+        return line if len(line) <= ERROR_MAX_CHARS else line[: ERROR_MAX_CHARS - 1] + "\u2026"
 
 
 @dataclass(frozen=True)
@@ -141,13 +152,13 @@ def capture(
     except httpx.HTTPError as e:
         return Capture(None, "", "", False, f"{type(e).__name__}: {e}")
     text, cut = normalize(kind, bytes(kept), total, more)
-    return Capture(status, kind, text, cut)
+    return Capture(status, kind, text, cut, late=more and len(kept) <= BODY_MAX_BYTES)
 
 
 def _side(capture: Capture | None) -> list[str]:
     if capture is None:
         return []
-    status = "none (error)" if capture.status is None else str(capture.status)
+    status = f"none ({capture.failure})" if capture.status is None else str(capture.status)
     return [f"status: {status}\n", *capture.text.splitlines(keepends=True)]
 
 
@@ -181,8 +192,19 @@ def _serve(
         left = time_left()
         if left <= 0:
             return f"{OUT_OF_TIME}: {i} of {len(requests)} requests made"
-        got[i] = capture(client, preview.origin, request, min(CAPTURE_MAX_S, left))
+        got[i] = answer = capture(client, preview.origin, request, min(CAPTURE_MAX_S, left))
+        if answer.status is None and _exited(server):
+            return f"the server exited after {i} of {len(requests)} requests"
     return None
+
+
+def _exited(server: Server) -> bool:
+    stop = time.monotonic() + EXIT_GRACE_S
+    while server.alive():
+        if time.monotonic() >= stop:
+            return False
+        time.sleep(0.05)
+    return True
 
 
 def collect(

@@ -55,14 +55,20 @@ def evidence_section(
             f"{_status(item.base)}{_TO}{_status(item.head)} | {yes if item.changed else no} |"
         )
     out.append("")
-    cut = [
-        lab["evidence_cut"].format(name=_code(item.request.name), side=side)
-        for item in run.items
-        for side, got in (("base", item.base), ("head", item.head))
-        if got is not None and got.truncated
-    ]
-    if cut:
-        out += [*(f"- {c}" for c in cut), ""]
+    said: list[str] = []
+    for item in run.items:
+        name = _code(item.request.name)
+        for side, got in (("base", item.base), ("head", item.head)):
+            if got is None:
+                continue
+            if got.status is None:
+                why = _code(got.failure)
+                said.append(lab["evidence_failed"].format(name=name, side=side, why=why))
+            elif got.truncated:
+                cut = "evidence_cut_time" if got.late else "evidence_cut"
+                said.append(lab[cut].format(name=name, side=side))
+    if said:
+        out += [*(f"- {s}" for s in said), ""]
     changed = [item for item in run.items if item.changed]
     for item in _kept(changed, keep, "evidence requests", notes):
         diff = item.diff

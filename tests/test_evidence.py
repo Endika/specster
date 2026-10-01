@@ -25,6 +25,8 @@ from specster.evidence import (
     normalize,
     wait_ready,
 )
+from specster.render.evidence import evidence_section
+from specster.render.labels import LABELS
 from specster.sandbox import Server
 from specster.schemas import EvidenceRequest
 from tests.test_sandbox import box
@@ -181,7 +183,14 @@ def test_a_status_change_alone_shows_in_the_diff() -> None:
     diff = diff_text("a", base, head)
     assert "-status: 200" in diff and "+status: 404" in diff
     assert diff_text("a", base, base) == ""
-    assert "+status: none (error)" in diff_text("a", base, Capture(None, "", "", False, "boom"))
+    assert "+status: none (boom)" in diff_text("a", base, Capture(None, "", "", False, "boom"))
+
+
+def test_a_failed_capture_puts_its_error_on_one_short_line_of_the_diff() -> None:
+    error = "ReadError: " + "line\n" * 100
+    diff = diff_text("a", None, Capture(None, "", "", False, error))
+    (status,) = [line for line in diff.splitlines() if line.startswith("+status")]
+    assert status.startswith("+status: none (ReadError: line line ") and len(status) < 230
 
 
 def test_deeply_nested_json_falls_back_to_the_text() -> None:
@@ -202,14 +211,14 @@ def test_a_body_that_stopped_early_says_how_much_came() -> None:
 
 
 @LOCAL
-@pytest.mark.parametrize("path", ["/forever", "/drip"])
-def test_capture_of_an_endless_body_stops_at_the_deadline(app: str, path: str) -> None:
+@pytest.mark.parametrize(("path", "late"), [("/forever", False), ("/drip", True)])
+def test_capture_of_an_endless_body_stops_at_the_deadline(app: str, path: str, late: bool) -> None:
     req = EvidenceRequest(name="a", method="GET", path=path, why="w")
     started = time.monotonic()
     with httpx.Client() as client:
         got = capture(client, app, req, deadline_s=1)
     assert time.monotonic() - started < 5
-    assert got.status == 200 and got.truncated and "[cut " in got.text
+    assert got.status == 200 and got.truncated and "[cut " in got.text and got.late is late
     assert len(got.text.encode()) < BODY_MAX_BYTES + 200
 
 
@@ -283,6 +292,44 @@ def test_collect_keeps_what_it_got_before_the_time_ran_out(tmp_path: Path) -> No
     root, gone = run.items
     assert root.base is not None and root.base.status == 200 and root.head is None
     assert gone.base is None and set(run.logs) == {"base"}
+
+
+# Answers one request, then dies the way a crashing app does.
+ONE_SHOT = """\
+import sys
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+server = HTTPServer(("127.0.0.1", int(sys.argv[1])), SimpleHTTPRequestHandler)
+server.handle_request()
+server.handle_request()
+sys.exit("crashed: out of memory")
+"""
+
+
+@LOCAL
+def test_a_server_that_exits_mid_run_stops_the_side_with_its_log(tmp_path: Path) -> None:
+    port = free_port()
+    sb = box(tmp_path)
+    home = sb.new_home(tmp_path, "home")
+    (tmp_path / "one_shot.py").write_text(ONE_SHOT)
+    serve = [sys.executable, "one_shot.py", str(port)]
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        return sb.start(serve, tmp_path, home, f"serve {side}"), None
+
+    preview = PreviewConfig(serve_command=serve, ready_url=f"http://127.0.0.1:{port}/")
+    with httpx.Client() as client:
+        run = collect(start_side, preview, TWO, client)
+    assert [(p.side, p.reason) for p in run.problems] == [
+        ("base", "the server exited after 1 of 2 requests"),
+        ("head", "the server exited after 1 of 2 requests"),
+    ]
+    assert all("crashed: out of memory" in p.log_tail for p in run.problems)
+    root, gone = run.items
+    assert root.base is not None and root.base.status == 200
+    assert gone.base is not None and gone.base.status is None and gone.base.error
+    body = "\n".join(evidence_section(run, LABELS["en"], None, None, []))
+    assert f"`gone` base request failed: `{gone.base.error}`" in body
+    assert "crashed: out of memory" in body
 
 
 def test_files_name_each_side_by_its_content_type_and_skip_a_missing_side() -> None:
