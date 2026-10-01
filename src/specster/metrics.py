@@ -67,6 +67,9 @@ class RunMetrics(BaseModel):
     test_runs: int = Field(default=0, ge=0)
     parallel_used: int = Field(default=0, ge=0)
     review_rounds: int = Field(default=0, ge=0)
+    tasks_escalated: int = Field(default=0, ge=0)
+    evidence_items: int = Field(default=0, ge=0)
+    evidence_problems: int = Field(default=0, ge=0)
 
 
 def encode_marker(m: RunMetrics) -> str:

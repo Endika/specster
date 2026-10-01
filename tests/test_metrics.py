@@ -152,3 +152,10 @@ def test_a_plan_marker_may_be_an_object_with_evidence() -> None:
     digest = hashlib.sha256(text.encode()).hexdigest()
     found = last_plan_marker(f"<!-- specster:plan {text} sha256={digest} -->")
     assert found == (payload, digest)
+
+
+def test_metrics_marker_round_trips_the_new_fields() -> None:
+    m = sample(phase="build", tasks_escalated=1, evidence_items=3, evidence_problems=2)
+    assert last_marker(encode_marker(m)) == m
+    assert (m.tasks_escalated, m.evidence_items, m.evidence_problems) == (1, 3, 2)
+    assert sample().tasks_escalated == 0

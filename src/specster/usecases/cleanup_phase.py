@@ -7,7 +7,7 @@ from specster.event import Trigger
 from specster.evidence_branch import EVIDENCE_BRANCH, EvidenceBranchError, remove
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.sandbox import scratch_dir
-from specster.usecases.context import RunContext, describe, log, write_outcome
+from specster.usecases.context import RunContext, StepOutcome, describe, log, write_outcome
 
 _BRANCH_PREFIX = "specster/issue-"
 
@@ -22,7 +22,7 @@ class CleanupPhase:
         env, folder = self.run.env, f"pr-{self.trigger.issue_number}"
         if not self.trigger.head_ref.startswith(_BRANCH_PREFIX):
             log("skipped: not a Specster pull request")
-            write_outcome(env, "skipped")
+            self._end("skipped")
             return 0
         scratch = scratch_dir()
         try:
@@ -34,15 +34,19 @@ class CleanupPhase:
             removed = remove(git, f"{env.server_url}/{env.repo}.git", env.token, folder, scratch)
         except (GitError, EvidenceBranchError, OSError) as e:
             log(f"could not remove {folder} from {EVIDENCE_BRANCH}: {e}")
-            write_outcome(env, "error")
+            self._end("error")
             return 1
         except Exception as e:
             traceback.print_exc()
             log(f"could not remove {folder} from {EVIDENCE_BRANCH}: {describe(e)}")
-            write_outcome(env, "error")
+            self._end("error")
             return 1
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
         log(f"removed {folder} from {EVIDENCE_BRANCH}" if removed else f"no {folder} to remove")
-        write_outcome(env, "cleaned" if removed else "skipped")
+        self._end("cleaned" if removed else "skipped")
         return 0
+
+    def _end(self, outcome: StepOutcome) -> None:
+        write_outcome(self.run.env, outcome)
+        self.run.final = (outcome, None)

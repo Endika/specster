@@ -138,7 +138,7 @@ class SpecPhase:
         warnings = reading.login_warnings + reading.budget_warnings
         m = run.metrics("budget_exhausted", 0.0, warnings=warnings, **reading.thread_fields)
         body = render_budget(reading.known, reading.unknown, cap, run.context(m, reading.thread))
-        run.finish("budget_exhausted", body, [run.cfg.labels.spec])
+        run.finish("budget_exhausted", body, [run.cfg.labels.spec], metrics=m)
         return True
 
     def _ask_planner(self, reading: _Reading) -> tuple[AgentOutcome, RunMetrics]:
@@ -179,10 +179,14 @@ class SpecPhase:
         try:
             if isinstance(outcome.result, QuestionsResult):
                 body = render_questions(outcome.result, ctx)
-                run.finish("questions", body, [labels.spec, labels.ready], [labels.needs_human])
+                run.finish(
+                    "questions", body, [labels.spec, labels.ready], [labels.needs_human], metrics=m
+                )
             else:
                 body = render_spec(outcome.result, outcome.tasks, outcome.plan_fixes, ctx)
-                run.finish("spec", body, [labels.spec, labels.needs_human], [labels.ready])
+                run.finish(
+                    "spec", body, [labels.spec, labels.needs_human], [labels.ready], metrics=m
+                )
         except Exception as e:
             # The model was paid for even if the reply or a label call fails, so bill it.
             traceback.print_exc()
