@@ -323,14 +323,14 @@ def run_agent(
         result = SpecResult.model_validate(args)
         if result.changes and not revision:
             raise SubmissionError("changes is only for revising a previous spec; leave it empty")
-        if result.evidence and not preview:
+        if (result.evidence or result.pages) and not preview:
             raise SubmissionError(
-                "evidence needs build.preview in the repository's config, which is not set; "
-                "leave evidence empty"
+                "evidence and pages need build.preview in the repository's config, which is "
+                "not set; leave both empty"
             )
-        names = [e.name for e in result.evidence]
+        names = [e.name for e in result.evidence] + [p.name for p in result.pages]
         if len(set(names)) != len(names):
-            raise SubmissionError("evidence names must be unique")
+            raise SubmissionError("names of evidence and pages must be unique")
         for e in result.evidence:
             size = len(json.dumps(e.body, sort_keys=True, separators=(",", ":")))
             if size > EVIDENCE_BODY_MAX_CHARS:

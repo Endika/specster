@@ -9,7 +9,7 @@ from specster.agent import AgentError, Metered, NotYet, SubmissionError, run_age
 from specster.config import ModelConfig, SkillsConfig
 from specster.ledger import Ledger
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
-from specster.schemas import EvidenceRequest, QuestionsResult, SpecResult
+from specster.schemas import EvidencePage, EvidenceRequest, QuestionsResult, SpecResult
 from specster.skills import SkillBook, load_skills
 from specster.workspace import Workspace
 from tests.fakes import ScriptedModel
@@ -308,3 +308,49 @@ def test_evidence_names_must_be_unique(tmp_path: Path) -> None:
     out, model = plan_with(tmp_path, [twice, SPEC | {"evidence": EVIDENCE}], preview=True)
     assert len(out.result.evidence) == 1
     assert "unique" in model.received[1][0].content
+
+
+PAGES = [{"name": "users-page", "path": "/users", "why": "New column."}]
+
+
+def test_spec_with_pages_is_refused_without_preview(tmp_path: Path) -> None:
+    out, model = plan_with(tmp_path, [SPEC | {"pages": PAGES}, SPEC], preview=False)
+    assert out.result.pages == []
+    assert model.received[1][0].is_error and "build.preview" in model.received[1][0].content
+
+
+def test_spec_keeps_pages_with_preview(tmp_path: Path) -> None:
+    out, _ = plan_with(tmp_path, [SPEC | {"pages": PAGES}], preview=True)
+    assert [p.name for p in out.result.pages] == ["users-page"]
+
+
+def test_a_name_cannot_repeat_between_evidence_and_pages(tmp_path: Path) -> None:
+    clash = SPEC | {"evidence": EVIDENCE, "pages": [PAGES[0] | {"name": "list-users"}]}
+    out, model = plan_with(tmp_path, [clash, SPEC | {"pages": PAGES}], preview=True)
+    assert len(out.result.pages) == 1
+    assert "unique" in model.received[1][0].content
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"name": "Bad Name", "path": "/", "why": "x"},
+        {"name": "a", "path": "http://evil.test/", "why": "x"},
+        {"name": "a", "path": "//evil.test/", "why": "x"},
+        {"name": "a", "path": "/#frag", "why": "x"},
+        {"name": "a", "path": "/", "why": "x", "method": "GET"},
+    ],
+)
+def test_evidence_page_rejects(bad: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        EvidencePage.model_validate(bad)
+
+
+def test_evidence_and_pages_share_the_maximum_of_ten() -> None:
+    def page(i: int) -> dict[str, str]:
+        return {"name": f"p{i}", "path": "/", "why": "x"}
+
+    ev = [EVIDENCE[0] | {"name": f"e{i}"} for i in range(5)]
+    SpecResult.model_validate(SPEC | {"evidence": ev, "pages": [page(i) for i in range(5)]})
+    with pytest.raises(ValidationError, match="together"):
+        SpecResult.model_validate(SPEC | {"evidence": ev, "pages": [page(i) for i in range(6)]})

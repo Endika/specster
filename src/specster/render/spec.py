@@ -22,7 +22,7 @@ from specster.render.common import (
     fence,
 )
 from specster.render.labels import LABELS
-from specster.schemas import EvidenceRequest, PlanTask, QuestionsResult, SpecResult
+from specster.schemas import EvidencePage, EvidenceRequest, PlanTask, QuestionsResult, SpecResult
 
 
 def render_questions(result: QuestionsResult, ctx: RenderContext) -> str:
@@ -37,10 +37,12 @@ def render_questions(result: QuestionsResult, ctx: RenderContext) -> str:
     return _wrap(ctx, body, result.closing_line)
 
 
-def _evidence(evidence: Sequence[EvidenceRequest], lab: Mapping[str, str]) -> list[str]:
+def _evidence(
+    evidence: Sequence[EvidenceRequest], pages: Sequence[EvidencePage], lab: Mapping[str, str]
+) -> list[str]:
     out = [
         "",
-        f"**{lab['evidence']}**",
+        f"**{lab['evidence_with_pages' if pages else 'evidence']}**",
         "",
         f"| {lab['evidence_request']} | | {lab['evidence_why']} |",
         "|---|---|---|",
@@ -50,6 +52,7 @@ def _evidence(evidence: Sequence[EvidenceRequest], lab: Mapping[str, str]) -> li
         out.append(
             f"| `{_code(e.name)}` | `{e.method} {_code(e.path)}`{json_body} | {_cell(e.why)} |"
         )
+    out += [f"| `{_code(g.name)}` | `PAGE {_code(g.path)}` | {_cell(g.why)} |" for g in pages]
     for e in evidence:
         if e.body is not None:
             out += [
@@ -108,10 +111,10 @@ def render_spec(
         body.append(f"- `{_code(t.id)}` {_prose(' '.join(t.title.split()))}")
         body += _indent(t.description)
         body += [f"  - {_prose(a)}" for a in t.acceptance]
-    if result.evidence:
-        body += _evidence(result.evidence, lab)
+    if result.evidence or result.pages:
+        body += _evidence(result.evidence, result.pages, lab)
     body += ["", lab["next_spec"].format(label=ctx.build_label)]
-    payload, digest = plan_payload(tasks, result.evidence)
+    payload, digest = plan_payload(tasks, result.evidence, result.pages)
     safe = payload.replace("<", "\\u003c").replace(">", "\\u003e")
     plan_marker = f"<!-- specster:plan {safe} sha256={digest} -->"
     return _wrap(ctx, body, result.closing_line) + "\n" + plan_marker

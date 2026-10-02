@@ -160,19 +160,28 @@ def spec_comment_body(
     outcome: str = "spec",
     evidence: list[dict[str, Any]] | None = None,
     validate: bool = True,
+    pages: list[dict[str, Any]] | None = None,
 ) -> str:
     result = SpecResult.model_validate(
-        {**spec, **({"evidence": evidence} if validate and evidence else {})}
+        {
+            **spec,
+            **({"evidence": evidence} if validate and evidence else {}),
+            **({"pages": pages} if validate and pages else {}),
+        }
     )
     tasks, fixes = normalize_plan(result.tasks)
     metrics = RunMetrics.model_validate(
         {"run_id": "1", "outcome": outcome, "provider": "fake", "model": "fake-1"}
     )
     body = render_spec(result, tasks, fixes, RenderContext(PersonaConfig(), metrics, (), ()))
-    if validate or not evidence:
+    if validate or not (evidence or pages):
         return body
     text = json.dumps(
-        {"evidence": evidence, "tasks": [t.model_dump() for t in tasks]},
+        {
+            "evidence": evidence or [],
+            **({"pages": pages} if pages else {}),
+            "tasks": [t.model_dump() for t in tasks],
+        },
         sort_keys=True,
         separators=(",", ":"),
     )

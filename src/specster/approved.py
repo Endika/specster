@@ -12,7 +12,7 @@ from specster.github import Comment, Issue
 from specster.metrics import last_marker, last_plan_marker
 from specster.plan import PlanError, levels, norm_path, normalize_plan
 from specster.sanitize import sanitize
-from specster.schemas import TASK_ID_MAX, EvidenceRequest, PlanTask
+from specster.schemas import EVIDENCE_MAX, TASK_ID_MAX, EvidencePage, EvidenceRequest, PlanTask
 from specster.thread import is_specster, is_trusted, own_text
 from specster.workspace import (
     CONFIG_PATH,
@@ -41,6 +41,7 @@ class ApprovedSpec:
     sha256: str
     text: str
     evidence: tuple[EvidenceRequest, ...] = ()
+    pages: tuple[EvidencePage, ...] = ()
 
 
 class BuildRefused(Exception):
@@ -99,9 +100,11 @@ def load_spec(comment: Comment) -> ApprovedSpec:
     payload, digest = found
     raw: Any = payload
     raw_evidence: Any = []
+    raw_pages: Any = []
     if isinstance(payload, dict):
         raw, raw_evidence = payload.get("tasks"), payload.get("evidence")
-    if not isinstance(raw, list) or not isinstance(raw_evidence, list):
+        raw_pages = payload.get("pages", [])
+    if not all(isinstance(x, list) for x in (raw, raw_evidence, raw_pages)):
         raise BuildRefused(BAD_MARKER, hint)
     too_long = next(
         (
@@ -121,15 +124,27 @@ def load_spec(comment: Comment) -> ApprovedSpec:
         tasks = [PlanTask.model_validate(t) for t in raw]
         normalized, fixes = normalize_plan(tasks)
         evidence = tuple(EvidenceRequest.model_validate(e) for e in raw_evidence)
+        pages = tuple(EvidencePage.model_validate(e) for e in raw_pages)
     except (ValidationError, PlanError, TypeError) as e:
         raise BuildRefused(f"{CANNOT_BUILD}{e}", hint) from e
+    names = [*(e.name for e in evidence), *(g.name for g in pages)]
+    if len(names) > EVIDENCE_MAX:
+        raise BuildRefused(
+            f"{CANNOT_BUILD}it lists {len(names)} evidence requests and pages; "
+            f"the limit is {EVIDENCE_MAX}",
+            hint,
+        )
+    if len(set(names)) != len(names):
+        raise BuildRefused(f"{CANNOT_BUILD}evidence and page names are not unique", hint)
     unsafe = sorted({f for t in tasks for f in t.files if not _safe_path(f)})
     if unsafe:
         raise BuildRefused(f"{CANNOT_BUILD}unsafe path {unsafe[0]}", hint)
     if fixes or normalized != tasks:
         raise BuildRefused(f"{CANNOT_BUILD}its order is not normalized", hint)
     _check_levels_disjoint(tasks)
-    return ApprovedSpec(comment, tasks, digest, sanitize(own_text(comment.body)).text, evidence)
+    return ApprovedSpec(
+        comment, tasks, digest, sanitize(own_text(comment.body)).text, evidence, pages
+    )
 
 
 def comments_after(

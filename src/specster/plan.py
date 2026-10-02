@@ -4,7 +4,7 @@ import posixpath
 from collections.abc import Sequence
 from typing import Any
 
-from specster.schemas import EvidenceRequest, PlanTask
+from specster.schemas import EvidencePage, EvidenceRequest, PlanTask
 
 
 class PlanError(Exception):
@@ -102,11 +102,15 @@ def mermaid(tasks: Sequence[PlanTask]) -> str:
 
 
 def plan_payload(
-    tasks: Sequence[PlanTask], evidence: Sequence[EvidenceRequest] = ()
+    tasks: Sequence[PlanTask],
+    evidence: Sequence[EvidenceRequest] = (),
+    pages: Sequence[EvidencePage] = (),
 ) -> tuple[str, str]:
     task_list = [task.model_dump() for task in tasks]
     payload: Any = task_list
-    if evidence:
+    if evidence or pages:
         payload = {"evidence": [e.model_dump() for e in evidence], "tasks": task_list}
+        if pages:
+            payload["pages"] = [p.model_dump() for p in pages]
     text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return text, hashlib.sha256(text.encode()).hexdigest()
