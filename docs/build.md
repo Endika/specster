@@ -139,6 +139,38 @@ ready says why, with the tail of its log.
   on loopback only, with no authentication. On a public repository, anything the seed puts in
   the app is published: seed fake data only.
 
+### Screenshots
+
+A spec can also list pages (a name, a path and why), up to 10 together with the requests. Each
+page is screenshot on each side, after that side's requests, with its server still up: so the
+pages show whatever state those requests left, the same on both sides. The pull request shows
+one table per page, desktop and mobile by before and after, with the images linked at the
+commit that published them on `specster-evidence`, and says whether the PNGs changed (byte for
+byte; no pixel diff). A shot that could not be taken says why in its cell; a side whose
+requests ran but whose shots did not (out of time, browser failure) only notes it in the page
+table, not as a problem with the side.
+
+- The browser is installed only when the approved spec has pages, once per build, as root:
+  Playwright (pinned) and Chromium's headless shell with its system libraries, into
+  `/opt/specster-browser`, never into the image. It takes about 30-60 s and downloads about
+  400 MB; a failed or timed-out install (at most 300 s, and never past the build's time left)
+  skips the screenshots with a warning and keeps the rest.
+- It runs as the final-tests slot's unprivileged user, in that slot's sandbox, with only `PATH`,
+  `HOME`, `TMPDIR`, the locale, the browsers' path and `build.test_env` in its environment:
+  never a token, an API key or `OTEL_*`. Chromium starts with `--no-sandbox --disable-dev-shm-usage`, since the slot
+  is the sandbox, and it is killed with the side's server.
+- Each side's browser run is bounded by `build.test_timeout_s` and by the build's time left,
+  and each page load by 30 s; a page that does not fit, or a side with no time left, gets a
+  note instead of a screenshot.
+- Every page is shot at 1280x800 (desktop) and 390x844 (mobile), full page, with locale
+  `en-US`, time zone `UTC`, `reduced_motion` set, animations disabled and a fixed clock, after
+  the network is idle and the fonts are loaded, so an unchanged page gives the same PNG.
+- Limits: a page is cut at 6,000 pixels high and a PNG over 5 MB is dropped with a note; a body
+  that would pass GitHub's limit leaves out the last pages and says so.
+- The images are linked to the published commit, so GitHub may keep serving them after the PR's
+  folder (or the branch) is removed; on a public repository treat the screenshots as published
+  and seed fake data only.
+
 ## Toolchains for other languages
 
 The image carries [mise](https://mise.jdx.dev), pinned and checked against its release's sha256.

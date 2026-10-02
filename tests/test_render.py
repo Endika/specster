@@ -7,7 +7,16 @@ import pytest
 
 from specster.build import BuildReport, Commit, TaskRecord
 from specster.config import PersonaConfig
-from specster.evidence import Capture, EvidenceItem, EvidenceRun, SideProblem, diff_text
+from specster.evidence import (
+    PNG_MAGIC,
+    Capture,
+    EvidenceItem,
+    EvidenceRun,
+    PageItem,
+    Shot,
+    SideProblem,
+    diff_text,
+)
 from specster.metrics import RoleMetrics, RunMetrics, extract_markers
 from specster.plan import plan_payload
 from specster.render import (
@@ -718,6 +727,90 @@ def test_body_over_the_limit_drops_evidence_items_with_a_note() -> None:
     body = render_pr_body(view(evidence=evidence_run(*items)), bare())
     assert len(body) <= BODY_MAX and "evidence requests left out" in body
     assert "Closes #7" in body and "| `r59` |" in body
+
+
+def shots(tag: str) -> tuple[Shot, ...]:
+    return (Shot("desktop", PNG_MAGIC + tag.encode()), Shot("mobile", PNG_MAGIC + tag.encode()))
+
+
+def page_item(name: str, base: tuple[Shot, ...], head: tuple[Shot, ...]) -> PageItem:
+    return PageItem(EvidencePage(name=name, path=f"/{name}?a=`<b>`", why="w"), base, head)
+
+
+def image_links(
+    *pages: PageItem, base: str = "https://github.com/o/r/blob/abc/pr-5"
+) -> dict[str, str]:
+    return {
+        f"{p.page.name}.{side}.{v}.png": f"{base}/{p.page.name}.{side}.{v}.png?raw=true"
+        for p in pages
+        for side in ("base", "head")
+        for v in ("desktop", "mobile")
+    }
+
+
+HOME = page_item("home", shots("old"), shots("new"))
+ABOUT = page_item("about", shots("same"), shots("same"))
+
+
+def test_pr_body_shows_each_page_before_and_after_on_desktop_and_mobile() -> None:
+    links = {"folder": "https://github.com/o/r/tree/specster-evidence/pr-5"}
+    links |= image_links(HOME, ABOUT)
+    run = EvidenceRun((USERS,), (), {}, (HOME, ABOUT))
+    body = render_pr_body(view(evidence=run, evidence_links=links), bare())
+    assert "Full responses, screenshots and logs: https://github.com/o/r/tree/" in body
+    assert "**`home`** `/home?a=<b>` \u00b7 Changed: yes" in body
+    assert "**`about`** `/about?a=<b>` \u00b7 Changed: no" in body
+    blob = "https://github.com/o/r/blob/abc/pr-5"
+    assert (
+        "| | Before | After |\n|---|---|---|\n"
+        f'| Desktop | <img src="{blob}/home.base.desktop.png?raw=true" alt="home base desktop" '
+        f'width="400"> | <img src="{blob}/home.head.desktop.png?raw=true" '
+        'alt="home head desktop" width="400"> |\n'
+        f'| Mobile | <img src="{blob}/home.base.mobile.png?raw=true" alt="home base mobile" '
+        'width="200"> |'
+    ) in body
+    assert body.index("| `users` |") < body.index("**`home`**") < body.index("<details>")
+
+
+def test_a_page_side_without_a_shot_says_why_and_is_not_compared() -> None:
+    lost = (Shot("desktop", None, "the server exited | before"), Shot("mobile", None, "not a PNG"))
+    run = EvidenceRun((), (), {}, (page_item("home", lost, shots("new")),))
+    body = render_pr_body(view(evidence=run, evidence_links=image_links(HOME)), bare())
+    assert "Changed: \u2014" in body
+    assert "| Desktop | the server exited \\| before | <img " in body
+    assert "| Mobile | not a PNG | <img " in body
+    assert "| Request |" not in body
+
+
+@pytest.mark.parametrize(
+    ("lang", "said"),
+    [
+        ("en", "| | Before | After |\n|---|---|---|\n| Desktop | screenshot not uploaded |"),
+        ("es", "| | Antes | Despu\u00e9s |\n|---|---|---|\n| Escritorio | captura sin subir |"),
+    ],
+)
+def test_screenshots_not_yet_uploaded_say_so(lang: str, said: str) -> None:
+    run = EvidenceRun((), (), {}, (HOME,))
+    body = render_pr_body(view(evidence=run), ctx(language=lang))
+    assert said in body and "raw=true" not in body
+
+
+def test_an_image_link_cannot_break_out_of_its_attribute() -> None:
+    links = image_links(HOME, base='https://x/"><script>')
+    body = render_pr_body(
+        view(evidence=EvidenceRun((), (), {}, (HOME,)), evidence_links=links), bare()
+    )
+    assert "<script>" not in body and 'src="https://x/&quot;&gt;&lt;script&gt;/home' in body
+
+
+def test_body_over_the_limit_drops_pages_with_a_note() -> None:
+    pages = [page_item(f"p{i}", shots("a"), shots(f"b{i}")) for i in range(10)]
+    links = image_links(*pages, base="https://github.com/o/r/blob/" + "s" * 3_000)
+    run = EvidenceRun((), (), {}, tuple(pages))
+    body = render_pr_body(view(evidence=run, evidence_links=links), bare())
+    kept = body.count("| Desktop |")
+    assert len(body) <= BODY_MAX and 0 < kept < 10 and "**`p0`**" in body
+    assert f"{10 - kept} of 10 pages left out" in body and "Closes #7" in body
 
 
 def test_no_evidence_no_section() -> None:

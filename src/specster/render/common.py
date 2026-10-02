@@ -255,6 +255,7 @@ class _Cuts:
     findings: int | None = None
     unapplied: int | None = None
     evidence: int | None = None
+    pages: int | None = None
     rows: int | None = None
 
 
@@ -284,6 +285,7 @@ def _fit(
         ("findings", lambda c, k: replace(c, findings=k)),
         ("unapplied", lambda c, k: replace(c, unapplied=k)),
         ("evidence", lambda c, k: replace(c, evidence=k)),
+        ("pages", lambda c, k: replace(c, pages=k)),
         ("rows", lambda c, k: replace(c, rows=k)),
     )
     for name, cut in steps:
