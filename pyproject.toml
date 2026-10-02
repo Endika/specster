@@ -54,8 +54,11 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers --strict-config -m 'not eval'"
-markers = ["eval: calls real models; run explicitly with -m eval"]
+addopts = "-q --strict-markers --strict-config -m 'not eval and not browser'"
+markers = [
+    "eval: calls real models; run explicitly with -m eval",
+    "browser: installs Playwright and Chromium over the network, as root; run with -m browser",
+]
 
 [dependency-groups]
 dev = [

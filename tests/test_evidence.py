@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -16,21 +17,27 @@ from specster.evidence import (
     BODY_MAX_BYTES,
     JSON_MAX_DEPTH,
     OUT_OF_TIME,
+    PNG_MAGIC,
+    PNG_MAX_BYTES,
+    VIEWPORTS,
     Capture,
     EvidenceItem,
     EvidenceRun,
+    PageItem,
+    Shot,
     Side,
     capture,
     collect,
     diff_text,
     files,
     normalize,
+    read_shots,
     wait_ready,
 )
 from specster.render.evidence import evidence_section
 from specster.render.labels import LABELS
 from specster.sandbox import Server
-from specster.schemas import EvidenceRequest
+from specster.schemas import EvidencePage, EvidenceRequest
 from tests.test_sandbox import box
 
 LOCAL = pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
@@ -383,3 +390,196 @@ def test_files_name_each_side_by_its_content_type_and_skip_a_missing_side() -> N
     assert out["users.head.json"] == b"{}\n" and out["users.base.txt"] == b"missing"
     assert out["lone.head.txt"] == b"ReadTimeout: timed out\n"
     assert out["users.diff"] == users.diff.encode() and out["server-head.log"] == b"listening\n"
+
+
+PAGES = [
+    EvidencePage(name="home", path="/", why="w"),
+    EvidencePage(name="about", path="/about?tab=1", why="w"),
+]
+
+
+def png(tag: str) -> bytes:
+    return PNG_MAGIC + tag.encode()
+
+
+def test_read_shots_takes_each_page_and_viewport_and_notes_what_is_missing(tmp_path: Path) -> None:
+    (tmp_path / "home.desktop.png").write_bytes(png("d"))
+    (tmp_path / "home.mobile.png").write_bytes(png("m"))
+    (tmp_path / "about.desktop.png").write_bytes(b"GIF89a")
+    got = read_shots(tmp_path, PAGES, "head")
+    assert got["home"] == (Shot("desktop", png("d")), Shot("mobile", png("m")))
+    assert got["about"] == (
+        Shot("desktop", None, "not a PNG"),
+        Shot("mobile", None, "not captured: see browser-head.log"),
+    )
+
+
+def test_read_shots_refuses_a_png_over_the_limit_without_reading_it_all(tmp_path: Path) -> None:
+    (tmp_path / "home.desktop.png").write_bytes(PNG_MAGIC + b"x" * PNG_MAX_BYTES)
+    (tmp_path / "home.mobile.png").write_bytes(PNG_MAGIC + b"x" * (PNG_MAX_BYTES - 8))
+    desktop, mobile = read_shots(tmp_path, PAGES[:1], "base")["home"]
+    assert desktop == Shot("desktop", None, "over the 5 MB limit")
+    assert mobile.png is not None and len(mobile.png) == PNG_MAX_BYTES
+
+
+def test_read_shots_never_follows_a_link_nor_waits_on_a_fifo(tmp_path: Path) -> None:
+    secret = tmp_path / "secret"
+    secret.write_bytes(png("token"))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "home.desktop.png").symlink_to(secret)
+    os.mkfifo(out / "home.mobile.png")
+    (out / "about.desktop.png").hardlink_to(secret)
+    got = read_shots(out, PAGES, "base")
+    assert [s.png for shots in got.values() for s in shots] == [None] * 4
+    assert got["home"][0].note.startswith("unreadable")
+    assert got["home"][1].note == "not a regular file"
+    assert got["about"][0].note == "not a regular file"
+    linked = tmp_path / "linked"
+    linked.symlink_to(tmp_path)
+    assert all(s.note.startswith("unreadable") for s in read_shots(linked, PAGES, "base")["home"])
+
+
+def test_read_shots_skips_a_directory_in_place_of_a_png_and_keeps_the_rest(tmp_path: Path) -> None:
+    (tmp_path / "home.desktop.png").mkdir()
+    (tmp_path / "home.mobile.png").write_bytes(png("ok"))
+    desktop, mobile = read_shots(tmp_path, PAGES[:1], "base")["home"]
+    assert desktop == Shot("desktop", None, "not a regular file")
+    assert mobile.png == png("ok")
+
+
+def test_read_shots_of_a_missing_folder_notes_every_shot(tmp_path: Path) -> None:
+    got = read_shots(tmp_path / "none", PAGES, "base")
+    assert {s.note for shots in got.values() for s in shots} == {
+        "not captured: see browser-base.log"
+    }
+
+
+def test_a_page_changed_only_when_both_sides_have_a_different_png() -> None:
+    page = PAGES[0]
+    same = (Shot("desktop", png("a")), Shot("mobile", png("b")))
+    other = (Shot("desktop", png("a")), Shot("mobile", png("c")))
+    lost = (Shot("desktop", None, "x"), Shot("mobile", None, "x"))
+    assert not PageItem(page, same, same).changed
+    assert PageItem(page, same, other).changed
+    assert not PageItem(page, same, lost).changed
+
+
+@LOCAL
+def test_collect_shoots_each_side_while_its_server_is_up(tmp_path: Path) -> None:
+    port = free_port()
+    sb = box(tmp_path)
+    home = sb.new_home(tmp_path, "home")
+    serve = [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"]
+    servers: list[Server] = []
+    up: list[bool] = []
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        servers.append(sb.start(serve, tmp_path, home, f"serve {side}"))
+        return servers[-1], None
+
+    def shoot(side: Side) -> tuple[dict[str, tuple[Shot, ...]], str]:
+        up.append(servers[-1].alive())
+        # The about page is the same on both sides; home changes on mobile only.
+        mobile = png(f"home {side}")
+        return {
+            "home": (Shot("desktop", png("home")), Shot("mobile", mobile)),
+            "about": (Shot("desktop", png("about")), Shot("mobile", png("about"))),
+        }, f"shot {side}\n"
+
+    preview = PreviewConfig(serve_command=serve, ready_url=f"http://127.0.0.1:{port}/")
+    with httpx.Client() as client:
+        run = collect(start_side, preview, TWO, client, pages=PAGES, shoot=shoot)
+    assert up == [True, True] and not run.problems
+    home_item, about = run.pages
+    assert home_item.changed and not about.changed and home_item.page == PAGES[0]
+    assert run.browser_logs == {"base": "shot base\n", "head": "shot head\n"}
+    assert run.items[0].base is not None and run.items[0].base.status == 200
+
+
+def test_collect_says_why_a_side_has_no_shots() -> None:
+    shot: list[Side] = []
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        return None, f"setup_command failed on {side}"
+
+    def shoot(side: Side) -> tuple[dict[str, tuple[Shot, ...]], str]:
+        shot.append(side)
+        return {}, ""
+
+    preview = PreviewConfig(serve_command=["x"], ready_url="http://127.0.0.1:1/")
+    with httpx.Client() as client:
+        run = collect(start_side, preview, (), client, pages=PAGES, shoot=shoot)
+    assert shot == [] and run.browser_logs == {}
+    assert [s.note for s in run.pages[0].base] == ["setup_command failed on base"] * 2
+    assert [s.viewport for s in run.pages[0].head] == list(VIEWPORTS)
+
+
+def test_collect_without_a_shooter_has_no_pages() -> None:
+    preview = PreviewConfig(serve_command=["x"], ready_url="http://127.0.0.1:1/")
+    with httpx.Client() as client:
+        run = collect(lambda _side: (None, "no"), preview, (), client, pages=PAGES)
+    assert run.pages == ()
+
+
+@LOCAL
+def test_a_shooter_that_raises_leaves_the_requests_and_logs_its_error(tmp_path: Path) -> None:
+    port = free_port()
+    sb = box(tmp_path)
+    home = sb.new_home(tmp_path, "home")
+    serve = [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"]
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        return sb.start(serve, tmp_path, home, f"serve {side}"), None
+
+    def shoot(side: Side) -> tuple[dict[str, tuple[Shot, ...]], str]:
+        raise RuntimeError(f"no browser on {side}")
+
+    preview = PreviewConfig(serve_command=serve, ready_url=f"http://127.0.0.1:{port}/")
+    with httpx.Client() as client:
+        run = collect(start_side, preview, TWO, client, pages=PAGES[:1], shoot=shoot)
+    assert not run.problems and run.items[0].head is not None
+    assert "RuntimeError: no browser on head" in run.browser_logs["head"]
+    assert run.pages[0].head[0] == Shot("desktop", None, "not captured: see browser-head.log")
+
+
+@LOCAL
+def test_no_time_left_for_the_shots_is_the_sides_problem(tmp_path: Path) -> None:
+    port = free_port()
+    sb = box(tmp_path)
+    home = sb.new_home(tmp_path, "home")
+    serve = [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"]
+
+    def start_side(side: Side) -> tuple[Server | None, str | None]:
+        return sb.start(serve, tmp_path, home, f"serve {side}"), None
+
+    def shoot(side: Side) -> tuple[dict[str, tuple[Shot, ...]], str]:
+        raise AssertionError(f"no time was left to shoot {side}")
+
+    preview = PreviewConfig(serve_command=serve, ready_url=f"http://127.0.0.1:{port}/")
+    # collect, the ready wait and the one request see time left; the shots do not.
+    with httpx.Client() as client:
+        run = collect(
+            start_side, preview, TWO[:1], client, Countdown(3), pages=PAGES[:1], shoot=shoot
+        )
+    assert [(p.side, p.reason) for p in run.problems] == [
+        ("base", f"{OUT_OF_TIME}: no screenshots taken"),
+        ("head", OUT_OF_TIME),
+    ]
+    assert run.items[0].base is not None and run.pages[0].base[0].note == OUT_OF_TIME
+
+
+def test_files_add_each_png_and_each_browser_log() -> None:
+    page = PageItem(
+        PAGES[0],
+        (Shot("desktop", png("bd")), Shot("mobile", None, "not a PNG")),
+        (Shot("desktop", png("hd")), Shot("mobile", png("hm"))),
+    )
+    out = files(EvidenceRun((), (), {}, (page,), {"base": "b\n", "head": "h\n"}))
+    assert out == {
+        "home.base.desktop.png": png("bd"),
+        "home.head.desktop.png": png("hd"),
+        "home.head.mobile.png": png("hm"),
+        "browser-base.log": b"b\n",
+        "browser-head.log": b"h\n",
+    }

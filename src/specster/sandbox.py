@@ -306,7 +306,10 @@ class Sandbox:
         """Put the build's installed toolchains first on every later command's PATH."""
         self._tool_paths = tuple(bin_dirs)
 
-    def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
+    def run(
+        self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+    ) -> RunResult:
+        """`reap=False` only while a `Server` of the slot is alive: its stop reaps what is left."""
         timeout: float = self._timeout_s
         if self._time_left is not None:
             # The build's wall-clock limit shortens the run; a second at least, so it still runs.
@@ -326,7 +329,8 @@ class Sandbox:
                 with contextlib.suppress(ProcessLookupError, PermissionError):
                     os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
-                self._reap_slot()
+                if reap:
+                    self._reap_slot()
             return self._collect(argv, code, timed_out, out, label, started)
 
     def start(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> "Server":
