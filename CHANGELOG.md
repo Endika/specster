@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/Endika/specster/compare/specster-v0.13.0...specster-v0.14.0) (2026-10-02)
+
+
+### Features
+
+* delete the evidence branch once its last folder is removed ([cffa08e](https://github.com/Endika/specster/commit/cffa08e0e3b741d930d654a71fe1ac3682ed1740))
+
 ## [0.13.0](https://github.com/Endika/specster/compare/specster-v0.12.1...specster-v0.13.0) (2026-10-01)
 
 
