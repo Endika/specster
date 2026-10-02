@@ -5,8 +5,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from specster.agent import AgentError, NotYet, SubmissionError, run_agent, run_loop
-from specster.config import SkillsConfig
+from specster.agent import AgentError, Metered, NotYet, SubmissionError, run_agent, run_loop
+from specster.config import ModelConfig, SkillsConfig
+from specster.ledger import Ledger
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
 from specster.schemas import EvidenceRequest, QuestionsResult, SpecResult
 from specster.skills import SkillBook, load_skills
@@ -222,6 +223,35 @@ def test_the_nudge_is_the_callers_and_handlers_answer_other_tools() -> None:
     )
     assert out.value == 1 and model.nudges == ["Call submit_x now."]
     assert model.received[2][0].content == "hi"
+
+
+def test_metered_stops_before_the_turn_once_spent() -> None:
+    checks = 0
+
+    def spent() -> str | None:
+        nonlocal checks
+        checks += 1
+        return "build budget spent: $1.00 of $1.00" if checks == 3 else None
+
+    ledger = Ledger({})
+    meter = ledger.meter("worker", ModelConfig(model="claude-sonnet-5"))
+    model = ScriptedModel([[ToolCall(str(i), "echo", {})] for i in range(5)])
+    with pytest.raises(AgentError, match=r"BudgetSpent: build budget spent: \$1\.00") as err:
+        run_loop(
+            Metered(model, meter, spent),
+            "s",
+            "c",
+            "u",
+            SUBMIT_X,
+            {"echo": lambda _a: ""},
+            {},
+            5,
+            "n",
+        )
+    assert len(model.received) == 2 and err.value.turns == 2
+    assert ledger.known_cost() > 0
+    meter.close()
+    assert ledger.known_cost() == 0
 
 
 EVIDENCE = [{"name": "list-users", "method": "GET", "path": "/users?limit=2", "why": "New field."}]

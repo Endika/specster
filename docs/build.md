@@ -273,7 +273,11 @@ spec and build runs alike - including ones that ended in an error or in `budget_
 that failed after spending tokens still counts. When the sum reaches the cap, Specster posts that
 the budget is spent and does not call the model (a build does not even start). A build also has
 its own `budget.max_usd_per_build`, checked against that build's own spend only, and stopped
-partway through if it is reached (whatever was committed so far is still pushed). A run or a role
+partway through if it is reached (whatever was committed so far is still pushed). Both caps are
+checked before every model turn of the build - workers, escalated workers and the reviewer -
+counting what the loops still running have spent so far, so a build overshoots a cap by at most
+one turn per loop in flight. A task cut by a cap fails with the cap's reason, is never escalated,
+and the build ends `budget_exhausted`. A run or a role
 with unknown cost (no price for that model, and none set in `pricing:`) is never treated as $0: it
 is called out in a warning and left out of both sums, so an unpriced model cannot silently
 exhaust, or silently dodge, either cap.

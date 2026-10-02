@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from specster.config import (
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel, ToolCall, ToolResult, ToolSpec, Turn, Usage
+from specster.pricing import cost_usd
 from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
 from specster.schemas import EvidenceRequest, PlanTask
@@ -65,6 +67,15 @@ def done(subject: str) -> list[ToolCall]:
 
 def verdict(v: str, *findings: dict[str, str]) -> list[ToolCall]:
     return [ToolCall("r", "submit_review", {"verdict": v, "findings": list(findings)})]
+
+
+WORKER = Config().models.worker
+# What each ScriptedModel turn costs at the worker's (and the reviewer's) default price.
+TURN_USD = cost_usd(WORKER.provider, WORKER.model, Usage(100, 50, 0, 20), {}) or 0.0
+
+
+def reads(file: str, n: int) -> list[list[ToolCall] | str]:
+    return [[ToolCall(str(i), "read_file", {"path": file})] for i in range(n)]
 
 
 def lock(sb: Sandbox, repo: Path) -> Sandbox:
@@ -360,7 +371,8 @@ def test_without_an_escalation_model_a_failed_task_is_not_retried(tmp_path: Path
 def test_a_spent_build_budget_skips_the_escalation_and_says_so(tmp_path: Path) -> None:
     book = ScriptBook({'id="a"': [never_submits()]})
     stronger = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
-    budget = BudgetConfig(max_usd_per_build=0.000001)
+    # The second turn still starts under the cap; billing it spends the budget.
+    budget = BudgetConfig(max_usd_per_build=1.5 * TURN_USD)
     s = setup(
         tmp_path, [task("a", "app.py")], book, ScriptedModel([]), budget=budget, escalation=stronger
     )
@@ -448,7 +460,11 @@ def test_the_build_budget_stops_between_tasks(tmp_path: Path) -> None:
     tasks = [task("a", "app.py"), task("b", "util.py", ["a"])]
     report = run_build(
         setup(
-            tmp_path, tasks, book, ScriptedModel([]), budget=BudgetConfig(max_usd_per_build=0.0005)
+            tmp_path,
+            tasks,
+            book,
+            ScriptedModel([]),
+            budget=BudgetConfig(max_usd_per_build=1.5 * TURN_USD),
         )
     )
     assert report.status == "budget_exhausted" and report.commits == 1
@@ -847,6 +863,96 @@ def test_a_reviewer_that_fails_is_still_billed(tmp_path: Path) -> None:
     report = run_build(s)
     assert report.status == "failed" and report.reason.startswith("reviewer:")
     assert s.ledger.roles()["reviewer"].turns == 2
+
+
+def test_two_parallel_workers_stop_within_one_turn_of_the_cap(tmp_path: Path) -> None:
+    book = ScriptBook(
+        {'id="a"': [reads("app.py", 10)], 'id="b"': [reads("util.py", 10)]},
+        barrier=threading.Barrier(2),
+    )
+    stronger = ScriptedModel([])
+    cap = 3.5 * TURN_USD
+    s = setup(
+        tmp_path,
+        [task("a", "app.py"), task("b", "util.py")],
+        book,
+        ScriptedModel([]),
+        build=BuildConfig(max_parallel=2),
+        budget=BudgetConfig(max_usd_per_build=cap),
+        escalation=stronger,
+    )
+    report = run_build(s)
+    assert report.status == "budget_exhausted" and "build budget spent" in report.reason
+    assert all(r.status == "failed" and "build budget spent" in r.reason for r in report.tasks)
+    assert cap <= s.ledger.known_cost() < cap + 2 * TURN_USD
+    assert stronger.sessions_started == 0 and not report.warnings
+
+
+def test_the_issue_cap_counts_the_running_workers(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [reads("app.py", 10)]})
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([]),
+        budget=BudgetConfig(max_usd_per_issue=1.0),
+    )
+    report = run_build(replace(s, prior_known_usd=1.0 - 2.5 * TURN_USD))
+    assert report.status == "budget_exhausted" and "issue budget spent" in report.reason
+    assert report.tasks[0].status == "failed" and s.ledger.turns() == 3
+
+
+def test_metrics_after_a_budget_cut_sum_the_turns_made(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [reads("app.py", 10)]})
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([]),
+        budget=BudgetConfig(max_usd_per_build=2.5 * TURN_USD),
+    )
+    assert run_build(s).status == "budget_exhausted"
+    worker = s.ledger.roles()["worker"]
+    assert (worker.turns, worker.input_tokens, worker.cache_read_tokens) == (3, 300, 150)
+    assert worker.output_tokens == 60 and s.ledger.cost() == s.ledger.known_cost()
+    assert worker.cost_usd == s.ledger.known_cost() == round(3 * TURN_USD, 6)
+
+
+def test_a_reviewer_cut_by_the_budget_ends_budget_exhausted(tmp_path: Path) -> None:
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    reviewer = ScriptedModel(reads("app.py", 8))
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        reviewer,
+        budget=BudgetConfig(max_usd_per_build=4.5 * TURN_USD),
+    )
+    report = run_build(s)
+    assert report.status == "budget_exhausted" and not report.out_of_time
+    assert report.reason.startswith("build budget spent") and report.commits == 1
+    assert len(reviewer.received) == 3 and s.ledger.roles()["reviewer"].turns == 3
+
+
+def test_a_worker_that_dies_closes_its_meter(tmp_path: Path) -> None:
+    class DiesOnItsThirdTurn(ScriptedModel):
+        def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+            if len(self.received) == 2:
+                raise Fatal("the worker's machine went away")
+            return super().send(results, user_text)
+
+    worker = DiesOnItsThirdTurn(reads("app.py", 5))
+
+    class Book(ScriptBook):
+        def start(self, system: str, context: str, user: str, tools: Sequence[ToolSpec]) -> Any:
+            worker.start(system, context, user, tools)
+            return worker
+
+    s = setup(tmp_path, [task("a", "app.py")], Book({}), ScriptedModel([]))
+    with pytest.raises(Fatal):
+        run_build(s)
+    assert len(worker.received) == 2 and s.ledger.known_cost() == 0.0
+    assert budget_stop(s.ledger, BudgetConfig(max_usd_per_build=TURN_USD), 0.0) is None
 
 
 def test_a_worker_subject_that_closes_an_issue_never_reaches_the_commit(tmp_path: Path) -> None:

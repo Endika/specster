@@ -34,3 +34,16 @@ def test_a_role_with_unknown_usage_makes_the_total_unknown() -> None:
     led.mark_unknown("worker", ModelConfig(model="claude-sonnet-5"))
     assert led.cost() is None and led.known_cost() == 4.0
     assert led.roles()["worker"].cost_usd is None and led.unpriced() == []
+
+
+def test_a_meter_counts_toward_the_known_cost_until_it_is_closed() -> None:
+    led = Ledger({})
+    worker = ModelConfig(model="claude-sonnet-5")
+    meter = led.meter("worker", worker)
+    meter.turn(MTOK)
+    meter.turn(MTOK)
+    assert led.known_cost() == 4.0 and led.roles() == {} and led.turns() == 0
+    led.add("worker", worker, MTOK + MTOK, 2)
+    meter.close()
+    meter.close()
+    assert led.known_cost() == led.cost() == 4.0 and led.roles()["worker"].turns == 2
