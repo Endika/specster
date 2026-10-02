@@ -18,12 +18,12 @@ from typing import Literal
 
 import httpx
 
-from specster.agent import TIME_UP, AgentError, attached_usage
+from specster.agent import TIME_UP, AgentError, BudgetSpent, Metered, attached_usage
 from specster.approved import ApprovedSpec
 from specster.config import BudgetConfig, Config, ModelConfig, PersonaConfig, PreviewConfig
 from specster.evidence import LOG_TAIL_CHARS, EvidenceRun, Side, collect
 from specster.git import BOT_EMAIL, Author, Git, GitError
-from specster.ledger import Ledger
+from specster.ledger import Ledger, Meter
 from specster.llm.base import ChatModel, Usage
 from specster.plan import levels
 from specster.prompts import (
@@ -64,6 +64,8 @@ TOOL_FILES = (
 _DISABLED_BACKENDS = "asdf,vfox"
 FINAL_SLOT = 0
 NO_TESTS_RUN = "No tests were run: build.test_command is not set."
+# How run_loop names a loop cut by the budget, ahead of the cap's own text.
+BUDGET_CUT = f"{BudgetSpent.__name__}: "
 
 Status = Literal["done", "failed", "skipped", "not_started", "pending"]
 Outcome = Literal["approved", "not_approved", "failed", "budget_exhausted"]
@@ -275,9 +277,11 @@ class _Build:
         self._out_of_time = True
         return f"build time limit reached: build.max_minutes is {self.cfg.build.max_minutes}"
 
+    def _budget_stop(self) -> str | None:
+        return budget_stop(self.s.ledger, self.cfg.budget, self.s.prior_known_usd)
+
     def _stop(self) -> str | None:
-        spent = budget_stop(self.s.ledger, self.cfg.budget, self.s.prior_known_usd)
-        return spent or self._time_stop()
+        return self._budget_stop() or self._time_stop()
 
     def _unfinished_or_late(self) -> tuple[Outcome, str] | None:
         """Why the tasks did not all finish; the time limit first, since it cut them short."""
@@ -339,6 +343,7 @@ class _Build:
         enclosure = self.s.scratch / f"w{round_no}-{task.id}{'-escalated' if escalated else ''}"
         role, model = self._worker_role(escalated)
         started = False
+        meter: Meter | None = None
         try:
             sandbox = self._sandboxes[slot]
             tree = self._enclose(sandbox, enclosure, base)
@@ -368,8 +373,9 @@ class _Build:
             started = True
             make = self.s.make_escalation if escalated else self.s.make_worker
             assert make is not None
+            meter = self.s.ledger.meter(role, model)
             result = run_worker(
-                make(),
+                Metered(make(), meter, self._budget_stop),
                 self.worker_system,
                 self.worker_context,
                 user,
@@ -388,6 +394,8 @@ class _Build:
                 self._bill_fatal(role, model, e)
             raise
         finally:
+            if meter is not None:
+                meter.close()
             shutil.rmtree(enclosure, ignore_errors=True)
             with self._lock:
                 self._active -= 1
@@ -403,7 +411,8 @@ class _Build:
         """A task that failed on its own, not one stopped by time, budget or another's error."""
         if self.s.make_escalation is None or self.cfg.models.escalation is None:
             return False
-        if result.status != "failed" or TIME_UP in result.reason or STOPPED in result.reason:
+        cut = (TIME_UP, STOPPED, BUDGET_CUT)
+        if result.status != "failed" or any(why in result.reason for why in cut):
             return False
         stop = self._stop()
         if stop is not None:
@@ -528,6 +537,10 @@ class _Build:
 
     def _unfinished(self) -> tuple[Outcome, str] | None:
         records = [self.records[t.id] for t in self.tasks]
+        for r in records:
+            cap = _budget_cut(r.reason) if r.status == "failed" else None
+            if cap is not None:
+                return "budget_exhausted", f"{r.task.id}: {cap}"
         order: tuple[tuple[Status, Outcome], ...] = (
             ("not_started", "budget_exhausted"),
             ("failed", "failed"),
@@ -723,9 +736,10 @@ class _Build:
         user = review_block(
             s.spec.text, self.tasks, commits, diff, note, tests, secrets.token_hex(8)
         )
+        meter = s.ledger.meter("reviewer", self.cfg.models.reviewer)
         try:
             outcome = run_review(
-                s.make_reviewer(),
+                Metered(s.make_reviewer(), meter, self._budget_stop),
                 reviewer_system_prompt(s.persona, s.review_skills.on_demand, has_tests),
                 context_block(s.repo_map, s.review_skills.inline),
                 user,
@@ -741,7 +755,10 @@ class _Build:
         except BaseException as e:
             self._bill_fatal("reviewer", self.cfg.models.reviewer, e)
             raise
-        s.ledger.add("reviewer", self.cfg.models.reviewer, outcome.usage, outcome.turns)
+        else:
+            s.ledger.add("reviewer", self.cfg.models.reviewer, outcome.usage, outcome.turns)
+        finally:
+            meter.close()
         return outcome.result
 
     def run(self) -> BuildReport:
@@ -827,6 +844,9 @@ class _Build:
             try:
                 review = self._review(_test_text(final, setup_failed), round_no)
             except AgentError as e:
+                cap = _budget_cut(str(e))
+                if cap is not None:
+                    return report("budget_exhausted", cap)
                 late = self._time_stop()
                 if late is not None:
                     return report("budget_exhausted", late)
@@ -859,6 +879,12 @@ class _Build:
             if stopped is not None:
                 return report(*stopped)
         raise AssertionError("unreachable: the last round always returns")
+
+
+def _budget_cut(reason: str) -> str | None:
+    """The cap that cut a model loop short, if the budget is what stopped it."""
+    _, cut, cap = reason.partition(BUDGET_CUT)
+    return cap.split(";")[0] if cut else None
 
 
 def _forever() -> float:

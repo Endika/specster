@@ -7,6 +7,27 @@ from specster.metrics import RoleMetrics
 from specster.pricing import cost_usd
 
 
+class Meter:
+    """A running loop's spend: counted by known_cost until the loop is billed and closes it."""
+
+    def __init__(
+        self, role: str, cfg: ModelConfig, lock: threading.Lock, running: set["Meter"]
+    ) -> None:
+        self.role = role
+        self.cfg = cfg
+        self.usage = Usage()
+        self._lock = lock
+        self._running = running
+
+    def turn(self, usage: Usage) -> None:
+        with self._lock:
+            self.usage = self.usage + usage
+
+    def close(self) -> None:
+        with self._lock:
+            self._running.discard(self)
+
+
 class Ledger:
     def __init__(self, pricing: Mapping[str, PriceEntry]) -> None:
         self._pricing = pricing
@@ -14,11 +35,18 @@ class Ledger:
         self._roles: dict[str, tuple[ModelConfig, Usage, int]] = {}
         # Roles whose spend is only partly known (a run died without reporting its usage).
         self._unknown: set[str] = set()
+        self._running: set[Meter] = set()
 
     def add(self, role: str, cfg: ModelConfig, usage: Usage, turns: int) -> None:
         with self._lock:
             _, before, t = self._roles.get(role, (cfg, Usage(), 0))
             self._roles[role] = (cfg, before + usage, t + turns)
+
+    def meter(self, role: str, cfg: ModelConfig) -> Meter:
+        meter = Meter(role, cfg, self._lock, self._running)
+        with self._lock:
+            self._running.add(meter)
+        return meter
 
     def mark_unknown(self, role: str, cfg: ModelConfig) -> None:
         with self._lock:
@@ -66,7 +94,11 @@ class Ledger:
         }
 
     def known_cost(self) -> float:
-        return round(sum(c for c in self._priced().values() if c is not None), 6)
+        with self._lock:
+            spent = [(cfg, u) for cfg, u, _ in self._roles.values()]
+            spent += [(m.cfg, m.usage) for m in self._running]
+        priced = [cost_usd(cfg.provider, cfg.model, u, self._pricing) for cfg, u in spent]
+        return round(sum(c for c in priced if c is not None), 6)
 
     def unpriced(self) -> list[str]:
         return sorted(role for role, c in self._priced().items() if c is None)

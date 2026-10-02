@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from specster.ledger import Meter
 from specster.llm.base import ChatModel, ChatSession, ToolResult, ToolSpec, Turn, Usage
 from specster.plan import PlanError, normalize_plan
 from specster.schemas import (
@@ -54,6 +55,39 @@ class Deadline:
 
     def start(self, system: str, context: str, user: str, tools: Sequence[ToolSpec]) -> ChatSession:
         return _DeadlineSession(self._inner.start(system, context, user, tools), self._time_left)
+
+
+class BudgetSpent(Exception):
+    """The build or issue budget is spent: the model stops before another paid turn."""
+
+
+class _MeteredSession:
+    def __init__(self, session: ChatSession, meter: Meter, spent: Callable[[], str | None]) -> None:
+        self._session = session
+        self._meter = meter
+        self._spent = spent
+
+    def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+        if (why := self._spent()) is not None:
+            raise BudgetSpent(why)
+        turn = self._session.send(results, user_text)
+        self._meter.turn(turn.usage)
+        return turn
+
+
+class Metered:
+    """A model whose sessions count each turn's spend and stop before any turn once it is spent."""
+
+    def __init__(self, model: ChatModel, meter: Meter, spent: Callable[[], str | None]) -> None:
+        self.provider = model.provider
+        self.model = model.model
+        self._inner = model
+        self._meter = meter
+        self._spent = spent
+
+    def start(self, system: str, context: str, user: str, tools: Sequence[ToolSpec]) -> ChatSession:
+        session = self._inner.start(system, context, user, tools)
+        return _MeteredSession(session, self._meter, self._spent)
 
 
 class AgentError(Exception):
