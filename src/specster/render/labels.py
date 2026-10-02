@@ -20,6 +20,7 @@ LABELS: dict[str, dict[str, str]] = {
         "acceptance": "Acceptance criteria",
         "changes": "Changes from the previous spec",
         "evidence": "Evidence (requests run before and after the change)",
+        "evidence_with_pages": "Evidence (requests and screenshots, before and after the change)",
         "evidence_request": "Request",
         "evidence_why": "Shows",
         "evidence_pr": "Before and after",
@@ -124,6 +125,9 @@ LABELS: dict[str, dict[str, str]] = {
         "acceptance": "Criterios de aceptaci\u00f3n",
         "changes": "Cambios respecto a la spec anterior",
         "evidence": "Evidencia (peticiones antes y despu\u00e9s del cambio)",
+        "evidence_with_pages": (
+            "Evidencia (peticiones y capturas, antes y despu\u00e9s del cambio)"
+        ),
         "evidence_request": "Petici\u00f3n",
         "evidence_why": "Muestra",
         "evidence_pr": "Antes y despu\u00e9s",

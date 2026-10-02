@@ -46,7 +46,9 @@ _EVIDENCE = (
     "This repository's app can be started before and after the change. In evidence, list up "
     "to 10 HTTP requests whose responses show what the change does (a new or changed "
     "endpoint, a fixed bug); prefer GET, use a JSON body only when the endpoint needs one. "
-    "Paths only, never a host. Leave evidence empty when nothing visible over HTTP changes."
+    "Paths only, never a host. Leave evidence empty when nothing visible over HTTP changes. "
+    "In pages, list pages to screenshot (a visible page the change alters, by relative path, "
+    "never a host); evidence and pages together are at most 10."
 )
 
 
@@ -108,6 +110,9 @@ def revision_block(previous: ApprovedSpec, nonce: str) -> str:
     if previous.evidence:
         listed = json.dumps([e.model_dump() for e in previous.evidence], indent=1)
         evidence = f"\nApproved evidence (JSON):\n{listed}\n"
+    if previous.pages:
+        listed = json.dumps([p.model_dump() for p in previous.pages], indent=1)
+        evidence += f"\nApproved pages (JSON):\n{listed}\n"
     return (
         f"<previous_spec-{nonce}>\n{previous.text}\n\nApproved plan (JSON):\n{plan}\n"
         f"{evidence}</previous_spec-{nonce}>"

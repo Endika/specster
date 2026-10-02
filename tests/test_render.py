@@ -27,7 +27,14 @@ from specster.render import (
 )
 from specster.render.common import BODY_MAX
 from specster.sandbox import RunResult
-from specster.schemas import EvidenceRequest, Finding, PlanTask, QuestionsResult, SpecResult
+from specster.schemas import (
+    EvidencePage,
+    EvidenceRequest,
+    Finding,
+    PlanTask,
+    QuestionsResult,
+    SpecResult,
+)
 from specster.thread import HiddenItem
 
 M = RunMetrics(
@@ -720,3 +727,19 @@ def test_no_evidence_no_section() -> None:
 def test_the_build_comment_carries_the_evidence_upload_note() -> None:
     note = "The evidence files could not be uploaded: rejected"
     assert note in render_build(view(evidence_note=note), bare())
+
+
+@pytest.mark.parametrize(
+    ("lang", "heading"),
+    [
+        ("en", "**Evidence (requests and screenshots, before and after the change)**"),
+        ("es", "**Evidencia (peticiones y capturas, antes y despu\u00e9s del cambio)**"),
+    ],
+)
+def test_pages_are_rendered_as_page_rows_in_both_languages(lang: str, heading: str) -> None:
+    spec, tasks = spec_and_tasks()
+    page = EvidencePage(name="users-page", path="/users?x=1", why="New column.")
+    out = render_spec(spec.model_copy(update={"pages": [page]}), tasks, [], ctx(language=lang))
+    assert heading in out
+    assert "| `users-page` | `PAGE /users?x=1` | New column. |" in out
+    assert '"pages":[' in out

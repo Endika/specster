@@ -299,3 +299,37 @@ def test_marker_with_an_unsafe_evidence_path_is_refused() -> None:
     ev = [EVIDENCE[0] | {"path": "//evil.test/"}]
     with pytest.raises(BuildRefused, match="cannot be built"):
         loaded(spec_comment_body(SPEC, evidence=ev, validate=False))
+
+
+PAGES = [{"name": "users-page", "path": "/users", "why": "x"}]
+
+
+def test_spec_carries_its_pages_and_round_trips_with_evidence() -> None:
+    only_pages = loaded(spec_comment_body(SPEC, pages=PAGES))
+    assert [(p.name, p.path) for p in only_pages.pages] == [("users-page", "/users")]
+    assert only_pages.evidence == ()
+    both = loaded(spec_comment_body(SPEC, evidence=EVIDENCE, pages=PAGES))
+    assert [e.name for e in both.evidence] == ["list-users"] and len(both.pages) == 1
+
+
+def test_an_old_marker_without_pages_has_none() -> None:
+    assert loaded(spec_comment_body(SPEC, evidence=EVIDENCE)).pages == ()
+    assert loaded(spec_comment_body(SPEC)).pages == ()
+
+
+def test_edited_pages_break_the_marker() -> None:
+    body = spec_comment_body(SPEC, pages=PAGES).replace('"/users"', '"/admin"')
+    with pytest.raises(BuildRefused, match="does not match its sha256"):
+        loaded(body)
+
+
+def test_marker_with_more_than_ten_evidence_and_pages_is_refused() -> None:
+    pages = [{"name": f"p{i}", "path": "/", "why": "x"} for i in range(11)]
+    with pytest.raises(BuildRefused, match="limit is 10"):
+        loaded(spec_comment_body(SPEC, pages=pages, validate=False))
+
+
+def test_marker_with_a_name_repeated_across_evidence_and_pages_is_refused() -> None:
+    page = [{"name": "list-users", "path": "/", "why": "x"}]
+    with pytest.raises(BuildRefused, match="not unique"):
+        loaded(spec_comment_body(SPEC, evidence=EVIDENCE, pages=page, validate=False))

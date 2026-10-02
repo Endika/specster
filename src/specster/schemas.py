@@ -1,6 +1,6 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SUBMIT_QUESTIONS = "submit_questions"
 SUBMIT_SPEC = "submit_spec"
@@ -75,6 +75,18 @@ class EvidenceRequest(_Out):
     why: str = _text(200, "What this request shows about the change, one sentence.")
 
 
+class EvidencePage(_Out):
+    name: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9-]*$", max_length=40, description="Short slug, e.g. users-page."
+    )
+    path: str = Field(
+        pattern=r"^/([^\s#/][^\s#]*)?$",
+        max_length=300,
+        description="Path and query of a page on the app, e.g. /users; never a host.",
+    )
+    why: str = _text(200, "What this page shows about the change, one sentence.")
+
+
 class SpecResult(_Out):
     title: str = _text(120)
     objective: str = _text(1000)
@@ -90,12 +102,23 @@ class SpecResult(_Out):
         max_length=EVIDENCE_MAX,
         description="HTTP requests run against the app before and after the change.",
     )
+    pages: list[EvidencePage] = Field(
+        default=[],
+        max_length=EVIDENCE_MAX,
+        description="Pages screenshotted before and after the change.",
+    )
     changes: list[Item] = Field(
         default=[],
         max_length=20,
         description="Only in revision mode: each change from the previous spec, one line each.",
     )
     closing_line: str = Field(default="", max_length=300, description="The closing sentence.")
+
+    @model_validator(mode="after")
+    def _evidence_total(self) -> Self:
+        if len(self.evidence) + len(self.pages) > EVIDENCE_MAX:
+            raise ValueError(f"evidence and pages together are at most {EVIDENCE_MAX}")
+        return self
 
 
 class TaskSubmission(_Out):

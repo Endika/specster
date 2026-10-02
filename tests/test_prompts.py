@@ -5,7 +5,7 @@ from specster.approved import ApprovedSpec
 from specster.config import PersonaConfig
 from specster.github import Comment
 from specster.prompts import review_block, revision_block, system_prompt
-from specster.schemas import EvidenceRequest, PlanTask
+from specster.schemas import EvidencePage, EvidenceRequest, PlanTask
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -91,3 +91,14 @@ def test_revision_block_replays_the_approved_evidence() -> None:
     assert "Approved evidence" not in revision_block(plain, "n")
     block = revision_block(dataclasses.replace(plain, evidence=(ev,)), "n")
     assert "Approved evidence (JSON):" in block and '"/users"' in block
+
+
+def test_prompt_explains_pages_and_the_revision_replays_them() -> None:
+    assert "pages" in system_prompt(PersonaConfig(), [], preview=True)
+    task = PlanTask(id="a", title="A", description="d", files=["app.py"], acceptance=["x"])
+    comment = Comment(1, "specster[bot]", "Bot", "NONE", "b", T0, T0)
+    page = EvidencePage(name="users-page", path="/users", why="x")
+    plain = ApprovedSpec(comment, [task], "0" * 64, "Spec.")
+    assert "Approved pages" not in revision_block(plain, "n")
+    block = revision_block(dataclasses.replace(plain, pages=(page,)), "n")
+    assert "Approved pages (JSON):" in block and '"/users"' in block
