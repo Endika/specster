@@ -131,7 +131,8 @@ ready says why, with the tail of its log.
   stay what the build and review decided.
 - The full responses, diffs and server logs go to the `specster-evidence` branch, an orphan branch
   with one folder per pull request (`pr-<N>/`), and the pull request links that folder. Its
-  commits say `[skip ci]`, and a folder is removed when its pull request is closed.
+  commits say `[skip ci]`, and a folder is removed when its pull request is closed. When the last
+  folder goes, the branch is deleted too, so old evidence does not stay readable in its history.
 - Limits: each request's JSON body stays under 2,000 characters, each response keeps its first
   64 KB, each diff its first 4,000 characters in the body (the whole diff is in the files), and a
   body that would pass GitHub's limit leaves out the last diffs and says so. The app is reached
