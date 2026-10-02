@@ -156,10 +156,9 @@ def render_pr_body(view: BuildView, ctx: RenderContext) -> str:
         _kept(report.tasks, cuts.rows, "task rows", notes)
         if tests:
             body += [f"**{lab['test_result']}:** {tests[0]}", *tests[1:], ""]
-        if report.evidence is not None and report.evidence.items:
-            body += evidence_section(
-                report.evidence, lab, view.evidence_links, cuts.evidence, notes
-            )
+        ev = report.evidence
+        if ev is not None and (ev.items or ev.pages):
+            body += evidence_section(ev, lab, view.evidence_links, cuts.evidence, notes, cuts.pages)
         minor = _kept(report.minor, cuts.findings, "minor findings", notes)
         if minor:
             body += [f"**{lab['minor']}**", *_findings(minor), ""]
@@ -172,6 +171,7 @@ def render_pr_body(view: BuildView, ctx: RenderContext) -> str:
         "findings": len(report.minor),
         "unapplied": len(view.unapplied),
         "evidence": sum(1 for i in report.evidence.items if i.changed) if report.evidence else 0,
+        "pages": len(report.evidence.pages) if report.evidence else 0,
         "rows": len(report.tasks),
     }
     return _fit(ctx, make, sizes)

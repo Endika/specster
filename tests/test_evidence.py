@@ -544,7 +544,7 @@ def test_a_shooter_that_raises_leaves_the_requests_and_logs_its_error(tmp_path: 
 
 
 @LOCAL
-def test_no_time_left_for_the_shots_is_the_sides_problem(tmp_path: Path) -> None:
+def test_no_time_left_for_the_shots_is_a_page_note_not_the_sides_problem(tmp_path: Path) -> None:
     port = free_port()
     sb = box(tmp_path)
     home = sb.new_home(tmp_path, "home")
@@ -562,11 +562,9 @@ def test_no_time_left_for_the_shots_is_the_sides_problem(tmp_path: Path) -> None
         run = collect(
             start_side, preview, TWO[:1], client, Countdown(3), pages=PAGES[:1], shoot=shoot
         )
-    assert [(p.side, p.reason) for p in run.problems] == [
-        ("base", f"{OUT_OF_TIME}: no screenshots taken"),
-        ("head", OUT_OF_TIME),
-    ]
-    assert run.items[0].base is not None and run.pages[0].base[0].note == OUT_OF_TIME
+    assert [(p.side, p.reason) for p in run.problems] == [("head", OUT_OF_TIME)]
+    assert run.items[0].base is not None and run.items[0].base.status == 200
+    assert [s.note for s in run.pages[0].base] == [OUT_OF_TIME] * 2
 
 
 def test_files_add_each_png_and_each_browser_log() -> None:

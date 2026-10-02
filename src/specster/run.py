@@ -11,6 +11,7 @@ from opentelemetry import context, trace
 from opentelemetry.context import Context
 from opentelemetry.trace import StatusCode
 
+from specster.browser import Installer, install
 from specster.config import Config, ConfigError, LabelsConfig, ModelConfig, load_config
 from specster.event import EventError, Trigger, parse_event, phase_of, skip_reason
 from specster.github import IssueTracker
@@ -109,6 +110,7 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     timer: Callable[[], float] = time.monotonic,
     identity: Callable[[int], Identity | None] = slot_identity,
+    install_browser: Installer = install,
 ) -> int:
     started = timer()
     trigger = _read_trigger(env)
@@ -149,7 +151,9 @@ def main(
                 return CleanupPhase(run, trigger).execute()
             try:
                 if phase == "build":
-                    return BuildPhase(run, trigger, make_model, fetch, identity).execute()
+                    return BuildPhase(
+                        run, trigger, make_model, fetch, identity, install_browser
+                    ).execute()
                 return SpecPhase(run, trigger, make_model, fetch, clock).execute()
             except Failure as failure:
                 return run.fail(failure)

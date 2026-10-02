@@ -264,7 +264,8 @@ build:
   allow_workflow_changes: false        # true lets a task change .github/workflows/** and .github/actions/**
   allow_config_changes: false          # true lets a task change .github/specster/** and the config_path file
   # Before/after evidence for the pull request (off unless set): Specster starts the app at
-  # the base commit and at the branch head and sends both the requests the spec lists.
+  # the base commit and at the branch head, sends both the requests the spec lists and
+  # screenshots its pages.
   preview:
     serve_command: [python, -m, app]           # runs in the sandbox; must keep running
     ready_url: http://127.0.0.1:8000/health    # polled until it answers; loopback only
@@ -379,8 +380,11 @@ The details and the known limits: [Security model](docs/security.md).
   [Benchmark results](docs/evals.md#benchmark-results-2026-09-29).
 - **Before/after evidence, part 1 (done).** With `build.preview` set, the pull request shows how
   the app's HTTP and JSON responses change: see
-  [Before/after evidence](docs/build.md#beforeafter-evidence). Screenshots, and evidence on any
-  pull request rather than only Specster's, are still to come.
+  [Before/after evidence](docs/build.md#beforeafter-evidence).
+- **Before/after evidence, part 2: screenshots (done).** Pages the spec lists are screenshot on
+  desktop and mobile at the base and at the head, side by side in the pull request: see
+  [Screenshots](docs/build.md#screenshots). Evidence on any pull request rather than only
+  Specster's is still to come.
 - **Harder build cases and model escalation (done).** A task or review that keeps failing can
   move to a stronger model: see [Model escalation](docs/build.md#model-escalation) and the
   [results](docs/evals.md#harder-build-cases-and-model-escalation-2026-10-01).

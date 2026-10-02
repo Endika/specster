@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
+from specster.browser import Installer
 from specster.config import ModelConfig
 from specster.git import BOT_EMAIL, Author, Git
 from specster.github import GitHubRest, Issue, PullRequest
@@ -30,7 +31,16 @@ from tests.fakes import (
     unix_socket,
 )
 from tests.test_approved import SPEC, T0, TASK, human
-from tests.test_build import BASE_ROUTES, HEAD_ROUTES, app, free_port
+from tests.test_build import (
+    BASE_ROUTES,
+    HEAD_ROUTES,
+    PAGE_ROUTES,
+    PAGES,
+    FakeInstaller,
+    app,
+    free_port,
+    refuse_install,
+)
 from tests.test_evidence_branch import ls_tree
 from tests.test_sandbox import ROOT_ONLY
 
@@ -43,6 +53,7 @@ def world(
     gate_base: bool = False,
     files: Mapping[str, str] | None = None,
     evidence: list[dict[str, Any]] | None = None,
+    pages: list[dict[str, Any]] | None = None,
 ) -> tuple[Env, FakeTracker, Path]:
     # CHECK fails on the base on purpose, so only the base-gate tests gate.
     allow = "" if gate_base else "  allow_failing_base: true\n"
@@ -80,7 +91,7 @@ def world(
     )
     tr = FakeTracker(
         issue=Issue(7, "CSV export", "b", "ana", "NONE", ("ai-build", "spec-ready")),
-        comments=[bot_comment(1, spec_comment_body(SPEC, evidence=evidence), T0)],
+        comments=[bot_comment(1, spec_comment_body(SPEC, evidence=evidence, pages=pages), T0)],
         label_events={"ai-build": T0 + timedelta(hours=1)},
         login="specster[bot]",
     )
@@ -100,9 +111,21 @@ def unprivileged(_slot: int) -> Identity | None:
     return None
 
 
-def go(e: Env, tr: FakeTracker, worker: ChatModel, reviewer: ChatModel) -> int:
+def go(
+    e: Env,
+    tr: FakeTracker,
+    worker: ChatModel,
+    reviewer: ChatModel,
+    install_browser: Installer = refuse_install,
+) -> int:
     return main(
-        e, tr, models(worker, reviewer), lambda *_: b"", timer=lambda: 0.0, identity=unprivileged
+        e,
+        tr,
+        models(worker, reviewer),
+        lambda *_: b"",
+        timer=lambda: 0.0,
+        identity=unprivileged,
+        install_browser=install_browser,
     )
 
 
@@ -537,17 +560,19 @@ EVIDENCE = [
 ]
 
 
-def evidence_world(tmp_path: Path) -> tuple[Env, FakeTracker, Path]:
+def evidence_world(
+    tmp_path: Path, pages: list[dict[str, Any]] | None = None
+) -> tuple[Env, FakeTracker, Path]:
     port = free_port()
     serve = json.dumps([sys.executable, "serve.py"])
     config = f"  preview:\n    serve_command: {serve}\n"
     config += f"    ready_url: http://127.0.0.1:{port}/users\n"
     files = {
         "serve.py": SERVE,
-        "base_app.py": app(port, BASE_ROUTES),
-        "head_app.py": app(port, HEAD_ROUTES),
+        "base_app.py": app(port, {**BASE_ROUTES, **PAGE_ROUTES}),
+        "head_app.py": app(port, {**HEAD_ROUTES, **PAGE_ROUTES}),
     }
-    return world(tmp_path, config, files=files, evidence=EVIDENCE)
+    return world(tmp_path, config, files=files, evidence=EVIDENCE, pages=pages)
 
 
 @pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
@@ -568,6 +593,29 @@ def test_pr_gets_evidence_files_and_links(tmp_path: Path) -> None:
     assert f"{tmp_path}/remote/o/r/tree/specster-evidence/pr-1" in body
     assert "Before and after" in body and "| `new` | `GET /new` | 404 → 200 | yes |" in body
     assert "could not be uploaded" not in tr.posted[-1]
+
+
+@pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+def test_pr_shows_the_screenshots_from_the_published_evidence_commit(tmp_path: Path) -> None:
+    pages = [p.model_dump() for p in PAGES]
+    e, tr, remote = evidence_world(tmp_path, pages)
+    assert go(e, tr, book(), approve(), FakeInstaller(tmp_path)) == 0
+    shots = [n for n in ls_tree(remote, "specster-evidence") if n.endswith(".png")]
+    assert len(shots) == 8 and "pr-1/users-page.head.mobile.png" in shots
+    assert {"pr-1/browser-base.log", "pr-1/browser-head.log"} <= set(
+        ls_tree(remote, "specster-evidence")
+    )
+    git = Git(remote, Author("t", BOT_EMAIL), tmp_path / "rev-home")
+    sha = git.run(f"--git-dir={remote}", "rev-parse", "specster-evidence").strip()
+    blob = f"{tmp_path}/remote/o/r/blob/{sha}/pr-1"
+    updated = tr.pulls[0][1]
+    assert "screenshot not uploaded" not in updated
+    assert "**`users-page`** `/users` \u00b7 Changed: yes" in updated
+    assert "**`about`** `/about` \u00b7 Changed: no" in updated
+    assert (
+        f'| Desktop | <img src="{blob}/users-page.base.desktop.png?raw=true" '
+        f'alt="users-page base desktop" width="400"> | <img src="{blob}/users-page.head.desktop.png'
+    ) in updated
 
 
 @pytest.mark.block_network(allowed_hosts=["127.0.0.1"])

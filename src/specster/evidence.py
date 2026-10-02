@@ -360,8 +360,8 @@ def collect(
             try:
                 why = _serve(client, preview, requests, time_left, server, got)
                 if why is None and shoot is not None and pages:
+                    # Only the pages miss out: the side's requests stand.
                     if time_left() <= 0:
-                        why = f"{OUT_OF_TIME}: no screenshots taken"
                         notes[side] = OUT_OF_TIME
                     else:
                         shots[side], browser_logs[side] = _shoot(shoot, side)

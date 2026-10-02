@@ -12,6 +12,7 @@ from specster.approved import (
     BuildRefused,
     approved_spec,
 )
+from specster.browser import Installer, install
 from specster.build import FINAL_SLOT, BuildReport, BuildSetup, run_build
 from specster.closing import rewrite_references
 from specster.config import ModelConfig
@@ -188,12 +189,14 @@ class BuildPhase:
         make_model: Callable[[ModelConfig], ChatModel],
         fetch: Fetch,
         identity: Callable[[int], Identity | None],
+        install_browser: Installer = install,
     ) -> None:
         self.run = run
         self.trigger = trigger
         self.make_model = make_model
         self.fetch = fetch
         self.identity = identity
+        self.install_browser = install_browser
         self.lang = run.cfg.persona.language
         # Set once the checkout's git is in use, so cleanup knows there is a .git to tidy.
         self.git: Git | None = None
@@ -378,6 +381,7 @@ class BuildPhase:
                     time_left,
                     env.config_path,
                     tools.make_escalation,
+                    self.install_browser,
                 )
             )
         except SandboxError as e:
@@ -441,7 +445,7 @@ class BuildPhase:
                 else:
                     fix = hint(self.lang, "hint_pull_other", status=e.status, label=labels.build)
                 raise Failure(str(e), fix) from e
-            if report.evidence is not None and report.evidence.items:
+            if report.evidence is not None and (report.evidence.items or report.evidence.pages):
                 view = self._upload_evidence(view, git, pull.number, report.evidence, scratch, m)
             view = dataclasses.replace(view, pr_url=pull.url)
             body = render_build(view, run.context(m))
@@ -475,21 +479,28 @@ class BuildPhase:
         """Publish the evidence files and link them from the pull request; never fails the run."""
         run, env = self.run, self.run.env
         folder = f"pr-{number}"
+        files = evidence_files(evidence)
         try:
-            publish(
+            sha = publish(
                 git,
                 f"{env.server_url}/{env.repo}.git",
                 env.token,
                 folder,
-                evidence_files(evidence),
+                files,
                 scratch / "evidence-branch",
             )
         except (GitError, EvidenceBranchError, GitHubError, OSError) as e:
             log(f"could not upload the evidence files: {e}")
             note = hint(self.lang, "evidence_upload_failed", why=str(e))
             return dataclasses.replace(view, evidence_note=note)
-        link = f"{env.server_url}/{env.repo}/tree/{EVIDENCE_BRANCH}/{folder}"
-        linked = dataclasses.replace(view, evidence_links={"folder": link})
+        links = {"folder": f"{env.server_url}/{env.repo}/tree/{EVIDENCE_BRANCH}/{folder}"}
+        # At the published commit, so a later build's screenshots never replace these.
+        links |= {
+            name: f"{env.server_url}/{env.repo}/blob/{sha}/{folder}/{name}?raw=true"
+            for name in files
+            if name.endswith(".png")
+        }
+        linked = dataclasses.replace(view, evidence_links=links)
         try:
             run.tracker.update_pull(number, render_pr_body(linked, run.context(m)))
         except GitHubError as e:
