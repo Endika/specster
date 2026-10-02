@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.16.0](https://github.com/Endika/specster/compare/specster-v0.15.0...specster-v0.16.0) (2026-10-02)
+
+
+### Features
+
+* capture each page on desktop and mobile before and after the change ([7614b48](https://github.com/Endika/specster/commit/7614b4894ee21d16e0cd50a04d16a464d5cc1b8e))
+* let a spec ask for before/after screenshots of pages ([ed9d6fa](https://github.com/Endika/specster/commit/ed9d6fa59843f65e20e0a7b7393515e2be6aa072))
+* show before/after screenshots in the pull request ([5c558fd](https://github.com/Endika/specster/commit/5c558fd44fb8193654556aeb4ad7df7406612e09))
+
 ## [0.15.0](https://github.com/Endika/specster/compare/specster-v0.14.0...specster-v0.15.0) (2026-10-02)
 
 
