@@ -39,7 +39,9 @@ def _update(
         sha = git.commit_tree_files(head, files, f"{folder}/", message, scratch / "evidence.index")
         if removing and head is not None and _tree(git, sha) == _tree(git, head):
             return None
-        if git.push_update(url, sha, EVIDENCE_BRANCH, token, head):
+        # Its last folder gone, the branch goes too: a removed folder would stay in its history.
+        target = None if removing and not git.run("ls-tree", "--end-of-options", sha) else sha
+        if git.push_update(url, target, EVIDENCE_BRANCH, token, head):
             return sha
     raise EvidenceBranchError(f"{EVIDENCE_BRANCH} moved twice while publishing")
 
@@ -61,7 +63,7 @@ def publish(
 
 
 def remove(git: Git, url: str, token: str, folder: str, scratch: Path) -> bool:
-    """Drop `folder` from the evidence branch; False when there was nothing to drop."""
+    """Drop `folder`, and the branch once it is empty; False when there was nothing to drop."""
     _check([f"{folder}/"])
     message = f"evidence: remove {folder} [skip ci]"
     return _update(git, url, token, folder, {}, message, scratch, removing=True) is not None

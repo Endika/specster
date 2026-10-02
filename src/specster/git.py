@@ -106,10 +106,17 @@ _REMOTE_OPTS = (
 
 
 def push_invocation(
-    url: str, branch: str, token: str, *, source: str | None = None, expect: str = ""
+    url: str,
+    branch: str,
+    token: str,
+    *,
+    source: str | None = None,
+    expect: str = "",
+    delete: bool = False,
 ) -> tuple[list[str], dict[str, str]]:
     """The push's argv (after `git` and the base options) and the env that carries the token."""
     ref = f"refs/heads/{branch}"
+    refspec = f":{ref}" if delete else f"{source or ref}:{ref}"
     # An empty expected value makes the lease "the ref must not exist": create, never update.
     args = [
         *_REMOTE_OPTS,
@@ -117,7 +124,7 @@ def push_invocation(
         "--porcelain",
         f"--force-with-lease={ref}:{expect}",
         url,
-        f"{source or ref}:{ref}",
+        refspec,
     ]
     return args, _auth_env(url, token)
 
@@ -420,9 +427,13 @@ class Git:
         lineage = ["-p", parent] if parent else []
         return self.run("commit-tree", *lineage, "-m", message, tree).strip()
 
-    def push_update(self, url: str, sha: str, branch: str, token: str, expect: str | None) -> bool:
-        """Point the remote branch at `sha` if it still is at `expect` (None: absent)."""
-        args, extra = push_invocation(url, branch, token, source=sha, expect=expect or "")
+    def push_update(
+        self, url: str, sha: str | None, branch: str, token: str, expect: str | None
+    ) -> bool:
+        """Point the remote branch at `sha` (None: delete it) while at `expect` (None: absent)."""
+        args, extra = push_invocation(
+            url, branch, token, source=sha, expect=expect or "", delete=sha is None
+        )
         secrets = _auth_secrets(token, extra)
         proc = self._exec(args, None, extra, secrets, PUSH_TIMEOUT_S)
         if proc.returncode == 0:

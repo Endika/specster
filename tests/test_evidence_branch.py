@@ -124,6 +124,32 @@ def test_remove_drops_only_its_folder(tmp_path: Path) -> None:
     assert remove(git, url, TOKEN, "pr-7", s) is False
 
 
+def test_removing_the_last_folder_deletes_the_branch(tmp_path: Path) -> None:
+    git, remote = setup(tmp_path)
+    url, s = str(remote), tmp_path / "s"
+    publish(git, url, TOKEN, "pr-7", {"a.json": b"1"}, s)
+    assert remove(git, url, TOKEN, "pr-7", s) is True
+    assert _read(remote, "ls-remote", url) == ""
+    sha = publish(git, url, TOKEN, "pr-8", {"b.json": b"2"}, s)
+    assert parents(remote, sha) == []
+    assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-8/b.json"]
+
+
+def test_a_publish_racing_the_last_removal_keeps_the_branch(tmp_path: Path) -> None:
+    git, remote = setup(tmp_path)
+    url = str(remote)
+    publish(git, url, TOKEN, "pr-7", {"a.json": b"1"}, tmp_path / "s1")
+    other = make_repo(tmp_path / "other", {"z.py": "z = 1\n"})
+    raced = _RacedGit(
+        tmp_path / "repo",
+        AUTHOR,
+        tmp_path / "h3",
+        rival=lambda: publish(other, url, TOKEN, "pr-9", {"c.json": b"3"}, tmp_path / "s2"),
+    )
+    assert remove(raced, url, TOKEN, "pr-7", tmp_path / "s3") is True
+    assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-9/c.json"]
+
+
 def test_remove_does_not_touch_a_folder_that_only_shares_the_prefix(tmp_path: Path) -> None:
     git, remote = setup(tmp_path)
     url, s = str(remote), tmp_path / "s"
