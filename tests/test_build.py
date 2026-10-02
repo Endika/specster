@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import socket
@@ -13,6 +14,7 @@ from typing import Any
 import pytest
 
 from specster.approved import ApprovedSpec
+from specster.browser import INSTALL_MAX_S, SCRIPT, BrowserEnv, Installer
 from specster.build import (
     BuildConflict,
     BuildSetup,
@@ -30,13 +32,14 @@ from specster.config import (
     PreviewConfig,
     SkillsConfig,
 )
+from specster.evidence import files
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel, ToolCall, ToolResult, ToolSpec, Turn, Usage
 from specster.pricing import cost_usd
 from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
-from specster.schemas import EvidenceRequest, PlanTask
+from specster.schemas import EvidencePage, EvidenceRequest, PlanTask
 from specster.skills import load_skills
 from specster.workspace import CONFIG_PATH
 from tests.fakes import ScriptBook, ScriptedModel, make_repo
@@ -83,6 +86,10 @@ def lock(sb: Sandbox, repo: Path) -> Sandbox:
     return sb
 
 
+def refuse_install(timeout_s: float) -> BrowserEnv | str:
+    raise AssertionError(f"no test installs a real browser ({timeout_s:g} s)")
+
+
 def setup(
     tmp_path: Path,
     tasks: list[PlanTask],
@@ -96,6 +103,8 @@ def setup(
     files: Mapping[str, str] | None = None,
     escalation: ChatModel | None = None,
     evidence: Sequence[EvidenceRequest] = (),
+    pages: Sequence[EvidencePage] = (),
+    install_browser: Installer = refuse_install,
 ) -> BuildSetup:
     repo = tmp_path / "repo"
     git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n", **(files or {})})
@@ -108,7 +117,9 @@ def setup(
             update={"models": cfg.models.model_copy(update={"escalation": stronger})}
         )
     skills = load_skills(repo, SkillsConfig(), "build", lambda *_: b"", None)
-    spec = ApprovedSpec(human(1, T0), tasks, "0" * 64, "The spec text.", tuple(evidence))
+    spec = ApprovedSpec(
+        human(1, T0), tasks, "0" * 64, "The spec text.", tuple(evidence), tuple(pages)
+    )
     scratch = tmp_path / "scratch"
     scratch.mkdir()
 
@@ -134,6 +145,7 @@ def setup(
         time_left,
         CONFIG_PATH,
         (lambda: escalation) if escalation is not None else None,
+        install_browser,
     )
 
 
@@ -596,13 +608,15 @@ class SlotSandbox(Sandbox):
         self.slot, self.log = slot, log
         lock(self, repo)
 
-    def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
+    def run(
+        self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+    ) -> RunResult:
         with self.log.lock:
             self.log.active[self.slot] = self.log.active.get(self.slot, 0) + 1
             self.log.shared |= self.log.active[self.slot] > 1
             self.log.runs.append((self.slot, label))
         try:
-            return super().run(argv, cwd, home, label)
+            return super().run(argv, cwd, home, label, reap)
         finally:
             with self.log.lock:
                 self.log.active[self.slot] -= 1
@@ -819,10 +833,12 @@ def test_a_failing_worktree_drop_never_masks_the_build_or_its_error(
 
 
 class FailsOnWorkerTests(Sandbox):
-    def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
+    def run(
+        self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+    ) -> RunResult:
         if label == "tests a":
             raise SandboxError("uid 61001 survived the kill")
-        return super().run(argv, cwd, home, label)
+        return super().run(argv, cwd, home, label, reap)
 
 
 def test_a_sandbox_error_mid_task_still_bills_the_worker_turns(tmp_path: Path) -> None:
@@ -978,8 +994,10 @@ class LateSandbox(Sandbox):
         self.clock = clock
         lock(self, repo)
 
-    def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
-        res = super().run(argv, cwd, home, label)
+    def run(
+        self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+    ) -> RunResult:
+        res = super().run(argv, cwd, home, label, reap)
         if label == self.clock.label:
             self.clock.left = 0.0
         return res
@@ -1115,6 +1133,9 @@ def evidence_setup(
     reviewer: ChatModel | None = None,
     time_left: Callable[[], float] | None = None,
     tools: dict[str, str] | None = None,
+    evidence: Sequence[EvidenceRequest] = EVIDENCE,
+    pages: Sequence[EvidencePage] = (),
+    install_browser: Installer = refuse_install,
 ) -> BuildSetup:
     book = ScriptBook({'id="a"': [[write("app.py", head_app), done("feat(a): list users")]]})
     return setup(
@@ -1124,8 +1145,10 @@ def evidence_setup(
         reviewer or ScriptedModel([verdict("approve")]),
         build=BuildConfig(preview=preview, max_review_rounds=0, tools=tools or {}),
         files={"app.py": base_app},
-        evidence=EVIDENCE,
+        evidence=evidence,
         time_left=time_left,
+        pages=pages,
+        install_browser=install_browser,
     )
 
 
@@ -1290,3 +1313,173 @@ def test_a_build_out_of_time_skips_the_evidence_and_says_so(tmp_path: Path) -> N
     report = run_build(s)
     assert report.status == "approved" and report.evidence is None
     assert "evidence skipped: the build is out of time" in report.warnings
+
+
+PAGES = [
+    EvidencePage(name="users-page", path="/users", why="w"),
+    EvidencePage(name="about", path="/about", why="w"),
+]
+PAGE_ROUTES: dict[str, object] = {"/about": {"about": "same"}}
+# Stands in for Playwright: each PNG carries what the app answered for the page.
+FAKE_BROWSER = """\
+#!{python}
+import json, os, pathlib, sys, urllib.error, urllib.request
+flag, script, origin, outdir, pages, max_height, timeout = sys.argv[1:]
+with open({calls!r}, "a") as f:
+    f.write(json.dumps({{"argv": sys.argv[1:], "env": dict(os.environ)}}) + "\\n")
+out = pathlib.Path(outdir)
+out.mkdir()
+for page in json.loads(pages):
+    try:
+        body = urllib.request.urlopen(origin + page["path"], timeout=5).read()
+    except urllib.error.HTTPError as e:
+        body = e.read()
+    for viewport in ("desktop", "mobile"):
+        png = b"\\x89PNG\\r\\n\\x1a\\n" + viewport.encode() + body
+        (out / f"{{page['name']}}.{{viewport}}.png").write_bytes(png)
+    print(page["name"], "shot")
+"""
+
+
+class FakeInstaller:
+    def __init__(self, tmp_path: Path, answer: str | None = None) -> None:
+        root = tmp_path / "fake-browser"
+        root.mkdir()
+        self.calls = root / "calls"
+        python = root / "python"
+        python.write_text(FAKE_BROWSER.format(python=sys.executable, calls=str(self.calls)))
+        python.chmod(0o755)
+        self.env = BrowserEnv(python, root / "browsers")
+        self.answer = answer
+        self.timeouts: list[float] = []
+
+    def __call__(self, timeout_s: float) -> BrowserEnv | str:
+        self.timeouts.append(timeout_s)
+        return self.answer if self.answer is not None else self.env
+
+    def runs(self) -> list[dict[str, Any]]:
+        return [json.loads(line) for line in self.calls.read_text().splitlines()]
+
+
+def page_setup(
+    tmp_path: Path,
+    installer: Installer,
+    base_start: str = "",
+    time_left: Callable[[], float] | None = None,
+    evidence: Sequence[EvidenceRequest] = EVIDENCE,
+) -> BuildSetup:
+    port = free_port()
+    return evidence_setup(
+        tmp_path,
+        app(port, {**BASE_ROUTES, **PAGE_ROUTES}, start=base_start),
+        app(port, {**HEAD_ROUTES, **PAGE_ROUTES}),
+        preview_for(port),
+        time_left=time_left,
+        evidence=evidence,
+        pages=PAGES,
+        install_browser=installer,
+    )
+
+
+@LOCAL
+def test_an_approved_build_shoots_each_page_on_both_sides(tmp_path: Path) -> None:
+    installer = FakeInstaller(tmp_path)
+    report = run_build(page_setup(tmp_path, installer))
+    assert report.status == "approved" and not report.warnings
+    ev = report.evidence
+    assert ev is not None and not ev.problems and ev.items[0].changed
+    users, about = ev.pages
+    assert users.changed and not about.changed and users.page == PAGES[0]
+    assert all(s.png is not None for item in ev.pages for s in (*item.base, *item.head))
+    shots = sorted(name for name in files(ev) if name.endswith(".png"))
+    assert len(shots) == 8 and "users-page.base.mobile.png" in shots
+    assert files(ev)["browser-head.log"] == b"users-page shot\nabout shot\n"
+    assert len(installer.timeouts) == 1 and installer.timeouts[0] == INSTALL_MAX_S
+    base, head = installer.runs()
+    assert base["argv"][:2] == ["-I", str(SCRIPT)] and base["argv"][-2:] == ["6000", "30"]
+    assert json.loads(base["argv"][4]) == [{"name": p.name, "path": p.path} for p in PAGES]
+    env = head["env"]
+    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(installer.env.browsers)
+    assert set(env) <= {"PATH", "HOME", "LANG", "TMPDIR", "LC_CTYPE", "PLAYWRIGHT_BROWSERS_PATH"}
+    assert not [p for p in (tmp_path / "scratch").iterdir() if p.name.startswith("evidence-")]
+
+
+@LOCAL
+def test_pages_alone_are_shot_without_any_request(tmp_path: Path) -> None:
+    installer = FakeInstaller(tmp_path)
+    ev = run_build(page_setup(tmp_path, installer, evidence=())).evidence
+    assert ev is not None and ev.items == () and len(ev.pages) == 2 and ev.pages[0].changed
+
+
+@LOCAL
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "the browser install failed at uv pip install (exit 1): no network",
+        "the browser install timed out after 300 s, at playwright install",
+    ],
+)
+def test_a_browser_that_cannot_be_installed_is_a_warning_and_the_json_stays(
+    tmp_path: Path, answer: str
+) -> None:
+    report = run_build(page_setup(tmp_path, FakeInstaller(tmp_path, answer)))
+    assert report.status == "approved" and report.warnings == [f"screenshots skipped: {answer}"]
+    ev = report.evidence
+    assert ev is not None and ev.pages == () and ev.items[0].changed
+    assert not any(name.endswith(".png") for name in files(ev))
+
+
+@LOCAL
+def test_pages_alone_without_a_browser_start_no_server(tmp_path: Path) -> None:
+    marker = tmp_path / "started"
+    start = f"open({str(marker)!r}, 'w').close()"
+    setup = page_setup(
+        tmp_path, FakeInstaller(tmp_path, "no network"), base_start=start, evidence=()
+    )
+    report = run_build(setup)
+    assert report.warnings == ["screenshots skipped: no network"]
+    assert report.evidence is None and not marker.exists()
+
+
+@LOCAL
+def test_an_installer_that_raises_is_a_warning_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(timeout_s: float) -> BrowserEnv | str:
+        raise OSError(f"disk full after {timeout_s:g} s")
+
+    report = run_build(page_setup(tmp_path, broken))
+    assert report.warnings == [
+        "screenshots skipped: the browser install failed: OSError: disk full after 300 s"
+    ]
+    assert report.evidence is not None and report.evidence.items[0].head is not None
+    assert "Traceback" in capsys.readouterr().err
+
+
+@LOCAL
+def test_the_install_gets_no_more_than_the_build_has_left(tmp_path: Path) -> None:
+    installer = FakeInstaller(tmp_path)
+    run_build(page_setup(tmp_path, installer, time_left=lambda: 42.0))
+    assert installer.timeouts == [42.0]
+
+
+@LOCAL
+def test_a_base_that_never_gets_ready_has_no_shots_and_the_head_still_does(
+    tmp_path: Path,
+) -> None:
+    installer = FakeInstaller(tmp_path)
+    ev = run_build(page_setup(tmp_path, installer, "sys.exit('no database')")).evidence
+    assert ev is not None
+    users = ev.pages[0]
+    assert [s.note for s in users.base] == ["the server exited before it was ready"] * 2
+    assert all(s.png is not None for s in users.head) and not users.changed
+    assert len(installer.runs()) == 1 and set(ev.browser_logs) == {"head"}
+
+
+@LOCAL
+def test_a_spec_without_pages_installs_no_browser(tmp_path: Path) -> None:
+    port = free_port()
+    s = evidence_setup(tmp_path, app(port, BASE_ROUTES), app(port, HEAD_ROUTES), preview_for(port))
+    report = run_build(s)
+    assert report.evidence is not None and report.evidence.pages == ()
+    assert not report.warnings

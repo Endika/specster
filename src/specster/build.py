@@ -20,8 +20,18 @@ import httpx
 
 from specster.agent import TIME_UP, AgentError, BudgetSpent, Metered, attached_usage
 from specster.approved import ApprovedSpec
+from specster.browser import INSTALL_MAX_S, SCRIPT, BrowserEnv, Installer, install
 from specster.config import BudgetConfig, Config, ModelConfig, PersonaConfig, PreviewConfig
-from specster.evidence import LOG_TAIL_CHARS, EvidenceRun, Side, collect
+from specster.evidence import (
+    LOG_TAIL_CHARS,
+    PAGE_MAX_HEIGHT,
+    PAGE_MAX_S,
+    EvidenceRun,
+    Shot,
+    Side,
+    collect,
+    read_shots,
+)
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger, Meter
 from specster.llm.base import ChatModel, Usage
@@ -36,7 +46,7 @@ from specster.prompts import (
 from specster.repomap import RepoMap
 from specster.review import blocking, run_review
 from specster.sandbox import RunResult, Sandbox, Server
-from specster.schemas import Finding, PlanTask, ReviewResult
+from specster.schemas import EvidencePage, Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
 from specster.telemetry import span
 from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
@@ -139,6 +149,7 @@ class BuildSetup:
     time_left: Callable[[], float] | None = None
     config_path: str = CONFIG_PATH
     make_escalation: Callable[[], ChatModel] | None = None
+    install_browser: Installer = install
 
 
 def budget_stop(ledger: Ledger, budget: BudgetConfig, prior_known_usd: float) -> str | None:
@@ -648,8 +659,9 @@ class _Build:
 
     def _collect_evidence(self) -> EvidenceRun | None:
         requests = self.s.spec.evidence
+        pages = self.s.spec.pages
         preview = self.cfg.build.preview
-        if not requests:
+        if not requests and not pages:
             return None
         if preview is None:
             self.warnings.append(
@@ -659,19 +671,35 @@ class _Build:
         if self._time_stop() is not None:
             self.warnings.append("evidence skipped: the build is out of time")
             return None
+        browser = self._install_browser() if pages else None
+        if pages and browser is None and not requests:
+            return None
         enclosures: list[Path] = []
         failed: dict[str, str] = {}
+        homes: dict[Side, Path] = {}
         try:
             if self._final is None:
                 self._final = self.s.make_sandbox(FINAL_SLOT)
             sandbox = self._final
 
             def start_side(side: Side) -> tuple[Server | None, str | None]:
-                return self._start_side(sandbox, preview, side, enclosures, failed)
+                return self._start_side(sandbox, preview, side, enclosures, failed, homes)
+
+            def shoot(side: Side) -> tuple[dict[str, tuple[Shot, ...]], str]:
+                assert browser is not None and preview is not None
+                return self._shoot(sandbox, browser, preview, pages, side, homes[side])
 
             # The app is on loopback: an HTTP(S)_PROXY from the runner must not catch it.
             with httpx.Client(trust_env=False) as client:
-                run = collect(start_side, preview, requests, client, self.s.time_left or _forever)
+                run = collect(
+                    start_side,
+                    preview,
+                    requests,
+                    client,
+                    self.s.time_left or _forever,
+                    pages=pages,
+                    shoot=shoot if browser is not None else None,
+                )
         except Exception as e:
             traceback.print_exc()
             self.warnings.append(f"evidence: {type(e).__name__}: {e}")
@@ -685,6 +713,51 @@ class _Build:
         )
         return replace(run, problems=problems, logs={**run.logs, **failed})
 
+    def _install_browser(self) -> BrowserEnv | None:
+        """Once per build, as root; a failure only costs the screenshots."""
+        left = self.s.time_left() if self.s.time_left is not None else INSTALL_MAX_S
+        try:
+            with span("browser install"):
+                got = self.s.install_browser(min(INSTALL_MAX_S, left))
+        except Exception as e:
+            traceback.print_exc()
+            got = f"the browser install failed: {type(e).__name__}: {e}"
+        if isinstance(got, str):
+            self.warnings.append(f"screenshots skipped: {got}")
+            return None
+        return got
+
+    def _shoot(
+        self,
+        sandbox: Sandbox,
+        browser: BrowserEnv,
+        preview: PreviewConfig,
+        pages: Sequence[EvidencePage],
+        side: Side,
+        home: Path,
+    ) -> tuple[dict[str, tuple[Shot, ...]], str]:
+        """Shot as the slot while the side's server runs; the server's stop reaps the browser."""
+        out = home / "shots"
+        argv = [
+            "/usr/bin/env",
+            f"PLAYWRIGHT_BROWSERS_PATH={browser.browsers}",
+            str(browser.python),
+            "-I",
+            str(SCRIPT),
+            preview.origin,
+            str(out),
+            json.dumps([{"name": p.name, "path": p.path} for p in pages]),
+            str(PAGE_MAX_HEIGHT),
+            f"{PAGE_MAX_S:g}",
+        ]
+        res = sandbox.run(argv, home, home, f"browser {side}", reap=False)
+        if res.truncation:
+            self.truncations.append(res.truncation)
+        log = res.output
+        if res.timed_out:
+            log += f"\nbrowser {side}: timed out\n"
+        return read_shots(out, pages, side), log
+
     def _start_side(
         self,
         sandbox: Sandbox,
@@ -692,6 +765,7 @@ class _Build:
         side: Side,
         enclosures: list[Path],
         failed: dict[str, str],
+        homes: dict[Side, Path],
     ) -> tuple[Server | None, str | None]:
         """The side's server, started after the setup and seed commands; else why not."""
         commit = self.s.base if side == "base" else self.git.head(self.integration)
@@ -699,7 +773,7 @@ class _Build:
         enclosures.append(enclosure)
         tree = self._enclose(sandbox, enclosure, commit)
         sandbox.hand_over(tree)
-        home = sandbox.new_home(enclosure, "home")
+        home = homes[side] = sandbox.new_home(enclosure, "home")
         steps = [
             ("setup_command", self.cfg.build.setup_command),
             ("seed_command", preview.seed_command),
@@ -807,7 +881,7 @@ class _Build:
             )
 
         build = self.cfg.build
-        previewed = build.preview is not None and bool(self.s.spec.evidence)
+        previewed = build.preview is not None and bool(self.s.spec.evidence or self.s.spec.pages)
         if build.setup_command is not None or build.test_command is not None or previewed:
             failed_tools = self._install_tools()
             if failed_tools is not None:

@@ -303,10 +303,12 @@ def test_a_build_that_would_outrun_the_issue_budget_starts_with_a_warning(tmp_pa
 class Broken(Sandbox):
     """Fails the final tests only, after the worker has been billed."""
 
-    def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
+    def run(
+        self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+    ) -> RunResult:
         if label == "tests final":
             raise SandboxError("uid 61000 survived the kill")
-        return super().run(argv, cwd, home, label)
+        return super().run(argv, cwd, home, label, reap)
 
 
 def test_a_sandbox_error_bills_the_run_asks_for_a_human_and_pushes_nothing(
@@ -326,10 +328,12 @@ def test_a_sandbox_error_bills_the_run_asks_for_a_human_and_pushes_nothing(
 
 
 class BrokenMidTask(Sandbox):
-    def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
+    def run(
+        self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+    ) -> RunResult:
         if label == "tests a":
             raise SandboxError("uid 61001 survived the kill")
-        return super().run(argv, cwd, home, label)
+        return super().run(argv, cwd, home, label, reap)
 
 
 def test_a_sandbox_error_mid_task_bills_the_worker_turns_paid_so_far(
@@ -444,8 +448,10 @@ def test_a_build_past_max_minutes_pushes_what_is_done_and_asks_for_a_human(
     clock = Clock()
 
     class Late(Sandbox):
-        def run(self, argv: Sequence[str], cwd: Path, home: Path, label: str) -> RunResult:
-            res = super().run(argv, cwd, home, label)
+        def run(
+            self, argv: Sequence[str], cwd: Path, home: Path, label: str, reap: bool = True
+        ) -> RunResult:
+            res = super().run(argv, cwd, home, label, reap)
             clock.now = 5 * 60.0
             return res
 

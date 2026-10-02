@@ -1,16 +1,20 @@
 import difflib
 import json
 import math
+import os
+import stat
 import time
+import traceback
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 import httpx
 
 from specster.config import PreviewConfig
 from specster.sandbox import Server
-from specster.schemas import EvidenceRequest
+from specster.schemas import EvidencePage, EvidenceRequest
 
 BODY_MAX_BYTES = 64 * 1024
 # Deeper JSON stays text: the parser recurses per level, unbounded without a stack limit.
@@ -23,6 +27,14 @@ EXIT_GRACE_S = 0.5
 OUT_OF_TIME = "the build is out of time"
 # Past this the rest of a body is not even counted.
 COUNT_MAX_BYTES = 16 * 1024 * 1024
+PNG_MAX_BYTES = 5 * 1024 * 1024
+PAGE_MAX_HEIGHT = 6000
+PAGE_MAX_S = 30.0
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+Side = Literal["base", "head"]
+Viewport = Literal["desktop", "mobile"]
+VIEWPORTS: tuple[Viewport, ...] = ("desktop", "mobile")
 
 
 @dataclass(frozen=True)
@@ -62,10 +74,38 @@ class SideProblem:
 
 
 @dataclass(frozen=True)
+class Shot:
+    viewport: Viewport
+    png: bytes | None
+    # Why there is no PNG.
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class PageItem:
+    page: EvidencePage
+    base: tuple[Shot, ...]
+    head: tuple[Shot, ...]
+
+    @property
+    def changed(self) -> bool:
+        return any(
+            b.png is not None and h.png is not None and b.png != h.png
+            for b, h in zip(self.base, self.head, strict=True)
+        )
+
+
+@dataclass(frozen=True)
 class EvidenceRun:
     items: tuple[EvidenceItem, ...]
     problems: tuple[SideProblem, ...]
     logs: Mapping[str, str]
+    pages: tuple[PageItem, ...] = ()
+    browser_logs: Mapping[str, str] = field(default_factory=dict)
+
+
+# A side's shots by page name, and the browser's log.
+Shoot = Callable[[Side], tuple[Mapping[str, Sequence[Shot]], str]]
 
 
 def _too_deep(raw: bytes) -> bool:
@@ -194,9 +234,6 @@ def diff_text(name: str, base: Capture | None, head: Capture | None) -> str:
     return "".join(line if line.endswith("\n") else line + "\n" for line in lines)
 
 
-Side = Literal["base", "head"]
-
-
 def _serve(
     client: httpx.Client,
     preview: PreviewConfig,
@@ -231,17 +268,87 @@ def _exited(server: Server) -> bool:
     return True
 
 
+def _missing(side: Side) -> str:
+    return f"not captured: see browser-{side}.log"
+
+
+def read_shots(
+    outdir: Path, pages: Sequence[EvidencePage], side: Side
+) -> dict[str, tuple[Shot, ...]]:
+    """Each page's `{name}.{viewport}.png` in a folder the sandbox wrote; never through a link."""
+    try:
+        dir_fd: int | None = os.open(outdir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        dir_fd = None
+    except OSError as e:
+        unreadable = f"unreadable: {e.strerror}"
+        return {p.name: tuple(Shot(v, None, unreadable) for v in VIEWPORTS) for p in pages}
+    try:
+        return {
+            p.name: tuple(_shot(dir_fd, f"{p.name}.{v}.png", v, side) for v in VIEWPORTS)
+            for p in pages
+        }
+    finally:
+        if dir_fd is not None:
+            os.close(dir_fd)
+
+
+def _shot(dir_fd: int | None, name: str, viewport: Viewport, side: Side) -> Shot:
+    if dir_fd is None:
+        return Shot(viewport, None, _missing(side))
+    try:
+        # Non-blocking, so a FIFO in its place cannot stall the open.
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return Shot(viewport, None, _missing(side))
+    except OSError as e:
+        return Shot(viewport, None, f"unreadable: {e.strerror}")
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink > 1:
+        os.close(fd)
+        return Shot(viewport, None, "not a regular file")
+    with os.fdopen(fd, "rb") as f:
+        data = f.read(PNG_MAX_BYTES + 1)
+    if len(data) > PNG_MAX_BYTES:
+        return Shot(viewport, None, f"over the {PNG_MAX_BYTES // (1024 * 1024)} MB limit")
+    if not data.startswith(PNG_MAGIC):
+        return Shot(viewport, None, "not a PNG")
+    return Shot(viewport, data)
+
+
+def _shoot(shoot: Shoot, side: Side) -> tuple[Mapping[str, Sequence[Shot]], str]:
+    try:
+        return shoot(side)
+    except Exception as e:
+        traceback.print_exc()
+        return {}, f"{type(e).__name__}: {e}\n"
+
+
+def _page_shots(got: Sequence[Shot], note: str) -> tuple[Shot, ...]:
+    by_viewport = {s.viewport: s for s in got}
+    return tuple(by_viewport.get(v, Shot(v, None, note)) for v in VIEWPORTS)
+
+
 def collect(
     start_side: Callable[[Side], tuple[Server | None, str | None]],
     preview: PreviewConfig,
     requests: Sequence[EvidenceRequest],
     client: httpx.Client,
     time_left: Callable[[], float] = lambda: math.inf,
+    *,
+    pages: Sequence[EvidencePage] = (),
+    shoot: Shoot | None = None,
 ) -> EvidenceRun:
-    """Each request against the base's server, then the head's; a side that fails says why."""
+    """Each request against the base's server, then the head's; a side that fails says why.
+
+    With `shoot`, each side's pages are screenshot after its requests, with its server still up.
+    """
     captures: dict[Side, list[Capture | None]] = {}
+    shots: dict[Side, Mapping[str, Sequence[Shot]]] = {}
+    notes: dict[Side, str] = {}
     problems: list[SideProblem] = []
     logs: dict[str, str] = {}
+    browser_logs: dict[str, str] = {}
     sides: tuple[Side, ...] = ("base", "head")
     for side in sides:
         got: list[Capture | None] = [None] * len(requests)
@@ -252,16 +359,32 @@ def collect(
         if server is not None:
             try:
                 why = _serve(client, preview, requests, time_left, server, got)
+                if why is None and shoot is not None and pages:
+                    if time_left() <= 0:
+                        why = f"{OUT_OF_TIME}: no screenshots taken"
+                        notes[side] = OUT_OF_TIME
+                    else:
+                        shots[side], browser_logs[side] = _shoot(shoot, side)
             finally:
                 logs[side] = server.stop().output
         if why is not None:
             problems.append(SideProblem(side, why, logs.get(side, "")[-LOG_TAIL_CHARS:]))
+            notes.setdefault(side, why)
         captures[side] = got
     items = tuple(
         EvidenceItem(r, b, h, diff_text(r.name, b, h))
         for r, b, h in zip(requests, captures["base"], captures["head"], strict=True)
     )
-    return EvidenceRun(items, tuple(problems), logs)
+
+    def side_shots(side: Side, page: EvidencePage) -> tuple[Shot, ...]:
+        got = shots.get(side, {}).get(page.name, ())
+        return _page_shots(got, notes.get(side, _missing(side)))
+
+    page_items = tuple(
+        PageItem(page, side_shots("base", page), side_shots("head", page))
+        for page in (pages if shoot is not None else ())
+    )
+    return EvidenceRun(items, tuple(problems), logs, page_items, browser_logs)
 
 
 def _body(capture: Capture) -> tuple[str, bytes]:
@@ -271,7 +394,7 @@ def _body(capture: Capture) -> tuple[str, bytes]:
 
 
 def files(run: EvidenceRun) -> dict[str, bytes]:
-    """The evidence branch's files: each side's response, each diff and each server log."""
+    """The evidence branch's files: responses, diffs, screenshots, server and browser logs."""
     out: dict[str, bytes] = {}
     for item in run.items:
         for side, got in (("base", item.base), ("head", item.head)):
@@ -281,4 +404,11 @@ def files(run: EvidenceRun) -> dict[str, bytes]:
         out[f"{item.request.name}.diff"] = item.diff.encode()
     for side, log in sorted(run.logs.items()):
         out[f"server-{side}.log"] = log.encode()
+    for page in run.pages:
+        for side, shots in (("base", page.base), ("head", page.head)):
+            for shot in shots:
+                if shot.png is not None:
+                    out[f"{page.page.name}.{side}.{shot.viewport}.png"] = shot.png
+    for side, log in sorted(run.browser_logs.items()):
+        out[f"browser-{side}.log"] = log.encode()
     return out

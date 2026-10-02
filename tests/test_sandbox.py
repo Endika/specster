@@ -615,6 +615,31 @@ def test_stop_of_a_server_that_already_exited_gives_its_own_code(sandbox_dir: Pa
     assert result.exit_code == 3 and "bye" in result.output and not result.timed_out
 
 
+@ROOT_ONLY
+def test_a_run_without_reap_leaves_the_slots_server_up_until_its_stop(sandbox_dir: Path) -> None:
+    sb = ready(Sandbox(slot_identity(7), 20, 10_000, {}), sandbox_dir)
+    home = sb.new_home(sandbox_dir, "home")
+    server = sb.start([PY, "-c", "import time; time.sleep(60)"], home, home, "serve")
+    left = sb.run([PY, "-c", DAEMON], home, home, "browser", reap=False)
+    daemon = int(left.output.strip())
+    assert left.ok and server.alive() and _alive(daemon)
+    server.stop()
+    assert not _alive(daemon) and not sandbox._live_pids(SANDBOX_BASE_UID + 7)
+
+
+@ROOT_ONLY
+def test_a_run_with_reap_kills_the_slots_server_too(sandbox_dir: Path) -> None:
+    sb = ready(Sandbox(slot_identity(7), 20, 10_000, {}), sandbox_dir)
+    home = sb.new_home(sandbox_dir, "home")
+    server = sb.start([PY, "-c", "import time; time.sleep(60)"], home, home, "serve")
+    assert sb.run([PY, "-c", "pass"], home, home, "browser").ok
+    deadline = time.monotonic() + 10
+    while server.alive() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not server.alive()
+    server.stop()
+
+
 def test_a_server_needs_the_lock_down_first(tmp_path: Path) -> None:
     with pytest.raises(SandboxError, match="lock_down"):
         Sandbox(None, 20, 10_000, {}).start([PY, "-c", "pass"], tmp_path, home(tmp_path), "s")
