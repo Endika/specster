@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/Endika/specster/compare/specster-v0.14.0...specster-v0.15.0) (2026-10-02)
+
+
+### Features
+
+* check the build's budget before every model turn ([fd7788d](https://github.com/Endika/specster/commit/fd7788d54a041bfe92a6ad78c377b61d9cf8807d))
+
 ## [0.14.0](https://github.com/Endika/specster/compare/specster-v0.13.0...specster-v0.14.0) (2026-10-02)
 
 
