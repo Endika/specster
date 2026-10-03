@@ -177,8 +177,12 @@ That is all: no server, no database. Everything Specster knows lives in the issu
 | `ai-spec` | reads the issue, its comments and your code | `needs-human` and questions, or `spec-ready` and a spec |
 | an answer, then `ai-spec` again | writes the spec, or revises the last one with only what you asked | `spec-ready` |
 | `ai-build` | builds the approved plan, one commit per task, tests in a sandbox, then a review | `ai-pr` and a pull request, or `needs-human` and why |
+| `ai-evidence` on a pull request | serves the app at the base and the head and captures both | a comment with the before and after |
+| `ai-fix` on a pull request | applies its open review comments on its branch | commits on the branch, a reply in each thread, a summary |
 
-Adding a label needs the "triage" permission, so that is who can trigger Specster. The full
+The last two work on any pull request from a branch of the repository, not only Specster's:
+see [Pull requests](docs/pull-requests.md). Adding a label needs the "triage" permission, so that
+is who can trigger Specster. The full
 state diagram, with every refusal and error, is in [Labels and states](docs/configuration.md#labels-and-states).
 
 ## Configure
@@ -410,6 +414,7 @@ The details and the known limits: [Security model](docs/security.md).
 
 - [Configuration reference](docs/configuration.md): the workflow line by line, inputs, every
   config key, providers, cloud logins, your own bot.
+- [Pull requests](docs/pull-requests.md): `ai-evidence` and `ai-fix` on any pull request.
 - [Build phase](docs/build.md): how a build runs, test isolation, permissions, metrics and budget.
 - [Security model](docs/security.md): what Specster defends against and what it cannot.
 - [Testing the AI](docs/evals.md): the evals and the contract cassettes.
@@ -428,8 +433,10 @@ The details and the known limits: [Security model](docs/security.md).
   [Before/after evidence](docs/build.md#beforeafter-evidence).
 - **Before/after evidence, part 2: screenshots (done).** Pages the spec lists are screenshot on
   desktop and mobile at the base and at the head, side by side in the pull request: see
-  [Screenshots](docs/build.md#screenshots). Evidence on any pull request rather than only
-  Specster's is still to come.
+  [Screenshots](docs/build.md#screenshots).
+- **Specster on any pull request, part 3 (done).** `ai-evidence` adds the before and after to any
+  pull request, and `ai-fix` applies its open review comments: see
+  [Pull requests](docs/pull-requests.md).
 - **Harder build cases and model escalation (done).** A task or review that keeps failing can
   move to a stronger model: see [Model escalation](docs/build.md#model-escalation) and the
   [results](docs/evals.md#harder-build-cases-and-model-escalation-2026-10-01).

@@ -38,7 +38,9 @@ yet (see "Build phase").
 On a pull request, two other labels apply: `ai-evidence` (`labels.evidence`) and `ai-fix`
 (`labels.fix`). Specster reads them from the `pull_request` event and ignores any other label
 there. It refuses, with a short comment, a pull request from a fork (or from a deleted fork), a
-closed one and a draft, and nothing else runs. Either way the label comes off at the end.
+closed one and a draft, and nothing else runs. Either way the label comes off at the end, except
+when the pull request moved while `ai-fix` worked. What each label does is in
+[Pull requests](pull-requests.md).
 
 Adding a label needs the "triage" repository permission (or higher) on GitHub, so that permission
 is the trigger control. `workflow_dispatch` with an `issue_number` input works the same way and is
@@ -95,9 +97,10 @@ useful for re-running a failed job without re-labeling.
 - The step's `outcome` output is `questions`, `spec`, `refused`, `pr_opened`, `not_approved`,
   `build_failed`, `evidence_posted`, `fix_pushed`, `error` or `budget_exhausted`, or `skipped`
   when the event was not for Specster (another label, a bot sender). A refused pull request (fork,
-  closed, draft, no `build.preview` for `ai-evidence`, nothing to apply or a pull request that
-  moved while `ai-fix` worked, or a checkout that is not the default branch) ends `refused`. A cleanup ends `cleaned`, `skipped` when there was
-  nothing to remove, or `error`.
+  closed, draft, no `build.preview` for `ai-evidence`; for `ai-fix`, nothing to apply, a head
+  that is the default branch, `specster-evidence` or protected, or a pull request that moved
+  while it worked; or a checkout that is not the default branch) ends `refused`. A cleanup ends
+  `cleaned`, `skipped` when there was nothing to remove, or `error`.
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see [Your own bot identity](#your-own-bot-identity)). A
   build refuses only when neither `identity.bot_login` nor the token's own login (asked over
