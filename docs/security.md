@@ -43,6 +43,44 @@
   installation token cannot reliably learn its own login (there is no `GET /user` for it), so this
   guard is broader than "ignore myself": it assumes a human always applies the label.
 
+### Pull requests
+
+`ai-evidence` and `ai-fix` ([Specster on any pull request](pull-requests.md)) read a pull request,
+which anyone can write, so they have their own rules.
+
+- **Forks never run.** The `evidence` and `fix` jobs start only for a branch of this repository,
+  and Specster refuses a fork or a deleted fork again from the pull request itself. GitHub gives
+  no secrets to a fork's `pull_request` run either, so there is nothing to start with.
+- **Config and code come from the default branch.** Both jobs check out the default branch, not
+  the pull request, so a pull request cannot raise its trust, its budget or its label names, and
+  its code never runs with the job's token outside the sandbox. As a backstop, Python refuses a
+  checkout that is not the tip of the default branch before it reads the pull request.
+- **The workflow file is the exception.** On `pull_request`, GitHub runs the workflow file from
+  the pull request's merge commit, so a same-repository pull request can edit the jobs
+  themselves. That is acceptable because whoever pushes a branch to the repository already has
+  write access, but it means the label gate in `if:` protects against other labels and forks, not
+  against a collaborator who can write to the repository.
+- **Everything from the pull request is untrusted:** title, description, diff, file paths and
+  review comments are sanitized (hidden content is shown, not followed), wrapped in nonce-tagged
+  blocks, and the prompts say to apply only what the change asks.
+- **Only trusted, earlier review counts.** For `ai-fix`, a comment must come from someone
+  `trust.comments` accepts, be created before the label and not be edited after it. Anyone else's
+  comments are counted in the summary but never shown to a model.
+- **Pushes are leased and never forced.** `ai-fix` pushes to the pull request's own branch with
+  a lease on the head it read at the start. If anyone pushed meanwhile, nothing is pushed.
+- **Never onto the default branch.** The label needs only triage, so `ai-fix` refuses, before
+  any model call, a pull request whose head is the default branch, `specster-evidence` or a
+  protected branch (a `main` to `release` pull request, say): its commits would land there
+  without a review.
+- **Answered markers are Specster's alone.** The marker that skips an item on a re-run sits on
+  the last line of Specster's comment or reply, and quoted output (test logs, comments) is
+  defanged so it cannot plant one.
+- **Residual:** with `trust.comments: owner`, a collaborator with write access whom the setting
+  excludes could edit Specster's own comment to append a marker and suppress items on a re-run.
+  It can only hide items, never add one.
+- **`GITHUB_TOKEN` pushes start no CI,** so what `ai-fix` pushes is not tested by the pull
+  request's workflows unless Specster runs with an App token, which does trigger them.
+
 ### Limits
 
 - **Pushed branches run push-triggered CI on unreviewed code.** A build pushes model-written code
