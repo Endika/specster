@@ -34,6 +34,76 @@ class PullRequest:
     url: str
 
 
+@dataclass(frozen=True)
+class PullInfo:
+    number: int
+    state: str
+    draft: bool
+    title: str
+    body: str
+    author: str
+    author_association: str
+    head_sha: str
+    head_ref: str
+    head_repo: str
+    base_sha: str
+    base_ref: str
+    base_repo: str
+
+
+@dataclass(frozen=True)
+class PullFile:
+    path: str
+    status: str
+    additions: int
+    deletions: int
+    patch: str
+
+
+@dataclass(frozen=True)
+class PullFiles:
+    files: tuple[PullFile, ...]
+    truncated: bool
+
+
+@dataclass(frozen=True)
+class ReviewComment:
+    id: int
+    author: str
+    association: str
+    body: str
+    path: str
+    line: int | None
+    original_line: int | None
+    diff_hunk: str
+    created_at: datetime
+    edited_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ReviewThread:
+    is_resolved: bool
+    comments: tuple[ReviewComment, ...]
+
+
+@dataclass(frozen=True)
+class Review:
+    id: int
+    author: str
+    association: str
+    state: str
+    body: str
+    submitted_at: datetime | None
+
+
+MAX_PULL_FILES = 300
+MAX_PULL_PATCH_CHARS = 200_000
+MAX_THREAD_PAGES = 10
+THREADS_PER_PAGE = 100
+COMMENTS_PER_THREAD = 100
+GHOST = "ghost"
+
+
 class GitHubError(Exception):
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
@@ -55,6 +125,14 @@ class IssueTracker(Protocol):
     def branch_exists(self, branch: str) -> bool: ...
     def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest: ...
     def update_pull(self, number: int, body: str) -> None: ...
+
+
+class PullTracker(IssueTracker, Protocol):
+    def get_pull(self, number: int) -> PullInfo: ...
+    def pull_files(self, number: int) -> PullFiles: ...
+    def review_threads(self, number: int) -> list[ReviewThread]: ...
+    def reviews(self, number: int) -> list[Review]: ...
+    def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None: ...
 
 
 def _ts(value: str) -> datetime:
@@ -239,6 +317,139 @@ class GitHubRest:
                 f"update pull request: HTTP {resp.status_code}: {_error_message(resp)}",
                 resp.status_code,
             )
+
+    def get_pull(self, number: int) -> PullInfo:
+        resp = self._http.get(f"/repos/{self._repo}/pulls/{number}")
+        resp.raise_for_status()
+        d = resp.json()
+        head, base = d["head"], d["base"]
+        return PullInfo(
+            number=d["number"],
+            state=d["state"],
+            draft=bool(d.get("draft")),
+            title=d["title"],
+            body=d.get("body") or "",
+            author=_login(d.get("user")),
+            author_association=d.get("author_association", "NONE"),
+            head_sha=head["sha"],
+            head_ref=head["ref"],
+            head_repo=(head.get("repo") or {}).get("full_name", ""),
+            base_sha=base["sha"],
+            base_ref=base["ref"],
+            base_repo=(base.get("repo") or {}).get("full_name", ""),
+        )
+
+    def pull_files(self, number: int) -> PullFiles:
+        files: list[PullFile] = []
+        chars = 0
+        for f in self._pages(f"/pulls/{number}/files"):
+            patch = f.get("patch") or ""
+            if len(files) >= MAX_PULL_FILES or chars + len(patch) > MAX_PULL_PATCH_CHARS:
+                return PullFiles(tuple(files), truncated=True)
+            chars += len(patch)
+            files.append(
+                PullFile(
+                    path=f["filename"],
+                    status=f["status"],
+                    additions=f["additions"],
+                    deletions=f["deletions"],
+                    patch=patch,
+                )
+            )
+        return PullFiles(tuple(files), truncated=False)
+
+    def review_threads(self, number: int) -> list[ReviewThread]:
+        owner, name = self._repo.split("/", 1)
+        query = (
+            "query($o:String!,$r:String!,$n:Int!,$c:String)"
+            "{repository(owner:$o,name:$r){pullRequest(number:$n){"
+            f"reviewThreads(first:{THREADS_PER_PAGE},after:$c)"
+            "{pageInfo{hasNextPage endCursor} nodes{isResolved "
+            f"comments(first:{COMMENTS_PER_THREAD})"
+            "{totalCount nodes{databaseId author{login} authorAssociation body path line "
+            "originalLine diffHunk createdAt lastEditedAt}}}}}}}"
+        )
+        threads: list[ReviewThread] = []
+        cursor: str | None = None
+        for _ in range(MAX_THREAD_PAGES):
+            resp = self._http.post(
+                self._graphql_url,
+                json={
+                    "query": query,
+                    "variables": {"o": owner, "r": name, "n": number, "c": cursor},
+                },
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get("errors"):
+                raise GitHubError(f"review threads: {payload['errors'][0].get('message', '')}")
+            pull = ((payload.get("data") or {}).get("repository") or {}).get("pullRequest")
+            if pull is None:
+                raise GitHubError(f"review threads: no pull request #{number}", 404)
+            page = pull["reviewThreads"]
+            for t in page["nodes"]:
+                if t["comments"]["totalCount"] > COMMENTS_PER_THREAD:
+                    raise GitHubError(
+                        f"review threads: a thread has more than {COMMENTS_PER_THREAD} comments"
+                    )
+                threads.append(
+                    ReviewThread(
+                        is_resolved=bool(t["isResolved"]),
+                        comments=tuple(_review_comment(c) for c in t["comments"]["nodes"]),
+                    )
+                )
+            if not page["pageInfo"]["hasNextPage"]:
+                return threads
+            cursor = page["pageInfo"]["endCursor"]
+        raise GitHubError(
+            f"review threads: more than {MAX_THREAD_PAGES * THREADS_PER_PAGE} threads"
+        )
+
+    def reviews(self, number: int) -> list[Review]:
+        return [
+            Review(
+                id=r["id"],
+                author=_login(r.get("user")),
+                association=r.get("author_association", "NONE"),
+                state=r["state"],
+                body=r.get("body") or "",
+                submitted_at=_ts(r["submitted_at"]) if r.get("submitted_at") else None,
+            )
+            for r in self._pages(f"/pulls/{number}/reviews")
+        ]
+
+    def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None:
+        try:
+            resp = self._http.post(
+                f"/repos/{self._repo}/pulls/{number}/comments/{comment_id}/replies",
+                json={"body": body},
+            )
+        except httpx.TransportError as e:
+            raise GitHubError(f"reply to review comment: {type(e).__name__}: {e}") from e
+        if not resp.is_success:
+            raise GitHubError(
+                f"reply to review comment: HTTP {resp.status_code}: {_error_message(resp)}",
+                resp.status_code,
+            )
+
+
+def _login(user: Mapping[str, Any] | None) -> str:
+    return str(user["login"]) if user else GHOST
+
+
+def _review_comment(c: Mapping[str, Any]) -> ReviewComment:
+    return ReviewComment(
+        id=c["databaseId"],
+        author=_login(c.get("author")),
+        association=c.get("authorAssociation", "NONE"),
+        body=c.get("body") or "",
+        path=c.get("path") or "",
+        line=c.get("line"),
+        original_line=c.get("originalLine"),
+        diff_hunk=c.get("diffHunk") or "",
+        created_at=_ts(c["createdAt"]),
+        edited_at=_ts(c["lastEditedAt"]) if c.get("lastEditedAt") else None,
+    )
 
 
 def _error_message(resp: httpx.Response) -> str:
