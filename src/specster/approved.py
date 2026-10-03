@@ -69,7 +69,7 @@ def latest_spec_comment(comments: Sequence[Comment], login: str | None = None) -
     return None
 
 
-def _safe_path(path: str) -> bool:
+def safe_path(path: str) -> bool:
     pure = PurePosixPath(path)
     if not path or pure.is_absolute() or ".." in pure.parts or str(pure) == ".":
         return False
@@ -136,7 +136,7 @@ def load_spec(comment: Comment) -> ApprovedSpec:
         )
     if len(set(names)) != len(names):
         raise BuildRefused(f"{CANNOT_BUILD}evidence and page names are not unique", hint)
-    unsafe = sorted({f for t in tasks for f in t.files if not _safe_path(f)})
+    unsafe = sorted({f for t in tasks for f in t.files if not safe_path(f)})
     if unsafe:
         raise BuildRefused(f"{CANNOT_BUILD}unsafe path {unsafe[0]}", hint)
     if fixes or normalized != tasks:
