@@ -967,8 +967,24 @@ def test_a_worker_that_dies_closes_its_meter(tmp_path: Path) -> None:
     s = setup(tmp_path, [task("a", "app.py")], Book({}), ScriptedModel([]))
     with pytest.raises(Fatal):
         run_build(s)
-    assert len(worker.received) == 2 and s.ledger.known_cost() == 0.0
-    assert budget_stop(s.ledger, BudgetConfig(max_usd_per_build=TURN_USD), 0.0) is None
+    assert len(worker.received) == 2 and s.ledger.roles()["worker"].turns == 2
+    assert s.ledger.known_cost() == s.ledger.cost() == 2 * TURN_USD
+    assert budget_stop(s.ledger, BudgetConfig(max_usd_per_build=2 * TURN_USD), 0.0) is not None
+
+
+def test_a_reviewer_that_dies_mid_review_is_billed_for_its_metered_turns(tmp_path: Path) -> None:
+    class DiesOnItsSecondTurn(ScriptedModel):
+        def send(self, results: Sequence[ToolResult] = (), user_text: str | None = None) -> Turn:
+            if len(self.received) == 1:
+                raise Fatal("the reviewer's machine went away")
+            return super().send(results, user_text)
+
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    s = setup(tmp_path, [task("a", "app.py")], book, DiesOnItsSecondTurn(reads("app.py", 5)))
+    with pytest.raises(Fatal):
+        run_build(s)
+    reviewer = s.ledger.roles()["reviewer"]
+    assert reviewer.turns == 1 and reviewer.cost_usd == TURN_USD
 
 
 def test_a_worker_subject_that_closes_an_issue_never_reaches_the_commit(tmp_path: Path) -> None:

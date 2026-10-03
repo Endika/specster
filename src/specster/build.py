@@ -384,7 +384,7 @@ class _Build:
             started = True
             make = self.s.make_escalation if escalated else self.s.make_worker
             assert make is not None
-            meter = self.s.ledger.meter(role, model)
+            meter = self.s.ledger.meter(model)
             result = run_worker(
                 Metered(make(), meter, self._budget_stop),
                 self.worker_system,
@@ -402,7 +402,7 @@ class _Build:
             # A worker already picked from the queue must not start after a fatal error.
             self._aborted.set()
             if started:
-                self._bill_fatal(role, model, e)
+                self._bill_fatal(role, model, e, meter)
             raise
         finally:
             if meter is not None:
@@ -431,8 +431,12 @@ class _Build:
             return False
         return True
 
-    def _bill_fatal(self, role: str, model: ModelConfig, e: BaseException) -> None:
+    def _bill_fatal(
+        self, role: str, model: ModelConfig, e: BaseException, meter: Meter | None = None
+    ) -> None:
         found = attached_usage(e)
+        if found is None and meter is not None and meter.turns:
+            found = (meter.usage, meter.turns)
         if found is None:
             # Turns may have been paid for; an unknown cost is never billed as $0.
             self.s.ledger.mark_unknown(role, model)
@@ -810,7 +814,7 @@ class _Build:
         user = review_block(
             s.spec.text, self.tasks, commits, diff, note, tests, secrets.token_hex(8)
         )
-        meter = s.ledger.meter("reviewer", self.cfg.models.reviewer)
+        meter = s.ledger.meter(self.cfg.models.reviewer)
         try:
             outcome = run_review(
                 Metered(s.make_reviewer(), meter, self._budget_stop),
@@ -827,7 +831,7 @@ class _Build:
             s.ledger.add("reviewer", self.cfg.models.reviewer, e.usage, e.turns)
             raise
         except BaseException as e:
-            self._bill_fatal("reviewer", self.cfg.models.reviewer, e)
+            self._bill_fatal("reviewer", self.cfg.models.reviewer, e, meter)
             raise
         else:
             s.ledger.add("reviewer", self.cfg.models.reviewer, outcome.usage, outcome.turns)

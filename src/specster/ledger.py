@@ -10,18 +10,17 @@ from specster.pricing import cost_usd
 class Meter:
     """A running loop's spend: counted by known_cost until the loop is billed and closes it."""
 
-    def __init__(
-        self, role: str, cfg: ModelConfig, lock: threading.Lock, running: set["Meter"]
-    ) -> None:
-        self.role = role
+    def __init__(self, cfg: ModelConfig, lock: threading.Lock, running: set["Meter"]) -> None:
         self.cfg = cfg
         self.usage = Usage()
+        self.turns = 0
         self._lock = lock
         self._running = running
 
     def turn(self, usage: Usage) -> None:
         with self._lock:
             self.usage = self.usage + usage
+            self.turns += 1
 
     def close(self) -> None:
         with self._lock:
@@ -42,8 +41,8 @@ class Ledger:
             _, before, t = self._roles.get(role, (cfg, Usage(), 0))
             self._roles[role] = (cfg, before + usage, t + turns)
 
-    def meter(self, role: str, cfg: ModelConfig) -> Meter:
-        meter = Meter(role, cfg, self._lock, self._running)
+    def meter(self, cfg: ModelConfig) -> Meter:
+        meter = Meter(cfg, self._lock, self._running)
         with self._lock:
             self._running.add(meter)
         return meter

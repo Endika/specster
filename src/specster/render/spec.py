@@ -12,6 +12,7 @@ from specster.render.common import (
     _bullets,
     _cell,
     _code,
+    _code_cell,
     _indent,
     _l,
     _links,
@@ -50,9 +51,12 @@ def _evidence(
     for e in evidence:
         json_body = " + JSON body" if e.body is not None else ""
         out.append(
-            f"| `{_code(e.name)}` | `{e.method} {_code(e.path)}`{json_body} | {_cell(e.why)} |"
+            f"| `{_code_cell(e.name)}` | `{e.method} {_code_cell(e.path)}`{json_body} "
+            f"| {_cell(e.why)} |"
         )
-    out += [f"| `{_code(g.name)}` | `PAGE {_code(g.path)}` | {_cell(g.why)} |" for g in pages]
+    out += [
+        f"| `{_code_cell(g.name)}` | `PAGE {_code_cell(g.path)}` | {_cell(g.why)} |" for g in pages
+    ]
     for e in evidence:
         if e.body is not None:
             out += [
