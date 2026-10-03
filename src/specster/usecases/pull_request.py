@@ -71,7 +71,7 @@ def _head_refusal(
         why = "where Specster keeps its evidence"
     else:
         try:
-            protected = pulls.branch_protected(head)
+            protected = pulls.branch_protected(head) or pulls.branch_ruleset_blocks_pushes(head)
         except (GitHubError, httpx.HTTPError) as e:
             raise Failure(
                 f"could not read whether {head} is protected: {describe(e)}",

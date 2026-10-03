@@ -539,6 +539,26 @@ def test_a_head_that_is_not_the_pull_requests_own_branch_is_refused_before_anyth
     assert remote_head(remote, "feature/csv") == pull.head_sha and tr.replies == []
 
 
+def test_a_head_whose_ruleset_requires_pull_requests_is_refused(tmp_path: Path) -> None:
+    e, pull, remote = world(tmp_path)
+    tr = tracker(pull)
+    tr.ruled = {"feature/csv"}
+    assert main(e, tr, no_model, lambda *_: b"", timer=lambda: 0.0, identity=unprivileged) == 1
+    assert "Pull request #5 comes from `feature/csv`, a protected branch" in tr.posted[0]
+    assert outcome(tmp_path) == "outcome=refused\n"
+    assert remote_head(remote, "feature/csv") == pull.head_sha and tr.replies == []
+
+
+def test_unreadable_branch_rules_fail_before_anything_runs(tmp_path: Path) -> None:
+    e, pull, remote = world(tmp_path)
+    tr = tracker(pull)
+    tr.ruled_error = "Resource not accessible by integration"
+    assert main(e, tr, no_model, lambda *_: b"", timer=lambda: 0.0, identity=unprivileged) == 1
+    assert "could not read whether feature/csv is protected" in tr.posted[0]
+    assert outcome(tmp_path) == "outcome=error\n"
+    assert remote_head(remote, "feature/csv") == pull.head_sha and tr.replies == []
+
+
 def test_an_unreadable_branch_protection_fails_before_anything_runs(tmp_path: Path) -> None:
     e, pull, remote = world(tmp_path)
     tr = tracker(pull)

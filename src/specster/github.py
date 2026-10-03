@@ -135,6 +135,11 @@ class PullTracker(IssueTracker, Protocol):
     def reviews(self, number: int) -> list[Review]: ...
     def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None: ...
     def branch_protected(self, branch: str) -> bool: ...
+    def branch_ruleset_blocks_pushes(self, branch: str) -> bool: ...
+
+
+_PUSH_BLOCKING_RULES = frozenset({"pull_request", "update"})
+_MAX_RULE_PAGES = 10
 
 
 def _ts(value: str) -> datetime:
@@ -290,7 +295,29 @@ class GitHubRest:
         if resp.status_code == 404:
             return False
         resp.raise_for_status()
-        return bool(resp.json()["protected"])
+        protected = resp.json().get("protected")
+        if not isinstance(protected, bool):
+            raise GitHubError(f"branch {branch}: the response has no `protected` flag")
+        return protected
+
+    def branch_ruleset_blocks_pushes(self, branch: str) -> bool:
+        path = f"/repos/{self._repo}/rules/branches/{quote(branch, safe='/')}"
+        url = f"{path}?per_page=100"
+        for _ in range(_MAX_RULE_PAGES):
+            resp = self._http.get(url)
+            if resp.status_code == 404:
+                return False
+            resp.raise_for_status()
+            rules = resp.json()
+            if not isinstance(rules, list):
+                raise GitHubError(f"rules of {branch}: unexpected response")
+            if any(isinstance(r, dict) and r.get("type") in _PUSH_BLOCKING_RULES for r in rules):
+                return True
+            nxt = resp.links.get("next", {}).get("url")
+            if not nxt:
+                return False
+            url = nxt
+        raise GitHubError(f"rules of {branch}: more than {_MAX_RULE_PAGES} pages")
 
     def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest:
         resp = self._http.post(
