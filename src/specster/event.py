@@ -4,7 +4,7 @@ from typing import Any, Literal, cast
 
 from specster.config import LabelsConfig
 
-RunPhase = Literal["spec", "build", "cleanup"]
+RunPhase = Literal["spec", "build", "cleanup", "evidence", "fix"]
 
 
 class EventError(Exception):
@@ -14,12 +14,23 @@ class EventError(Exception):
 @dataclass(frozen=True)
 class Trigger:
     issue_number: int
-    kind: Literal["labeled", "dispatch", "closed"]
+    kind: Literal["labeled", "dispatch", "closed", "pr_labeled"]
     label: str | None
     sender: str
     sender_type: str
     dispatch_phase: RunPhase = "spec"
     head_ref: str = ""
+    # owner/name of each side of a pull request; "" when the head's fork was deleted.
+    head_repo: str = ""
+    base_repo: str = ""
+
+    @property
+    def same_repo(self) -> bool:
+        return self.head_repo != "" and self.head_repo == self.base_repo
+
+
+def _repo_of(side: Mapping[str, Any]) -> str:
+    return str((side.get("repo") or {}).get("full_name") or "")
 
 
 def parse_event(
@@ -38,11 +49,21 @@ def parse_event(
             raise EventError("workflow_dispatch phase must be spec or build")
         return Trigger(int(dispatch_issue), "dispatch", None, login, kind, cast(RunPhase, phase))
     if event_name == "pull_request":
-        if payload.get("action") != "closed":
-            raise EventError(f"unsupported event {event_name}/{payload.get('action')}")
+        action = payload.get("action")
+        if action not in ("closed", "labeled"):
+            raise EventError(f"unsupported event {event_name}/{action}")
         pr = payload["pull_request"]
-        head_ref = str(pr["head"]["ref"])
-        return Trigger(int(pr["number"]), "closed", None, login, kind, head_ref=head_ref)
+        head, base = pr["head"], pr["base"]
+        return Trigger(
+            int(pr["number"]),
+            "closed" if action == "closed" else "pr_labeled",
+            str(payload["label"]["name"]) if action == "labeled" else None,
+            login,
+            kind,
+            head_ref=str(head["ref"]),
+            head_repo=_repo_of(head),
+            base_repo=_repo_of(base),
+        )
     if event_name != "issues" or payload.get("action") != "labeled":
         raise EventError(f"unsupported event {event_name}/{payload.get('action')}")
     issue = payload["issue"]
@@ -59,6 +80,8 @@ def skip_reason(trigger: Trigger, labels: LabelsConfig) -> str | None:
         return f"sender {trigger.sender} is a bot"
     if trigger.kind == "labeled" and trigger.label not in (labels.spec, labels.build):
         return f"label '{trigger.label}' is not '{labels.spec}' or '{labels.build}'"
+    if trigger.kind == "pr_labeled" and trigger.label not in (labels.evidence, labels.fix):
+        return f"label '{trigger.label}' is not '{labels.evidence}' or '{labels.fix}'"
     return None
 
 
@@ -67,6 +90,8 @@ def phase_of(trigger: Trigger, labels: LabelsConfig) -> RunPhase:
         return trigger.dispatch_phase
     if trigger.kind == "closed":
         return "cleanup"
+    if trigger.kind == "pr_labeled":
+        return "fix" if trigger.label == labels.fix else "evidence"
     if trigger.label == labels.build:
         return "build"
     return "spec"

@@ -113,6 +113,25 @@ LABELS: dict[str, dict[str, str]] = {
             "Check out the default branch at the commit the event saw (actions/checkout "
             "without a ref), then add the `{label}` label again."
         ),
+        "hint_pull_fork": (
+            "Specster only works on pull requests from a branch of this repository. Push the "
+            "branch here and open the pull request from it."
+        ),
+        "hint_pull_closed": "Reopen the pull request, then add the `{label}` label again.",
+        "hint_pull_checkout": (
+            "Check out the default branch in the workflow (actions/checkout with ref: "
+            "${{{{ github.event.repository.default_branch }}}}), then add the `{label}` label "
+            "again."
+        ),
+        "hint_pull_draft": (
+            "Mark the pull request ready for review, then add the `{label}` label again."
+        ),
+        "hint_pull_read": (
+            "Check that the token can read pull requests, then add the `{label}` label again."
+        ),
+        "hint_not_implemented": (
+            "Nothing ran. This label does nothing yet in this version of Specster."
+        ),
     },
     "es": {
         "questions": "Antes de escribir la spec necesito algunas respuestas",
@@ -234,6 +253,28 @@ LABELS: dict[str, dict[str, str]] = {
         "hint_head": (
             "Haz checkout de la rama por defecto en el commit que vio el evento "
             "(actions/checkout sin ref) y vuelve a poner la etiqueta `{label}`."
+        ),
+        "hint_pull_fork": (
+            "Specster solo trabaja con pull requests desde una rama de este repositorio. Sube "
+            "la rama aqu\u00ed y abre la pull request desde ella."
+        ),
+        "hint_pull_closed": "Reabre la pull request y vuelve a poner la etiqueta `{label}`.",
+        "hint_pull_checkout": (
+            "Haz checkout de la rama por defecto en el workflow (actions/checkout con ref: "
+            "${{{{ github.event.repository.default_branch }}}}) y vuelve a poner la etiqueta "
+            "`{label}`."
+        ),
+        "hint_pull_draft": (
+            "Marca la pull request como lista para revisi\u00f3n y vuelve a poner la etiqueta "
+            "`{label}`."
+        ),
+        "hint_pull_read": (
+            "Comprueba que el token puede leer pull requests y vuelve a poner la etiqueta "
+            "`{label}`."
+        ),
+        "hint_not_implemented": (
+            "No se ha ejecutado nada. Esta etiqueta a\u00fan no hace nada en esta versi\u00f3n "
+            "de Specster."
         ),
     },
 }

@@ -3,6 +3,8 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from specster.config import ModelConfig
 from specster.evidence_branch import EVIDENCE_BRANCH, publish
 from specster.git import BOT_EMAIL, Author, Git
@@ -15,7 +17,9 @@ from tests.test_evidence_branch import ls_tree
 CONFIG = ".github/specster/config.yml"
 
 
-def world(tmp_path: Path, head_ref: str, config: str = "") -> tuple[Env, Git, Path]:
+def world(
+    tmp_path: Path, head_ref: str, config: str = "", head_repo: str | None = "o/r"
+) -> tuple[Env, Git, Path]:
     git = make_repo(tmp_path / "repo", {"app.py": "A = 0\n", CONFIG: config})
     remote = make_remote(tmp_path / "remote" / "o" / "r.git")
     event = tmp_path / "event.json"
@@ -23,7 +27,14 @@ def world(tmp_path: Path, head_ref: str, config: str = "") -> tuple[Env, Git, Pa
         json.dumps(
             {
                 "action": "closed",
-                "pull_request": {"number": 5, "head": {"ref": head_ref}},
+                "pull_request": {
+                    "number": 5,
+                    "head": {
+                        "ref": head_ref,
+                        "repo": {"full_name": head_repo} if head_repo else None,
+                    },
+                    "base": {"ref": "main", "repo": {"full_name": "o/r"}},
+                },
                 "sender": {"login": "github-actions[bot]", "type": "Bot"},
             }
         )
@@ -101,8 +112,18 @@ def test_closing_a_pr_without_evidence_is_skipped(tmp_path: Path) -> None:
     assert (tmp_path / "out.txt").read_text() == "outcome=skipped\noutcome=skipped\n"
 
 
-def test_closing_someone_elses_pr_touches_nothing(tmp_path: Path) -> None:
+def test_closing_any_pr_of_this_repository_removes_its_evidence(tmp_path: Path) -> None:
     e, _, remote = world(tmp_path, "feature/x")
+    seed(tmp_path, remote, "pr-5", "pr-6")
+    tr = tracker()
+    assert go(e, tr) == 0
+    assert ls_tree(remote, EVIDENCE_BRANCH) == ["pr-6/a.json"]
+    assert tr.posted == [] and (tmp_path / "out.txt").read_text() == "outcome=cleaned\n"
+
+
+@pytest.mark.parametrize("head_repo", ["fork/r", None])
+def test_closing_a_fork_pr_touches_nothing(tmp_path: Path, head_repo: str | None) -> None:
+    e, _, remote = world(tmp_path, "specster/issue-3", head_repo=head_repo)
     seed(tmp_path, remote, "pr-5")
     tr = tracker()
     assert go(e, tr) == 0

@@ -78,6 +78,8 @@ class LabelsConfig(_Strict):
     ready: str = "spec-ready"
     build: str = "ai-build"
     built: str = "ai-pr"
+    evidence: str = "ai-evidence"
+    fix: str = "ai-fix"
 
     @model_validator(mode="after")
     def _distinct(self) -> Self:

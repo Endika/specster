@@ -14,7 +14,7 @@ from opentelemetry.trace import StatusCode
 from specster.browser import Installer, install
 from specster.config import Config, ConfigError, LabelsConfig, ModelConfig, load_config
 from specster.event import EventError, Trigger, parse_event, phase_of, skip_reason
-from specster.github import IssueTracker
+from specster.github import PullTracker
 from specster.llm.base import ChatModel
 from specster.sandbox import (
     Identity,
@@ -34,6 +34,9 @@ from specster.usecases.context import (
     log,
     write_outcome,
 )
+from specster.usecases.evidence_phase import EvidencePhase
+from specster.usecases.fix_phase import FixPhase
+from specster.usecases.pull_request import open_pull
 from specster.usecases.spec_phase import (
     SpecPhase,
 )
@@ -104,7 +107,7 @@ def _read_trigger(env: Env) -> Trigger | None:
 
 def main(
     env: Env,
-    tracker: IssueTracker,
+    tracker: PullTracker,
     make_model: Callable[[ModelConfig], ChatModel],
     fetch: Fetch,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -153,6 +156,14 @@ def main(
                 if phase == "build":
                     return BuildPhase(
                         run, trigger, make_model, fetch, identity, install_browser
+                    ).execute()
+                if phase in ("evidence", "fix"):
+                    pull = open_pull(run, tracker)
+                    if isinstance(pull, int):
+                        return pull
+                    kind = EvidencePhase if phase == "evidence" else FixPhase
+                    return kind(
+                        run, trigger, pull, tracker, make_model, fetch, identity, install_browser
                     ).execute()
                 return SpecPhase(run, trigger, make_model, fetch, clock).execute()
             except Failure as failure:

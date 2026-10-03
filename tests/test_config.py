@@ -107,6 +107,14 @@ def test_two_labels_with_the_same_name_are_rejected(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_the_pull_request_labels_default_and_stay_distinct(tmp_path: Path) -> None:
+    assert (Config().labels.evidence, Config().labels.fix) == ("ai-evidence", "ai-fix")
+    path = tmp_path / "c.yml"
+    path.write_text("labels:\n  fix: ai-evidence\n")
+    with pytest.raises(ConfigError, match=r"labels\.evidence and labels\.fix are both"):
+        load_config(path)
+
+
 def test_the_escalation_model_is_off_unless_set(tmp_path: Path) -> None:
     assert load_config(write(tmp_path, "")).models.escalation is None
     cfg = load_config(write(tmp_path, "models:\n  escalation: {model: claude-opus-5-5}\n"))

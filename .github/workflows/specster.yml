@@ -4,7 +4,7 @@ on:
   issues:
     types: [labeled]
   pull_request:
-    types: [closed]
+    types: [labeled, closed]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -20,14 +20,13 @@ permissions:
   contents: read
   issues: write
 
-concurrency:
-  group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
-  cancel-in-progress: false
-
 jobs:
   spec:
-    if: (github.event_name == 'workflow_dispatch' && inputs.phase != 'build') || github.event.label.name == 'ai-spec'
+    if: (github.event_name == 'workflow_dispatch' && inputs.phase != 'build') || (github.event_name == 'issues' && github.event.label.name == 'ai-spec')
     runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -49,8 +48,11 @@ jobs:
         run: uv run --no-dev python -P -m specster
 
   build:
-    if: (github.event_name == 'workflow_dispatch' && inputs.phase == 'build') || github.event.label.name == 'ai-build'
+    if: (github.event_name == 'workflow_dispatch' && inputs.phase == 'build') || (github.event_name == 'issues' && github.event.label.name == 'ai-build')
     runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
     timeout-minutes: 120
     permissions:
       contents: write
@@ -84,9 +86,88 @@ jobs:
           -e INPUT_GITHUB_TOKEN -e INPUT_ISSUE_NUMBER -e INPUT_PHASE -e INPUT_ANTHROPIC_API_KEY
           specster:dogfood
 
-  cleanup:
-    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'specster/issue-') && github.event.pull_request.head.repo.full_name == github.repository
+  evidence:
+    if: github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'ai-evidence' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/create-github-app-token@v3
+        id: app
+        if: vars.SPECSTER_CLIENT_ID != ''
+        with:
+          client-id: ${{ vars.SPECSTER_CLIENT_ID }}
+          private-key: ${{ secrets.SPECSTER_APP_KEY }}
+      - run: docker build -t specster:dogfood .
+      - name: run the image built from the default branch, as the action would
+        env:
+          INPUT_GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          INPUT_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: >-
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace
+          -v "$GITHUB_EVENT_PATH:/github/workflow/event.json:ro"
+          -v "$GITHUB_OUTPUT:/github/file_commands/output"
+          -e GITHUB_WORKSPACE=/github/workspace
+          -e GITHUB_EVENT_PATH=/github/workflow/event.json
+          -e GITHUB_OUTPUT=/github/file_commands/output
+          -e GITHUB_EVENT_NAME -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e GITHUB_REF -e GITHUB_SHA
+          -e GITHUB_SERVER_URL -e GITHUB_API_URL -e GITHUB_GRAPHQL_URL
+          -e INPUT_GITHUB_TOKEN -e INPUT_ANTHROPIC_API_KEY
+          specster:dogfood
+
+  fix:
+    if: github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'ai-fix' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/create-github-app-token@v3
+        id: app
+        if: vars.SPECSTER_CLIENT_ID != ''
+        with:
+          client-id: ${{ vars.SPECSTER_CLIENT_ID }}
+          private-key: ${{ secrets.SPECSTER_APP_KEY }}
+      - run: docker build -t specster:dogfood .
+      - name: run the image built from the default branch, as the action would
+        env:
+          INPUT_GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          INPUT_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: >-
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace
+          -v "$GITHUB_EVENT_PATH:/github/workflow/event.json:ro"
+          -v "$GITHUB_OUTPUT:/github/file_commands/output"
+          -e GITHUB_WORKSPACE=/github/workspace
+          -e GITHUB_EVENT_PATH=/github/workflow/event.json
+          -e GITHUB_OUTPUT=/github/file_commands/output
+          -e GITHUB_EVENT_NAME -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e GITHUB_REF -e GITHUB_SHA
+          -e GITHUB_SERVER_URL -e GITHUB_API_URL -e GITHUB_GRAPHQL_URL
+          -e INPUT_GITHUB_TOKEN -e INPUT_ANTHROPIC_API_KEY
+          specster:dogfood
+
+  cleanup:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
     timeout-minutes: 15
     permissions:
       contents: write

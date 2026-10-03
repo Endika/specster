@@ -31,6 +31,8 @@ LABEL_COLORS = {
     "ready": "0e8a16",
     "build": "1d76db",
     "built": "6f42c1",
+    "evidence": "0075ca",
+    "fix": "d93f0b",
 }
 
 
@@ -135,7 +137,10 @@ class RunContext:
 
     @property
     def trigger_label(self) -> str:
-        return self.cfg.labels.build if self.phase == "build" else self.cfg.labels.spec
+        labels = self.cfg.labels
+        return {"build": labels.build, "evidence": labels.evidence, "fix": labels.fix}.get(
+            self.phase, labels.spec
+        )
 
     def metrics(
         self,
@@ -157,7 +162,7 @@ class RunContext:
         )
 
     def _build_role(self) -> ModelConfig | None:
-        return self.cfg.models.worker if self.phase == "build" else None
+        return self.cfg.models.worker if self.phase in ("build", "fix") else None
 
     def refuse(self, r: BuildRefused) -> int:
         log(f"refused: {r.message}")
@@ -203,7 +208,6 @@ class RunContext:
                     "error",
                     ledger.cost(),
                     role=self._build_role(),
-                    phase="build",
                     roles=ledger.roles(),
                     turns=ledger.turns(),
                     **({"warnings": self.warnings} | self.build_facts),

@@ -9,19 +9,18 @@ from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.sandbox import scratch_dir
 from specster.usecases.context import RunContext, StepOutcome, describe, log, write_outcome
 
-_BRANCH_PREFIX = "specster/issue-"
-
 
 class CleanupPhase:
-    """Never comments: the pull request is closed and the issue has moved on."""
+    """Never comments: the pull request is closed, and whoever opened it has moved on."""
 
     def __init__(self, run: RunContext, trigger: Trigger) -> None:
         self.run, self.trigger = run, trigger
 
     def execute(self) -> int:
         env, folder = self.run.env, f"pr-{self.trigger.issue_number}"
-        if not self.trigger.head_ref.startswith(_BRANCH_PREFIX):
-            log("skipped: not a Specster pull request")
+        # The workflow's `if` checks this too; a fork's close never touches the evidence branch.
+        if not self.trigger.same_repo:
+            log("skipped: not a pull request from this repository")
             self._end("skipped")
             return 0
         scratch = scratch_dir()

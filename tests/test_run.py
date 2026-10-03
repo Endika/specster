@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from specster.config import ModelConfig, TrustConfig
 from specster.github import Comment, Issue
@@ -540,6 +541,66 @@ def test_the_dogfood_build_passes_every_github_variable_specster_reads() -> None
     env_from(environ)
     wanted = {n for n in environ.asked if n.startswith("GITHUB_")} - {"GITHUB_TOKEN"}
     workflow = (ROOT / ".github" / "workflows" / "specster.yml").read_text()
-    build = workflow.split("docker run", 1)[1]
-    passed = set(re.findall(r"-e (GITHUB_[A-Z_]+)", build))
-    assert "GITHUB_SHA" in wanted and wanted <= passed, sorted(wanted - passed)
+    runs = workflow.split("docker run")[1:]
+    assert len(runs) == 4 and "GITHUB_SHA" in wanted
+    for job in runs:
+        passed = set(re.findall(r"-e (GITHUB_[A-Z_]+)", job))
+        assert wanted <= passed, sorted(wanted - passed)
+
+
+def workflows() -> tuple[dict[Any, Any], dict[Any, Any]]:
+    dogfood = yaml.safe_load((ROOT / ".github" / "workflows" / "specster.yml").read_text())
+    readme = (ROOT / "README.md").read_text().split("## Full setup", 1)[1]
+    setup = yaml.safe_load(readme.split("```yaml\n", 1)[1].split("```", 1)[0])
+    return dogfood, setup
+
+
+def test_the_full_setup_triggers_and_gates_like_the_dogfood_workflow() -> None:
+    dogfood, setup = workflows()
+    # YAML 1.1 reads the `on` key as True.
+    assert setup[True] == dogfood[True]
+    assert setup["permissions"] == dogfood["permissions"]
+    assert setup["jobs"].keys() == dogfood["jobs"].keys()
+    for name, job in setup["jobs"].items():
+        ours = dogfood["jobs"][name]
+        assert (job["if"], job.get("permissions")) == (ours["if"], ours.get("permissions")), name
+        assert job["concurrency"] == ours["concurrency"], name
+        assert job["steps"][0] == ours["steps"][0], name
+
+
+def test_issue_jobs_never_start_on_a_pull_request_label() -> None:
+    for workflow in workflows():
+        for name, job in workflow["jobs"].items():
+            gate = job["if"]
+            for label_check in re.findall(r"\(?[^()|]*github\.event\.label\.name[^()|]*", gate):
+                assert "github.event_name == " in label_check, (name, label_check)
+            pull = "github.event_name == 'pull_request'" in gate
+            assert pull == (name in ("evidence", "fix", "cleanup")), name
+            assert "github.event_name == 'issues'" in gate or pull, name
+
+
+def test_one_run_per_issue_or_pull_request_and_skipped_jobs_never_queue() -> None:
+    group = (
+        "specster-issue-${{ github.event.issue.number || github.event.pull_request.number "
+        "|| inputs.issue_number }}"
+    )
+    for workflow in workflows():
+        # A workflow-level group would let any other label's skipped run cancel a pending one.
+        assert "concurrency" not in workflow
+        for name, job in workflow["jobs"].items():
+            assert job["concurrency"] == {"group": group, "cancel-in-progress": False}, name
+
+
+@pytest.mark.parametrize("name", ["evidence", "fix", "cleanup"])
+def test_pull_request_jobs_run_the_default_branch_and_only_for_this_repository(name: str) -> None:
+    for workflow in workflows():
+        job = workflow["jobs"][name]
+        assert job["steps"][0] == {
+            "uses": "actions/checkout@v7",
+            "with": {"ref": "${{ github.event.repository.default_branch }}"},
+        }
+        assert job["if"].endswith(
+            "&& github.event.pull_request.head.repo.full_name == github.repository"
+        )
+        if name != "cleanup":
+            assert job["permissions"] == {"contents": "write", "pull-requests": "write"}
