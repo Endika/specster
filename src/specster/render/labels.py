@@ -47,6 +47,7 @@ LABELS: dict[str, dict[str, str]] = {
         "error": "Specster could not finish this run",
         "fix": "How to fix it",
         "budget": "Budget for this issue is spent",
+        "budget_pull": "Budget for this pull request is spent",
         "next_questions": "Answer below, then add the `{label}` label again.",
         "next_spec": "Review the spec. The `{label}` label will build it.",
         "refused": "Specster will not build this issue",
@@ -129,6 +130,28 @@ LABELS: dict[str, dict[str, str]] = {
         "hint_pull_read": (
             "Check that the token can read pull requests, then add the `{label}` label again."
         ),
+        "evidence_pull": "Before and after this pull request",
+        "evidence_pull_budget": "No evidence: the budget is spent",
+        "evidence_pull_time": ("No evidence: the run reached its time limit (`build.max_minutes`)"),
+        "evidence_pull_range": "Base `{base}` \u2192 head `{head}`",
+        "evidence_pull_why": "What I chose and why",
+        "evidence_pull_none": "Nothing to capture: no request or page shows this change.",
+        "evidence_pull_not_captured": (
+            "Nothing was captured: the warnings in the details below say why."
+        ),
+        "evidence_pull_next": "Add the `{label}` label again to capture it anew.",
+        "hint_evidence_preview": (
+            "Set build.preview in {path} on the default branch, so Specster knows how to serve "
+            "the app, then add the `{label}` label again."
+        ),
+        "hint_pull_fetch": (
+            "Check that the token can read this repository's contents and that the pull "
+            "request's head was not force-pushed away, then add the `{label}` label again."
+        ),
+        "hint_evidence_planner": (
+            "The planner did not submit a usable answer. Add the `{label}` label again, or "
+            "split the pull request so it can be read within budget.max_turns turns."
+        ),
         "hint_not_implemented": (
             "Nothing ran. This label does nothing yet in this version of Specster."
         ),
@@ -181,6 +204,7 @@ LABELS: dict[str, dict[str, str]] = {
         "error": "Specster no ha podido terminar esta ejecuci\u00f3n",
         "fix": "C\u00f3mo arreglarlo",
         "budget": "El presupuesto de esta issue est\u00e1 agotado",
+        "budget_pull": "El presupuesto de esta pull request est\u00e1 agotado",
         "next_questions": "Responde abajo y vuelve a poner la etiqueta `{label}`.",
         "next_spec": "Revisa la spec. La etiqueta `{label}` la construir\u00e1.",
         "refused": "Specster no va a construir esta issue",
@@ -271,6 +295,33 @@ LABELS: dict[str, dict[str, str]] = {
         "hint_pull_read": (
             "Comprueba que el token puede leer pull requests y vuelve a poner la etiqueta "
             "`{label}`."
+        ),
+        "evidence_pull": "Antes y despu\u00e9s de esta pull request",
+        "evidence_pull_budget": "Sin evidencia: el presupuesto est\u00e1 agotado",
+        "evidence_pull_time": (
+            "Sin evidencia: se ha alcanzado el l\u00edmite de tiempo (`build.max_minutes`)"
+        ),
+        "evidence_pull_range": "Base `{base}` \u2192 head `{head}`",
+        "evidence_pull_why": "Qu\u00e9 he elegido y por qu\u00e9",
+        "evidence_pull_none": (
+            "Nada que capturar: ninguna petici\u00f3n ni p\u00e1gina muestra este cambio."
+        ),
+        "evidence_pull_not_captured": (
+            "No se ha capturado nada: los avisos del detalle de abajo dicen por qu\u00e9."
+        ),
+        "evidence_pull_next": "Vuelve a poner la etiqueta `{label}` para capturarla de nuevo.",
+        "hint_evidence_preview": (
+            "Configura build.preview en {path} en la rama por defecto, para que Specster sepa "
+            "c\u00f3mo servir la app, y vuelve a poner la etiqueta `{label}`."
+        ),
+        "hint_pull_fetch": (
+            "Comprueba que el token puede leer el contenido de este repositorio y que el head de "
+            "la pull request no ha desaparecido con un force-push, y vuelve a poner la etiqueta "
+            "`{label}`."
+        ),
+        "hint_evidence_planner": (
+            "El planificador no ha enviado una respuesta v\u00e1lida. Vuelve a poner la etiqueta "
+            "`{label}`, o divide la pull request para que se pueda leer en budget.max_turns turnos."
         ),
         "hint_not_implemented": (
             "No se ha ejecutado nada. Esta etiqueta a\u00fan no hace nada en esta versi\u00f3n "

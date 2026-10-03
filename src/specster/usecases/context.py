@@ -60,6 +60,7 @@ Outcome = Literal[
     "pr_opened",
     "not_approved",
     "build_failed",
+    "evidence_posted",
 ]
 
 

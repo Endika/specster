@@ -38,6 +38,7 @@ class RunMetrics(BaseModel):
         "pr_opened",
         "not_approved",
         "build_failed",
+        "evidence_posted",
     ]
     provider: str
     model: str

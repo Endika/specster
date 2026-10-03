@@ -40,8 +40,8 @@ inputs:
 outputs:
   outcome:
     description: >-
-      questions, spec, refused, pr_opened, not_approved, build_failed, error,
-      budget_exhausted, cleaned when a closed pull request's evidence was removed,
+      questions, spec, refused, pr_opened, not_approved, build_failed,
+      evidence_posted, error, budget_exhausted, cleaned when a closed pull request's evidence was removed,
       or skipped when the event is not for Specster
 runs:
   using: docker

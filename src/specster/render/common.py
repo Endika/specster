@@ -186,25 +186,29 @@ def _footer(ctx: RenderContext) -> list[str]:
     shown = f" ({', '.join(listed)})" if listed else ""
     inlined = ", ".join(_prose(n) for n in m.skills_inlined) or "none"
     read = ", ".join(_prose(n) for n in m.skills_read) or "none"
-    # The thread and the planner's file reads are the spec phase's; a build has neither.
-    facts = (
-        []
-        if m.phase == "build"
-        else [
-            f"- Files read: {len(m.files_read)}{shown}",
+    # The thread and the planner's file reads are the spec phase's; a build has neither, and
+    # the evidence planner reads no comments.
+    facts = [] if m.phase == "build" else [f"- Files read: {len(m.files_read)}{shown}"]
+    if m.phase == "spec":
+        facts.append(
             f"- Comments: {m.comments_included} read, {m.comments_untrusted} untrusted, "
             f"{m.comments_after_label} after the label, "
-            f"{m.comments_edited_after_label} edited after it",
-            f"- Hidden content removed: {m.hidden_removed}",
-        ]
-    )
+            f"{m.comments_edited_after_label} edited after it"
+        )
+    if m.phase != "build":
+        facts.append(f"- Hidden content removed: {m.hidden_removed}")
     facts.append(
         f"- Skills: {len(m.skills_available)} available; loaded: {inlined}; "
         f"read by the model: {read}"
     )
     if m.plan_max_parallel is not None:
         facts.append(f"- Plan parallelism: up to {m.plan_max_parallel} tasks at once")
-    if m.roles:
+    if m.phase == "evidence":
+        facts.append(
+            f"- Evidence: {m.evidence_items} requests captured, "
+            f"{m.evidence_problems} sides with a problem"
+        )
+    elif m.roles:
         facts.append(
             f"- Build: {m.tasks_done} of {m.tasks_total} tasks, {m.test_runs} test runs, "
             f"up to {m.parallel_used} workers at once, {m.review_rounds} review rounds"

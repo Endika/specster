@@ -5,7 +5,15 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from specster.agent import AgentError, Metered, NotYet, SubmissionError, run_agent, run_loop
+from specster.agent import (
+    AgentError,
+    Metered,
+    NotYet,
+    SubmissionError,
+    run_agent,
+    run_evidence_planner,
+    run_loop,
+)
 from specster.config import ModelConfig, SkillsConfig
 from specster.ledger import Ledger
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
@@ -354,3 +362,27 @@ def test_evidence_and_pages_share_the_maximum_of_ten() -> None:
     SpecResult.model_validate(SPEC | {"evidence": ev, "pages": [page(i) for i in range(5)]})
     with pytest.raises(ValidationError, match="together"):
         SpecResult.model_validate(SPEC | {"evidence": ev, "pages": [page(i) for i in range(6)]})
+
+
+def plan_evidence(tmp_path: Path, submissions: list[dict[str, Any]]) -> tuple[Any, ScriptedModel]:
+    (tmp_path / "app.py").write_text("ROUTES = {}\n")
+    model = ScriptedModel(
+        [[ToolCall(str(i), "submit_evidence", s)] for i, s in enumerate(submissions)]
+    )
+    out = run_evidence_planner(model, "sys", "ctx", "user", Workspace(tmp_path), 5)
+    return out.value, model
+
+
+def test_the_evidence_planner_keeps_the_rules_of_a_spec(tmp_path: Path) -> None:
+    clash = {"evidence": EVIDENCE, "pages": [PAGES[0] | {"name": "list-users"}], "why": "w"}
+    plan, model = plan_evidence(tmp_path, [clash, {"evidence": EVIDENCE, "why": "Lists users."}])
+    assert [e.name for e in plan.evidence] == ["list-users"] and plan.why == "Lists users."
+    assert "unique" in model.received[1][0].content
+    assert [t.name for t in model.tools][-1] == "submit_evidence"
+    assert not any(t.name in ("submit_spec", "read_skill", "write_file") for t in model.tools)
+
+
+def test_the_evidence_planner_may_choose_nothing_but_must_say_why(tmp_path: Path) -> None:
+    plan, model = plan_evidence(tmp_path, [{"evidence": []}, {"why": "Only docs change."}])
+    assert plan.evidence == [] and plan.pages == [] and plan.why == "Only docs change."
+    assert model.received[1][0].is_error and "why" in model.received[1][0].content

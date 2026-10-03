@@ -364,3 +364,28 @@ def test_remote_reads_carry_the_token_only_in_the_env(tmp_path: Path) -> None:
     for err in (e, f):
         assert TOKEN not in str(err.value) and header not in str(err.value)
     assert not any(TOKEN in a or header in a for argv in git.argv_log for a in argv)
+
+
+def test_fetch_commits_brings_in_only_the_missing_ids_with_the_token_in_the_env(
+    tmp_path: Path,
+) -> None:
+    other = make_repo(tmp_path / "other", {"app.py": "x = 2\n"})
+    remote = make_remote(tmp_path / "remote.git")
+    other.run("push", "-q", str(remote), "main")
+    wanted = other.head()
+    git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
+    assert not git.has_commit(wanted)
+    git.fetch_commits(str(remote), TOKEN, [git.head(), wanted])
+    assert git.has_commit(wanted) and git.run("cat-file", "blob", f"{wanted}:app.py") == "x = 2\n"
+    fetches = [argv for argv in git.argv_log if "fetch" in argv]
+    assert len(fetches) == 1 and fetches[0][-1] == wanted
+    git.fetch_commits(str(remote), TOKEN, [wanted])
+    assert len([argv for argv in git.argv_log if "fetch" in argv]) == 1
+    assert all(TOKEN not in a for argv in git.argv_log for a in argv)
+
+
+@pytest.mark.parametrize("bad", ["main", "-uhttps://evil", "a" * 39, "A" * 40])
+def test_fetch_commits_takes_only_commit_ids(tmp_path: Path, bad: str) -> None:
+    git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
+    with pytest.raises(GitError, match="not a commit id"):
+        git.fetch_commits(str(tmp_path / "remote.git"), TOKEN, [bad])
