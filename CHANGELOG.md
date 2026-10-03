@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/Endika/specster/compare/specster-v0.18.0...specster-v0.18.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* send only Specster's token when the checkout kept its own ([3476792](https://github.com/Endika/specster/commit/3476792a89c1e381413a80b406640b70941e1a90))
+
 ## [0.18.0](https://github.com/Endika/specster/compare/specster-v0.17.0...specster-v0.18.0) (2026-10-03)
 
 
