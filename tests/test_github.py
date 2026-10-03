@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
+from specster import github
 from specster.github import GitHubError, GitHubRest
 
 
@@ -251,3 +252,229 @@ def test_a_pull_update_that_never_reaches_github_raises() -> None:
     gh = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle))
     with pytest.raises(GitHubError, match="update pull request: ConnectError: connection reset"):
         gh.update_pull(5, "b")
+
+
+def _pull_json() -> dict[str, object]:
+    return {
+        "number": 9,
+        "state": "open",
+        "draft": False,
+        "title": "T",
+        "body": None,
+        "user": {"login": "ana"},
+        "author_association": "MEMBER",
+        "head": {"sha": "h1", "ref": "feat", "repo": {"full_name": "o/r"}},
+        "base": {"sha": "b1", "ref": "main", "repo": {"full_name": "o/r"}},
+    }
+
+
+def test_get_pull_reads_both_sides_and_survives_a_deleted_fork() -> None:
+    pull = _pull_json()
+    pull["head"] = {"sha": "h1", "ref": "feat", "repo": None}
+    pull["user"] = None
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/repos/o/r/pulls/9"
+        return httpx.Response(200, json=pull)
+
+    info = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle)).get_pull(9)
+    assert (info.head_sha, info.head_repo, info.base_repo, info.base_ref) == (
+        "h1",
+        "",
+        "o/r",
+        "main",
+    )
+    assert (info.author, info.body, info.draft, info.state) == ("ghost", "", False, "open")
+
+
+def _file(i: int, patch: str | None = "+x") -> dict[str, object]:
+    return {
+        "filename": f"f{i}.py",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "patch": patch,
+    }
+
+
+def _files_client(pages: list[list[dict[str, object]]]) -> GitHubRest:
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/repos/o/r/pulls/9/files"
+        page = int(request.url.params.get("page", "1"))
+        headers = {}
+        if page < len(pages):
+            headers["Link"] = (
+                f'<https://api.github.com/repos/o/r/pulls/9/files?page={page + 1}>; rel="next"'
+            )
+        return httpx.Response(200, json=pages[page - 1], headers=headers)
+
+    return GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle))
+
+
+def test_pull_files_follows_pages_and_keeps_binary_files_without_a_patch() -> None:
+    result = _files_client([[_file(1)], [_file(2, None)]]).pull_files(9)
+    assert [(f.path, f.patch) for f in result.files] == [("f1.py", "+x"), ("f2.py", "")]
+    assert not result.truncated
+
+
+def test_pull_files_stops_at_the_file_cap_and_says_so() -> None:
+    pages = [[_file(i) for i in range(100)] for _ in range(4)]
+    result = _files_client(pages).pull_files(9)
+    assert len(result.files) == github.MAX_PULL_FILES
+    assert result.truncated
+
+
+def test_pull_files_exactly_at_the_file_cap_is_not_truncated() -> None:
+    pages = [[_file(i) for i in range(100)] for _ in range(3)]
+    result = _files_client(pages).pull_files(9)
+    assert len(result.files) == github.MAX_PULL_FILES
+    assert not result.truncated
+
+
+def test_pull_files_stops_before_the_file_that_overflows_the_patch_budget() -> None:
+    big = "+" * (github.MAX_PULL_PATCH_CHARS // 2 + 1)
+    result = _files_client([[_file(1, big), _file(2, big), _file(3)]]).pull_files(9)
+    assert [f.path for f in result.files] == ["f1.py"]
+    assert result.truncated
+
+
+def _thread(i: int, resolved: bool = False, total: int = 1) -> dict[str, object]:
+    return {
+        "isResolved": resolved,
+        "comments": {
+            "totalCount": total,
+            "nodes": [
+                {
+                    "databaseId": i,
+                    "author": None if i == 2 else {"login": "rev"},
+                    "authorAssociation": "MEMBER",
+                    "body": f"b{i}",
+                    "path": "a.py",
+                    "line": None,
+                    "originalLine": 4,
+                    "diffHunk": "@@",
+                    "createdAt": "2026-01-01T09:00:00Z",
+                    "lastEditedAt": "2026-01-02T09:00:00Z" if i == 1 else None,
+                }
+            ],
+        },
+    }
+
+
+def _threads_client(
+    pages: list[list[dict[str, object]]], seen: list[object] | None = None
+) -> GitHubRest:
+    def handle(request: httpx.Request) -> httpx.Response:
+        variables = json.loads(request.content)["variables"]
+        if seen is not None:
+            seen.append(variables["c"])
+        index = 0 if variables["c"] is None else int(variables["c"])
+        more = index + 1 < len(pages)
+        page = {
+            "pageInfo": {"hasNextPage": more, "endCursor": str(index + 1)},
+            "nodes": pages[index],
+        }
+        return httpx.Response(
+            200, json={"data": {"repository": {"pullRequest": {"reviewThreads": page}}}}
+        )
+
+    return GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle))
+
+
+def test_review_threads_follow_the_cursor_and_map_every_field() -> None:
+    seen: list[object] = []
+    threads = _threads_client([[_thread(1)], [_thread(2, resolved=True)]], seen).review_threads(9)
+    assert seen == [None, "1"]
+    assert [t.is_resolved for t in threads] == [False, True]
+    first = threads[0].comments[0]
+    assert (first.id, first.author, first.association, first.path) == (1, "rev", "MEMBER", "a.py")
+    assert (first.line, first.original_line, first.diff_hunk) == (None, 4, "@@")
+    assert first.edited_at == datetime(2026, 1, 2, 9, tzinfo=UTC)
+    assert threads[1].comments[0].author == "ghost"
+    assert threads[1].comments[0].edited_at is None
+
+
+def test_review_threads_refuse_to_drop_threads_past_the_page_bound() -> None:
+    endless = [[_thread(1)]] * (github.MAX_THREAD_PAGES + 1)
+    with pytest.raises(GitHubError, match="more than"):
+        _threads_client(endless).review_threads(9)
+
+
+def test_review_threads_refuse_to_drop_comments_past_the_per_thread_bound() -> None:
+    too_many = _thread(1, total=github.COMMENTS_PER_THREAD + 1)
+    with pytest.raises(GitHubError, match="more than"):
+        _threads_client([[too_many]]).review_threads(9)
+
+
+def test_review_threads_surface_graphql_errors() -> None:
+    gh = GitHubRest(
+        "o/r",
+        "tok",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"errors": [{"message": "Could not resolve"}]})
+        ),
+    )
+    with pytest.raises(GitHubError, match="Could not resolve"):
+        gh.review_threads(9)
+
+
+def test_review_threads_of_an_unknown_pull_request_raise_a_github_error() -> None:
+    gh = GitHubRest(
+        "o/r",
+        "tok",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"data": {"repository": {"pullRequest": None}}})
+        ),
+    )
+    with pytest.raises(GitHubError, match="no pull request #9"):
+        gh.review_threads(9)
+
+
+def test_reviews_read_every_page() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/repos/o/r/pulls/9/reviews"
+        review = {
+            "id": 5,
+            "user": {"login": "rev"},
+            "author_association": "OWNER",
+            "state": "CHANGES_REQUESTED",
+            "body": None,
+            "submitted_at": "2026-01-01T09:00:00Z",
+        }
+        if request.url.params.get("page") is None:
+            link = (
+                '<https://api.github.com/repos/o/r/pulls/9/reviews?per_page=100&page=2>; rel="next"'
+            )
+            return httpx.Response(200, json=[review], headers={"Link": link})
+        return httpx.Response(
+            200, json=[{**review, "id": 6, "user": None, "state": "PENDING", "submitted_at": None}]
+        )
+
+    reviews = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle)).reviews(9)
+    assert [(r.id, r.author, r.state, r.body) for r in reviews] == [
+        (5, "rev", "CHANGES_REQUESTED", ""),
+        (6, "ghost", "PENDING", ""),
+    ]
+    assert reviews[0].submitted_at == datetime(2026, 1, 1, 9, tzinfo=UTC)
+    assert reviews[1].submitted_at is None
+
+
+def test_a_reply_posts_to_the_comment_and_a_refusal_raises() -> None:
+    sent: list[tuple[str, object]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent.append((request.url.path, json.loads(request.content)))
+        if request.url.path.endswith("/99/replies"):
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(201, json={})
+
+    gh = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle))
+    gh.reply_to_review_comment(9, 5, "done")
+    assert sent == [("/repos/o/r/pulls/9/comments/5/replies", {"body": "done"})]
+    with pytest.raises(GitHubError, match="HTTP 404") as raised:
+        gh.reply_to_review_comment(9, 99, "x")
+    assert raised.value.status == 404
+
+
+def test_a_pull_label_time_comes_from_the_same_issue_events() -> None:
+    assert client(FakeGitHubServer()).label_applied_at(7, "ai-spec") is not None

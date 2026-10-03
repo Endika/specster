@@ -10,7 +10,16 @@ from typing import Any
 
 from specster.config import PersonaConfig
 from specster.git import BOT_EMAIL, Author, Git
-from specster.github import Comment, GitHubError, Issue, PullRequest
+from specster.github import (
+    Comment,
+    GitHubError,
+    Issue,
+    PullFiles,
+    PullInfo,
+    PullRequest,
+    Review,
+    ReviewThread,
+)
 from specster.llm.base import ToolCall, ToolResult, ToolSpec, Turn, Usage
 from specster.metrics import RunMetrics
 from specster.plan import normalize_plan
@@ -34,6 +43,11 @@ class FakeTracker:
     pulls: list[tuple[str, str, str, str]] = field(default_factory=list)
     pull_error: str | None = None
     pull_status: int = 403
+    pull_info: PullInfo | None = None
+    pull_file_list: PullFiles = field(default_factory=lambda: PullFiles((), truncated=False))
+    threads: list[ReviewThread] = field(default_factory=list)
+    review_list: list[Review] = field(default_factory=list)
+    replies: list[tuple[int, int, str]] = field(default_factory=list)
 
     def get_issue(self, number: int) -> Issue:
         return self.issue
@@ -81,6 +95,23 @@ class FakeTracker:
     def update_pull(self, number: int, body: str) -> None:
         title, _, head, base = self.pulls[number - 1]
         self.pulls[number - 1] = (title, body, head, base)
+
+    def get_pull(self, number: int) -> PullInfo:
+        if self.pull_info is None:
+            raise GitHubError(f"pull request {number} not found", 404)
+        return self.pull_info
+
+    def pull_files(self, number: int) -> PullFiles:
+        return self.pull_file_list
+
+    def review_threads(self, number: int) -> list[ReviewThread]:
+        return list(self.threads)
+
+    def reviews(self, number: int) -> list[Review]:
+        return list(self.review_list)
+
+    def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None:
+        self.replies.append((number, comment_id, body))
 
 
 def _with_labels(issue: Issue, labels: set[str]) -> Issue:
