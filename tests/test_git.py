@@ -1,7 +1,9 @@
 import base64
 import os
 import stat
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
@@ -101,9 +103,11 @@ def test_the_token_reaches_the_push_only_as_an_env_header() -> None:
     header = base64.b64encode(f"x-access-token:{TOKEN}".encode()).decode()
     assert all(TOKEN not in a and header not in a for a in args)
     assert env == {
-        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {header}",
+        "GIT_CONFIG_VALUE_0": "",
+        "GIT_CONFIG_KEY_1": "http.https://github.com/.extraheader",
+        "GIT_CONFIG_VALUE_1": f"AUTHORIZATION: basic {header}",
     }
 
 
@@ -389,3 +393,33 @@ def test_fetch_commits_takes_only_commit_ids(tmp_path: Path, bad: str) -> None:
     git = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
     with pytest.raises(GitError, match="not a commit id"):
         git.fetch_commits(str(tmp_path / "remote.git"), TOKEN, [bad])
+
+
+@pytest.mark.block_network(allowed_hosts=["127.0.0.1"])
+def test_the_token_header_replaces_one_the_checkout_kept(tmp_path: Path) -> None:
+    # actions/checkout keeps its own token as an extraheader; two Authorization headers get a 400.
+    seen: list[list[str]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.headers.get_all("Authorization") or [])
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *_: object) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/o/r.git"
+        git = make_repo(tmp_path / "repo", {"a.txt": "a\n"})
+        key = f"http.http://127.0.0.1:{server.server_port}/.extraheader"
+        git.run("config", "--add", key, "AUTHORIZATION: basic checkout-token")
+        with pytest.raises(GitError):
+            git.remote_head(url, "main", TOKEN)
+    finally:
+        server.shutdown()
+        server.server_close()
+    header = base64.b64encode(f"x-access-token:{TOKEN}".encode()).decode()
+    assert seen and all(h == [f"basic {header}"] for h in seen)

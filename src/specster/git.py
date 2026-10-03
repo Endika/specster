@@ -86,15 +86,19 @@ def _auth_env(url: str, token: str) -> dict[str, str]:
         return {}
     header = "AUTHORIZATION: basic " + base64.b64encode(f"x-access-token:{token}".encode()).decode()
     host = parts.netloc.rpartition("@")[2]
+    key = f"http.{parts.scheme}://{host}/.extraheader"
+    # An empty value first clears any header the checkout kept, such as actions/checkout's token.
     return {
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": f"http.{parts.scheme}://{host}/.extraheader",
-        "GIT_CONFIG_VALUE_0": header,
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": key,
+        "GIT_CONFIG_VALUE_0": "",
+        "GIT_CONFIG_KEY_1": key,
+        "GIT_CONFIG_VALUE_1": header,
     }
 
 
 def _auth_secrets(token: str, env: Mapping[str, str]) -> tuple[str, ...]:
-    header = env.get("GIT_CONFIG_VALUE_0", "")
+    header = env.get("GIT_CONFIG_VALUE_1", "")
     return (token, header, header.rpartition(" ")[2])
 
 
