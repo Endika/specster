@@ -148,6 +148,19 @@ def test_spec_round_posts_plan_and_moves_to_spec_ready(tmp_path: Path) -> None:
     assert outcome(tmp_path) == "outcome=spec\n"
 
 
+def test_the_planner_hears_the_serve_command_but_never_the_test_env(tmp_path: Path) -> None:
+    config = (
+        "build:\n  test_env: {API_TOKEN: s3cret-value}\n  preview:\n"
+        "    serve_command: [python, -m, app]\n    ready_url: 'http://127.0.0.1:8000/'\n"
+    )
+    model = ScriptedModel([[ToolCall("1", "submit_spec", SPEC)]])
+    assert run(env(tmp_path, config=config), tracker(), model) == 0
+    assert "served at http://127.0.0.1:8000, started by this command as is: python -m app" in (
+        model.system
+    )
+    assert "s3cret-value" not in model.system and "API_TOKEN" not in model.system
+
+
 def test_a_task_with_many_files_is_flagged_in_the_spec_footer(tmp_path: Path) -> None:
     files = [f"m{i}.py" for i in range(6)]
     big = {"id": "a", "title": "A", "description": "d", "files": files, "acceptance": ["x"]}

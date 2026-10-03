@@ -6,7 +6,7 @@ import stat
 import time
 import traceback
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
 
@@ -31,6 +31,8 @@ PNG_MAX_BYTES = 5 * 1024 * 1024
 PAGE_MAX_HEIGHT = 6000
 PAGE_MAX_S = 30.0
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+STATUS_MAX_BYTES = 16
+NO_RESPONSE = "none"
 
 Side = Literal["base", "head"]
 Viewport = Literal["desktop", "mobile"]
@@ -79,6 +81,14 @@ class Shot:
     png: bytes | None
     # Why there is no PNG.
     note: str = ""
+    # The HTTP status the page answered with; None when unknown.
+    http_status: int | None = None
+    # The page loaded with no HTTP response at all.
+    no_response: bool = False
+
+    @property
+    def http_error(self) -> bool:
+        return self.no_response or (self.http_status is not None and self.http_status >= 400)
 
 
 @dataclass(frozen=True)
@@ -285,7 +295,10 @@ def read_shots(
         return {p.name: tuple(Shot(v, None, unreadable) for v in VIEWPORTS) for p in pages}
     try:
         return {
-            p.name: tuple(_shot(dir_fd, f"{p.name}.{v}.png", v, side) for v in VIEWPORTS)
+            p.name: tuple(
+                _with_status(_shot(dir_fd, f"{p.name}.{v}.png", v, side), dir_fd, f"{p.name}.{v}")
+                for v in VIEWPORTS
+            )
             for p in pages
         }
     finally:
@@ -303,17 +316,43 @@ def _shot(dir_fd: int | None, name: str, viewport: Viewport, side: Side) -> Shot
         return Shot(viewport, None, _missing(side))
     except OSError as e:
         return Shot(viewport, None, f"unreadable: {e.strerror}")
-    st = os.fstat(fd)
-    if not stat.S_ISREG(st.st_mode) or st.st_nlink > 1:
-        os.close(fd)
+    data = _read_regular(fd, PNG_MAX_BYTES + 1)
+    if data is None:
         return Shot(viewport, None, "not a regular file")
-    with os.fdopen(fd, "rb") as f:
-        data = f.read(PNG_MAX_BYTES + 1)
     if len(data) > PNG_MAX_BYTES:
         return Shot(viewport, None, f"over the {PNG_MAX_BYTES // (1024 * 1024)} MB limit")
     if not data.startswith(PNG_MAGIC):
         return Shot(viewport, None, "not a PNG")
     return Shot(viewport, data)
+
+
+def _read_regular(fd: int, limit: int) -> bytes | None:
+    """Up to `limit` bytes of an open file, which it closes; None unless regular with one link."""
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink > 1:
+        os.close(fd)
+        return None
+    with os.fdopen(fd, "rb") as f:
+        return f.read(limit)
+
+
+def _with_status(shot: Shot, dir_fd: int | None, stem: str) -> Shot:
+    """The shot with the status from `{stem}.status`; anything but 100..599 or `none` is ignored."""
+    if dir_fd is None:
+        return shot
+    try:
+        fd = os.open(f"{stem}.status", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+    except OSError:
+        return shot
+    raw = _read_regular(fd, STATUS_MAX_BYTES + 1)
+    if raw is None or len(raw) > STATUS_MAX_BYTES:
+        return shot
+    text = raw.decode("ascii", "replace")
+    if text == NO_RESPONSE:
+        return replace(shot, no_response=True)
+    if len(text) == 3 and text.isdigit() and 100 <= int(text) <= 599:
+        return replace(shot, http_status=int(text))
+    return shot
 
 
 def _shoot(shoot: Shoot, side: Side) -> tuple[Mapping[str, Sequence[Shot]], str]:

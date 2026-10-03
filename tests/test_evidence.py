@@ -455,6 +455,47 @@ def test_read_shots_of_a_missing_folder_notes_every_shot(tmp_path: Path) -> None
     }
 
 
+def test_read_shots_takes_the_status_each_page_answered_with(tmp_path: Path) -> None:
+    for name in ("home.desktop", "home.mobile", "about.desktop"):
+        (tmp_path / f"{name}.png").write_bytes(png(name))
+    (tmp_path / "home.desktop.status").write_text("404")
+    (tmp_path / "home.mobile.status").write_text("none")
+    (tmp_path / "about.mobile.status").write_text("500")
+    got = read_shots(tmp_path, PAGES, "base")
+    assert got["home"] == (
+        Shot("desktop", png("home.desktop"), http_status=404),
+        Shot("mobile", png("home.mobile"), no_response=True),
+    )
+    assert got["about"][0] == Shot("desktop", png("about.desktop"))
+    assert got["about"][1] == Shot(
+        "mobile", None, "not captured: see browser-base.log", http_status=500
+    )
+    assert [s.http_error for s in (*got["home"], *got["about"])] == [True, True, False, True]
+
+
+@pytest.mark.parametrize(
+    "raw", [b"abc", b"99", b"600", b"0200", b" 200", b"200\n", b"2e2", b"NONE", b"\xd9\xa2" * 3]
+)
+def test_read_shots_ignores_a_status_that_is_not_one(tmp_path: Path, raw: bytes) -> None:
+    (tmp_path / "home.desktop.png").write_bytes(png("d"))
+    (tmp_path / "home.desktop.status").write_bytes(raw)
+    desktop, _ = read_shots(tmp_path, PAGES[:1], "base")["home"]
+    assert desktop == Shot("desktop", png("d"))
+
+
+def test_read_shots_reads_a_status_only_from_a_small_regular_file(tmp_path: Path) -> None:
+    secret = tmp_path / "secret"
+    secret.write_text("404")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "home.desktop.status").symlink_to(secret)
+    os.mkfifo(out / "home.mobile.status")
+    (out / "about.desktop.status").hardlink_to(secret)
+    (out / "about.mobile.status").write_bytes(b"404" + b" " * 64)
+    got = read_shots(out, PAGES, "base")
+    assert all(s.http_status is None and not s.no_response for v in got.values() for s in v)
+
+
 def test_a_page_changed_only_when_both_sides_have_a_different_png() -> None:
     page = PAGES[0]
     same = (Shot("desktop", png("a")), Shot("mobile", png("b")))

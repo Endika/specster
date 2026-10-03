@@ -236,7 +236,6 @@ class SpecPhase:
         self, user_text: str, ws: Workspace, repo_map: RepoMap, skills: SkillBook, revision: bool
     ) -> AgentOutcome:
         cfg = self.run.cfg
-        preview = cfg.build.preview is not None
         try:
             model = self.make_model(cfg.models.planner)
         except ProviderConfigError as e:
@@ -244,7 +243,7 @@ class SpecPhase:
         try:
             return run_agent(
                 model,
-                system_prompt(cfg.persona, skills.on_demand, revision, preview),
+                system_prompt(cfg.persona, skills.on_demand, revision, cfg.build.preview),
                 context_block(repo_map, skills.inline),
                 user_text,
                 ws,
@@ -252,7 +251,7 @@ class SpecPhase:
                 cfg.budget.max_turns,
                 cfg.persona.max_questions,
                 revision=revision,
-                preview=preview,
+                preview=cfg.build.preview is not None,
             )
         except AgentError as e:
             planner = cfg.models.planner

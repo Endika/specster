@@ -782,6 +782,33 @@ def test_a_page_side_without_a_shot_says_why_and_is_not_compared() -> None:
     assert "| Request |" not in body
 
 
+def test_a_page_that_answered_with_an_error_or_nothing_says_so_beside_its_shot() -> None:
+    old = PNG_MAGIC + b"old"
+    base = (
+        Shot("desktop", old, http_status=404),
+        Shot("mobile", None, "not a PNG", no_response=True),
+    )
+    head = (Shot("desktop", old, http_status=200), Shot("mobile", old, http_status=301))
+    run = EvidenceRun((), (), {}, (page_item("home", base, head),))
+    body = render_pr_body(view(evidence=run, evidence_links=image_links(HOME)), bare())
+    assert 'alt="home base desktop" width="400"><br>the page answered 404 | <img ' in body
+    assert "| Mobile | not a PNG<br>no response | <img " in body
+    assert body.count("<br>") == 2 and "answered 200" not in body
+
+
+@pytest.mark.parametrize(
+    ("lang", "said"),
+    [
+        ("en", "| Desktop | screenshot not uploaded<br>the page answered 500 |"),
+        ("es", "| Escritorio | captura sin subir<br>la p\u00e1gina respondi\u00f3 500 |"),
+    ],
+)
+def test_the_error_note_is_in_the_comment_language(lang: str, said: str) -> None:
+    broken = (Shot("desktop", PNG_MAGIC, http_status=500), Shot("mobile", PNG_MAGIC))
+    run = EvidenceRun((), (), {}, (page_item("home", broken, broken),))
+    assert said in render_pr_body(view(evidence=run), ctx(language=lang))
+
+
 @pytest.mark.parametrize(
     ("lang", "said"),
     [
