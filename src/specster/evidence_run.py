@@ -52,6 +52,8 @@ class CaptureSetup:
     # Seconds left before the run's time limit; None never stops on time.
     time_left: Callable[[], float] | None = None
     install_browser: Installer = install
+    # What the warnings call the run that is out of time.
+    run_name: str = "the build"
 
 
 class EvidenceCapture:
@@ -103,7 +105,7 @@ class EvidenceCapture:
             )
             return None
         if self._out_of_time():
-            self.warnings.append("evidence skipped: the build is out of time")
+            self.warnings.append(f"evidence skipped: {self.s.run_name} is out of time")
             return None
         browser = self._install_browser() if pages else None
         if pages and browser is None and not requests:

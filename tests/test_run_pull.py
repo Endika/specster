@@ -86,11 +86,20 @@ def outcome(tmp_path: Path) -> str:
     return (tmp_path / "out.txt").read_text()
 
 
-@pytest.mark.parametrize(("label", "phase"), [("ai-evidence", "evidence"), ("ai-fix", "fix")])
-def test_a_pull_request_label_reaches_its_phase(tmp_path: Path, label: str, phase: str) -> None:
+@pytest.mark.parametrize(
+    ("label", "phase", "said"),
+    [
+        # Without build.preview the evidence phase refuses before it reads anything else.
+        ("ai-evidence", "evidence", "build.preview is not set"),
+        ("ai-fix", "fix", "ai-fix is not implemented yet"),
+    ],
+)
+def test_a_pull_request_label_reaches_its_phase(
+    tmp_path: Path, label: str, phase: str, said: str
+) -> None:
     tr = tracker(label)
     assert go(env(tmp_path, label), tr) == 1
-    assert len(tr.posted) == 1 and f"{label} is not implemented yet" in tr.posted[0]
+    assert len(tr.posted) == 1 and said in tr.posted[0]
     assert extract_markers(tr.posted[0])[0].phase == phase
     assert tr.issue.labels == () and outcome(tmp_path) == "outcome=refused\n"
 
@@ -178,8 +187,8 @@ def test_a_pull_request_cannot_change_the_config_specster_applies(tmp_path: Path
 
     tr = tracker("show-me", pull)
     assert go(env(tmp_path, "show-me"), tr) == 1
-    assert "show-me is not implemented yet" in tr.posted[0]
-    assert "No se ha ejecutado nada" in tr.posted[0]
+    assert "build.preview is not set" in tr.posted[0]
+    assert "vuelve a poner la etiqueta `show-me`" in tr.posted[0]
 
 
 class NoPullReads(FakeTracker):

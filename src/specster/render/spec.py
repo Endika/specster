@@ -136,10 +136,16 @@ def render_error(message: str, hint: str, ctx: RenderContext) -> str:
     return _wrap(_no_closing(ctx), body, "")
 
 
-def render_budget(spent_usd: float, unknown_runs: int, cap: float, ctx: RenderContext) -> str:
+def render_budget(
+    spent_usd: float, unknown_runs: int, cap: float, ctx: RenderContext, pull: bool = False
+) -> str:
     lab = _l(ctx)
     extra = f" (+{unknown_runs} runs with unknown cost)" if unknown_runs else ""
-    body = [f"**{lab['budget']}**", "", f"${spent_usd:.2f}{extra} of ${cap:.2f}."]
+    body = [
+        f"**{lab['budget_pull' if pull else 'budget']}**",
+        "",
+        f"${spent_usd:.2f}{extra} of ${cap:.2f}.",
+    ]
     return _wrap(_no_closing(ctx), body, "")
 
 

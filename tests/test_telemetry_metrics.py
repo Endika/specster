@@ -14,6 +14,9 @@ from tests.test_run_build import approve, book, is_reviewer, unprivileged, world
 from tests.test_run_cleanup import go as cleanup
 from tests.test_run_cleanup import tracker as cleanup_tracker
 from tests.test_run_cleanup import world as cleanup_world
+from tests.test_run_evidence import go as evidence_go
+from tests.test_run_evidence import tracker as evidence_tracker
+from tests.test_run_evidence import world as evidence_world
 
 Points = Callable[[], list[Point]]
 
@@ -120,3 +123,17 @@ def test_cleanup_records_only_the_run(tmp_path: Path, metric_points: Points) -> 
             {"specster.repo": "o/r", "specster.phase": "cleanup", "specster.outcome": "skipped"},
         )
     ]
+
+
+def test_an_evidence_run_records_its_phase_and_evidence(
+    tmp_path: Path, metric_points: Points
+) -> None:
+    e, pull, _ = evidence_world(tmp_path, "{preview}")
+    model = ScriptedModel([[ToolCall("s", "submit_evidence", {"why": "Only docs change."})]])
+    assert evidence_go(e, evidence_tracker(pull), model) == 0
+    points = metric_points()
+    base = {"specster.phase": "evidence", "specster.outcome": "evidence_posted"}
+    assert len(named(points, "specster.runs", base)) == 1
+    assert len(named(points, "specster.role.turns", base | {"specster.role": "planner"})) == 1
+    states = {p.attributes["specster.state"] for p in named(points, "specster.build.evidence")}
+    assert states == {"items", "problems"} and named(points, "specster.build.tasks") == []

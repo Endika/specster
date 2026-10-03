@@ -227,7 +227,7 @@ class BuildPhase:
                     self.git.run("worktree", "prune")
                 except GitError as e:
                     log(f"could not prune worktrees: {e}")
-                _give_back(self.run.env.workspace)
+                give_back(self.run.env.workspace)
 
     def _approve(self) -> _Approval | int:
         """The approved plan, or the exit code of a refusal or a spent issue budget."""
@@ -510,7 +510,7 @@ class BuildPhase:
         return linked
 
 
-def _give_back(workspace: Path) -> None:
+def give_back(workspace: Path) -> None:
     """Hand what root created or rewrote in the checkout's .git back to the workspace owner."""
     try:
         owner = workspace.stat()

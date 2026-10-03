@@ -51,6 +51,9 @@ _REWRITE_KEYS = re.compile(r"^url\.(.*)\.(insteadof|pushinsteadof)$", re.IGNOREC
 _URL = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]*)(.*)$", re.DOTALL)
 
 
+_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
 class GitError(Exception):
     pass
 
@@ -387,6 +390,32 @@ class Git:
             "--no-write-fetch-head",
             url,
             f"+refs/heads/{branch}:{into}",
+            extra_env=env,
+            secrets=_auth_secrets(token, env),
+            timeout=PUSH_TIMEOUT_S,
+        )
+
+    def has_commit(self, sha: str) -> bool:
+        proc = self._exec(("cat-file", "-e", f"{sha}^{{commit}}"), None, None, ())
+        return proc.returncode == 0
+
+    def fetch_commits(self, url: str, token: str, shas: Sequence[str]) -> None:
+        """Bring in the commits not here yet, with their history, and write no ref."""
+        bad = [sha for sha in shas if not _SHA.fullmatch(sha)]
+        if bad:
+            raise GitError(f"not a commit id: {bad[0]!r}")
+        missing = [sha for sha in shas if not self.has_commit(sha)]
+        if not missing:
+            return
+        env = _auth_env(url, token)
+        self.run(
+            *_REMOTE_OPTS,
+            "fetch",
+            "-q",
+            "--no-tags",
+            "--no-write-fetch-head",
+            url,
+            *missing,
             extra_env=env,
             secrets=_auth_secrets(token, env),
             timeout=PUSH_TIMEOUT_S,

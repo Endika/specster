@@ -9,8 +9,12 @@ from specster.ledger import Meter
 from specster.llm.base import ChatModel, ChatSession, ToolResult, ToolSpec, Turn, Usage
 from specster.plan import PlanError, normalize_plan
 from specster.schemas import (
+    SUBMIT_EVIDENCE,
     SUBMIT_QUESTIONS,
     SUBMIT_SPEC,
+    EvidencePage,
+    EvidencePlan,
+    EvidenceRequest,
     PlanTask,
     QuestionsResult,
     SpecResult,
@@ -21,10 +25,17 @@ from specster.telemetry import span
 from specster.workspace import ToolError, Workspace
 
 NUDGE = "Call submit_questions or submit_spec now."
+EVIDENCE_NUDGE = "Call submit_evidence now."
 LAST = "Last turn: submit now."
 
 
 TIME_UP = "the build reached its time limit (build.max_minutes)"
+# How run_loop says the model itself never gave a usable submission, as opposed to a provider error.
+NO_SUBMISSION = (
+    "model stopped without submitting",
+    "invalid submission twice",
+    "no submission after",
+)
 # The spec comment shows each body twice and must stay under GitHub's 65,536 characters.
 EVIDENCE_BODY_MAX_CHARS = 2_000
 
@@ -297,6 +308,27 @@ def run_loop[T](
     raise AgentError(f"no submission after {max_turns} turns", usage, max_turns)
 
 
+def check_evidence(
+    evidence: Sequence[EvidenceRequest], pages: Sequence[EvidencePage], preview: bool
+) -> None:
+    """The rules a spec's evidence and a pull request's share, past what the schema checks."""
+    if (evidence or pages) and not preview:
+        raise SubmissionError(
+            "evidence and pages need build.preview in the repository's config, which is "
+            "not set; leave both empty"
+        )
+    names = [e.name for e in evidence] + [p.name for p in pages]
+    if len(set(names)) != len(names):
+        raise SubmissionError("names of evidence and pages must be unique")
+    for e in evidence:
+        size = len(json.dumps(e.body, sort_keys=True, separators=(",", ":")))
+        if size > EVIDENCE_BODY_MAX_CHARS:
+            raise SubmissionError(
+                f"the body of evidence {e.name} is {size:,} characters as JSON; keep each "
+                f"under {EVIDENCE_BODY_MAX_CHARS:,} with only the fields the change needs"
+            )
+
+
 def run_agent(
     model: ChatModel,
     system: str,
@@ -323,21 +355,7 @@ def run_agent(
         result = SpecResult.model_validate(args)
         if result.changes and not revision:
             raise SubmissionError("changes is only for revising a previous spec; leave it empty")
-        if (result.evidence or result.pages) and not preview:
-            raise SubmissionError(
-                "evidence and pages need build.preview in the repository's config, which is "
-                "not set; leave both empty"
-            )
-        names = [e.name for e in result.evidence] + [p.name for p in result.pages]
-        if len(set(names)) != len(names):
-            raise SubmissionError("names of evidence and pages must be unique")
-        for e in result.evidence:
-            size = len(json.dumps(e.body, sort_keys=True, separators=(",", ":")))
-            if size > EVIDENCE_BODY_MAX_CHARS:
-                raise SubmissionError(
-                    f"the body of evidence {e.name} is {size:,} characters as JSON; keep each "
-                    f"under {EVIDENCE_BODY_MAX_CHARS:,} with only the fields the change needs"
-                )
+        check_evidence(result.evidence, result.pages, preview)
         tasks, fixes = normalize_plan(result.tasks)
         return result, tasks, fixes
 
@@ -347,3 +365,39 @@ def run_agent(
     out = run_loop(model, system, context, thread_text, tools, handlers, submits, max_turns, NUDGE)
     result, tasks, fixes = out.value
     return AgentOutcome(result, tasks, fixes, out.usage, out.turns)
+
+
+def run_evidence_planner(
+    model: ChatModel,
+    system: str,
+    context: str,
+    user: str,
+    ws: Workspace,
+    max_turns: int,
+) -> LoopResult[EvidencePlan]:
+    """What to request and shoot at a pull request's base and head, read from its head."""
+
+    def submit(args: dict[str, Any]) -> EvidencePlan:
+        plan = EvidencePlan.model_validate(args)
+        check_evidence(plan.evidence, plan.pages, preview=True)
+        return plan
+
+    tools = [
+        *read_tool_specs(),
+        ToolSpec(
+            SUBMIT_EVIDENCE,
+            "Submit the requests and pages to capture, or none, with why. Ends the run.",
+            json_schema(EvidencePlan),
+        ),
+    ]
+    return run_loop(
+        model,
+        system,
+        context,
+        user,
+        tools,
+        read_handlers(ws),
+        {SUBMIT_EVIDENCE: submit},
+        max_turns,
+        EVIDENCE_NUDGE,
+    )

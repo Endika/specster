@@ -151,6 +151,22 @@ def budget_stop(ledger: Ledger, budget: BudgetConfig, prior_known_usd: float) ->
     return None
 
 
+def bill_fatal(
+    ledger: Ledger, role: str, model: ModelConfig, e: BaseException, meter: Meter | None
+) -> None:
+    """Bill a model loop that died: what it reported, else its metered turns, else unknown."""
+    found = attached_usage(e)
+    if found is None and meter is not None:
+        usage, turns = meter.snapshot()
+        # A done turn is known (AgentError's turn_no - 1); with zero, a send may be in flight.
+        found = (usage, turns) if turns else None
+    if found is None:
+        # Turns may have been paid for; an unknown cost is never billed as $0.
+        ledger.mark_unknown(role, model)
+    else:
+        ledger.add(role, model, *found)
+
+
 def apply_changes(
     tree: Path,
     changes: Mapping[str, str],
@@ -458,7 +474,7 @@ class _Build:
             # A worker already picked from the queue must not start after a fatal error.
             self._aborted.set()
             if started:
-                self._bill_fatal(role, model, e, meter)
+                bill_fatal(self.s.ledger, role, model, e, meter)
             raise
         finally:
             if meter is not None:
@@ -486,20 +502,6 @@ class _Build:
             self.warnings.append(f"{result.task_id} was not escalated: {stop}")
             return False
         return True
-
-    def _bill_fatal(
-        self, role: str, model: ModelConfig, e: BaseException, meter: Meter | None
-    ) -> None:
-        found = attached_usage(e)
-        if found is None and meter is not None:
-            usage, turns = meter.snapshot()
-            # A done turn is known (AgentError's turn_no - 1); with zero, a send may be in flight.
-            found = (usage, turns) if turns else None
-        if found is None:
-            # Turns may have been paid for; an unknown cost is never billed as $0.
-            self.s.ledger.mark_unknown(role, model)
-        else:
-            self.s.ledger.add(role, model, *found)
 
     def _record(self, task: PlanTask, result: WorkerResult) -> None:
         record = self.records[task.id]
@@ -611,7 +613,7 @@ class _Build:
     def _unfinished(self) -> tuple[Outcome, str] | None:
         records = [self.records[t.id] for t in self.tasks]
         for r in records:
-            cap = _budget_cut(r.reason) if r.status == "failed" else None
+            cap = budget_cut(r.reason) if r.status == "failed" else None
             if cap is not None:
                 return "budget_exhausted", f"{r.task.id}: {cap}"
         order: tuple[tuple[Status, Outcome], ...] = (
@@ -717,7 +719,7 @@ class _Build:
             s.ledger.add("reviewer", self.cfg.models.reviewer, e.usage, e.turns)
             raise
         except BaseException as e:
-            self._bill_fatal("reviewer", self.cfg.models.reviewer, e, meter)
+            bill_fatal(s.ledger, "reviewer", self.cfg.models.reviewer, e, meter)
             raise
         else:
             s.ledger.add("reviewer", self.cfg.models.reviewer, outcome.usage, outcome.turns)
@@ -808,7 +810,7 @@ class _Build:
             try:
                 review = self._review(_test_text(final, setup_failed), round_no)
             except AgentError as e:
-                cap = _budget_cut(str(e))
+                cap = budget_cut(str(e))
                 if cap is not None:
                     return report("budget_exhausted", cap)
                 late = self._time_stop()
@@ -845,7 +847,7 @@ class _Build:
         raise AssertionError("unreachable: the last round always returns")
 
 
-def _budget_cut(reason: str) -> str | None:
+def budget_cut(reason: str) -> str | None:
     """The cap that cut a model loop short, if the budget is what stopped it."""
     _, cut, cap = reason.partition(BUDGET_CUT)
     return cap.split(";")[0] if cut else None

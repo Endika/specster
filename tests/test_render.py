@@ -22,12 +22,14 @@ from specster.plan import plan_payload
 from specster.render import (
     LABELS,
     BuildView,
+    PullEvidenceView,
     RenderContext,
     fence,
     render_budget,
     render_build,
     render_error,
     render_pr_body,
+    render_pull_evidence,
     render_questions,
     render_refused,
     render_spec,
@@ -38,6 +40,7 @@ from specster.render.common import BODY_MAX
 from specster.sandbox import RunResult
 from specster.schemas import (
     EvidencePage,
+    EvidencePlan,
     EvidenceRequest,
     Finding,
     PlanTask,
@@ -892,3 +895,44 @@ def test_a_pipe_in_a_request_path_is_escaped_in_the_pr_evidence_table() -> None:
     one = EvidenceItem(get("ab", "/q?x=1|2"), capture, capture, diff_text("ab", capture, capture))
     body = render_pr_body(view(evidence=evidence_run(one)), bare())
     assert "| `ab` | `GET /q?x=1\\|2` |" in body
+
+
+def pull_ctx(language: str) -> RenderContext:
+    m = RunMetrics(
+        run_id="1", phase="evidence", outcome="budget_exhausted", provider="p", model="m"
+    )
+    return RenderContext(PersonaConfig(language=language), m, (), ())
+
+
+def test_a_pull_request_stopped_by_its_budget_says_so_in_spanish() -> None:
+    view = PullEvidenceView(
+        "a" * 40,
+        "b" * 40,
+        "ai-evidence",
+        None,
+        None,
+        reason="build budget spent: $1.00 of $1.00",
+        budget_spent=True,
+    )
+    body = render_pull_evidence(view, pull_ctx("es"))
+    assert "**Sin evidencia: el presupuesto está agotado**" in body
+    assert "Base `aaaaaaa` → head `bbbbbbb`" in body
+    assert "build budget spent: $1.00 of $1.00" in body
+    assert "Vuelve a poner la etiqueta `ai-evidence` para capturarla de nuevo." in body
+    assert "Qué he elegido" not in body and "- Evidence: 0 requests captured" in body
+    assert "- Comments:" not in body and "- Build:" not in body
+
+
+def test_a_pull_request_whose_capture_never_ran_says_where_to_look() -> None:
+    plan = EvidencePlan.model_validate(
+        {"evidence": [{"name": "a", "method": "GET", "path": "/a", "why": "w"}], "why": "<b>@x</b>"}
+    )
+    view = PullEvidenceView("a" * 40, "b" * 40, "ai-evidence", plan, None)
+    body = render_pull_evidence(view, pull_ctx("en"))
+    assert "Nothing was captured: the warnings in the details below say why." in body
+    assert "&lt;b>&#64;x&lt;/b>" in body and "| `a` | `GET /a` | w |" in body
+
+
+def test_a_spent_pull_request_budget_says_pull_request_in_spanish() -> None:
+    body = render_budget(2.5, 0, 2.0, pull_ctx("es"), pull=True)
+    assert "**El presupuesto de esta pull request está agotado**" in body and "issue" not in body

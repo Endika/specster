@@ -6,6 +6,7 @@ SUBMIT_QUESTIONS = "submit_questions"
 SUBMIT_SPEC = "submit_spec"
 SUBMIT_TASK = "submit_task"
 SUBMIT_REVIEW = "submit_review"
+SUBMIT_EVIDENCE = "submit_evidence"
 
 
 class _Out(BaseModel):
@@ -113,6 +114,29 @@ class SpecResult(_Out):
         description="Only in revision mode: each change from the previous spec, one line each.",
     )
     closing_line: str = Field(default="", max_length=300, description="The closing sentence.")
+
+    @model_validator(mode="after")
+    def _evidence_total(self) -> Self:
+        if len(self.evidence) + len(self.pages) > EVIDENCE_MAX:
+            raise ValueError(f"evidence and pages together are at most {EVIDENCE_MAX}")
+        return self
+
+
+class EvidencePlan(_Out):
+    evidence: list[EvidenceRequest] = Field(
+        default=[],
+        max_length=EVIDENCE_MAX,
+        description="HTTP requests run against the app at the base and at the head.",
+    )
+    pages: list[EvidencePage] = Field(
+        default=[],
+        max_length=EVIDENCE_MAX,
+        description="Pages screenshotted at the base and at the head.",
+    )
+    why: str = _text(
+        1000,
+        "What you chose and why, or why nothing visible changes, in one to three sentences.",
+    )
 
     @model_validator(mode="after")
     def _evidence_total(self) -> Self:

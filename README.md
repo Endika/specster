@@ -111,7 +111,7 @@ jobs:
     concurrency:
       group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
       cancel-in-progress: false
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
       contents: write
       pull-requests: write
@@ -348,7 +348,7 @@ Everything `Endika/specster@v0` accepts. Pass the key(s) of whichever provider(s
 
 | Output | Values |
 |---|---|
-| `outcome` | `questions`, `spec`, `refused`, `pr_opened`, `not_approved`, `build_failed`, `error`, `budget_exhausted`, `cleaned` (a closed pull request's evidence removed), or `skipped` when the event was not for Specster |
+| `outcome` | `questions`, `spec`, `refused`, `pr_opened`, `not_approved`, `build_failed`, `evidence_posted` (evidence commented on a pull request), `error`, `budget_exhausted`, `cleaned` (a closed pull request's evidence removed), or `skipped` when the event was not for Specster |
 
 Providers that take no key input, and how each one logs in: [Providers](docs/configuration.md#providers).
 
