@@ -34,8 +34,9 @@ reviewers asked into tasks, and the build machinery applies them: workers, tests
 a reviewer, the same `build.*` settings, escalation included. The result is pushed as commits on
 the pull request's own branch, never to a new branch.
 
-- A pull request whose head is the default branch, `specster-evidence` or a protected branch (a
-  `main` to `release` pull request, say) is refused before any model call: the label needs only
+- A pull request whose head is the default branch, `specster-evidence` or a protected branch (classic
+  branch protection, or a ruleset that requires pull requests or restricts updates; a `main` to
+  `release` pull request, say) is refused before any model call: the label needs only
   triage, and its commits would land there without a review.
 
 - Only comments from people `trust.comments` accepts count, plus the pull request's author with

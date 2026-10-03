@@ -70,7 +70,8 @@ which anyone can write, so they have their own rules.
   a lease on the head it read at the start. If anyone pushed meanwhile, nothing is pushed.
 - **Never onto the default branch.** The label needs only triage, so `ai-fix` refuses, before
   any model call, a pull request whose head is the default branch, `specster-evidence` or a
-  protected branch (a `main` to `release` pull request, say): its commits would land there
+  protected branch (classic protection, or a ruleset that requires pull requests or restricts
+  updates; a `main` to `release` pull request, say): its commits would land there
   without a review.
 - **Answered markers are Specster's alone.** The marker that skips an item on a re-run sits on
   the last line of Specster's comment or reply, and quoted output (test logs, comments) is

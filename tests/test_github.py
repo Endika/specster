@@ -17,6 +17,12 @@ class FakeGitHubServer:
         self.branches = {"specster/issue-3"}
         self.pulls: list[dict[str, object]] = []
         self.pull_refused: set[str] = set()
+        self.rules: dict[str, object] = {
+            "ruled/pr": [{"type": "deletion"}, {"type": "pull_request"}],
+            "ruled/update": [{"type": "update"}],
+            "ruled/other": [{"type": "creation"}, {"type": "non_fast_forward"}],
+            "ruled/odd": {"message": "not a list"},
+        }
         self.patched: dict[int, dict[str, object]] = {}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -92,10 +98,31 @@ class FakeGitHubServer:
             return httpx.Response(201, json={})
         if path == "/repos/o/r" and method == "GET":
             return httpx.Response(200, json={"default_branch": "trunk"})
+        if path.startswith("/repos/o/r/rules/branches/") and method == "GET":
+            name = path.removeprefix("/repos/o/r/rules/branches/")
+            if name == "secret":
+                return httpx.Response(403, json={"message": "Resource not accessible"})
+            if name in ("ruled/late", "ruled/endless"):
+                page = int(request.url.params.get("page", "1"))
+                late = name == "ruled/late" and page >= 2
+                link = (
+                    f"<https://api.github.com/repos/o/r/rules/branches/{name}"
+                    f'?page={page + 1}>; rel="next"'
+                )
+                return httpx.Response(
+                    200,
+                    json=[{"type": "pull_request" if late else "creation"}],
+                    headers={} if late else {"Link": link},
+                )
+            if name not in self.rules:
+                return httpx.Response(404, json={"message": "Not Found"})
+            return httpx.Response(200, json=self.rules[name])
         if path.startswith("/repos/o/r/branches/") and method == "GET":
             name = path.removeprefix("/repos/o/r/branches/")
             if name == "secret":
                 return httpx.Response(403, json={"message": "Resource not accessible"})
+            if name == "bare":
+                return httpx.Response(200, json={"name": name})
             if name not in self.branches | {"trunk"}:
                 return httpx.Response(404, json={"message": "Branch not found"})
             return httpx.Response(200, json={"name": name, "protected": name == "trunk"})
@@ -209,6 +236,40 @@ def test_branch_protection_is_read_and_a_missing_branch_is_not_protected() -> No
     assert not gh.branch_protected("specster/issue-7")
     with pytest.raises(httpx.HTTPStatusError):
         gh.branch_protected("secret")
+
+
+def test_a_branch_response_without_the_protected_flag_is_an_error() -> None:
+    with pytest.raises(GitHubError, match="no `protected` flag"):
+        client(FakeGitHubServer()).branch_protected("bare")
+
+
+def test_rulesets_that_require_pull_requests_or_restrict_updates_block_pushes() -> None:
+    gh = client(FakeGitHubServer())
+    assert gh.branch_ruleset_blocks_pushes("ruled/pr")
+    assert gh.branch_ruleset_blocks_pushes("ruled/update")
+
+
+def test_other_rules_and_a_branch_without_rules_do_not_block_pushes() -> None:
+    gh = client(FakeGitHubServer())
+    assert not gh.branch_ruleset_blocks_pushes("ruled/other")
+    assert not gh.branch_ruleset_blocks_pushes("feature/free")
+
+
+def test_a_blocking_rule_on_a_later_page_is_found() -> None:
+    assert client(FakeGitHubServer()).branch_ruleset_blocks_pushes("ruled/late")
+
+
+def test_rules_that_never_stop_paging_are_an_error_not_a_pass() -> None:
+    with pytest.raises(GitHubError, match="more than"):
+        client(FakeGitHubServer()).branch_ruleset_blocks_pushes("ruled/endless")
+
+
+def test_unreadable_or_malformed_rules_are_errors() -> None:
+    gh = client(FakeGitHubServer())
+    with pytest.raises(httpx.HTTPStatusError):
+        gh.branch_ruleset_blocks_pushes("secret")
+    with pytest.raises(GitHubError):
+        gh.branch_ruleset_blocks_pushes("ruled/odd")
 
 
 def test_create_pull_returns_its_url_and_explains_a_refusal() -> None:

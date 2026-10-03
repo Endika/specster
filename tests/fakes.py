@@ -50,6 +50,8 @@ class FakeTracker:
     replies: list[tuple[int, int, str]] = field(default_factory=list)
     protected: set[str] = field(default_factory=set)
     protected_error: str | None = None
+    ruled: set[str] = field(default_factory=set)
+    ruled_error: str | None = None
 
     def get_issue(self, number: int) -> Issue:
         return self.issue
@@ -119,6 +121,11 @@ class FakeTracker:
         if self.protected_error is not None:
             raise GitHubError(self.protected_error, 403)
         return branch in self.protected
+
+    def branch_ruleset_blocks_pushes(self, branch: str) -> bool:
+        if self.ruled_error is not None:
+            raise GitHubError(self.ruled_error, 403)
+        return branch in self.ruled
 
 
 def _with_labels(issue: Issue, labels: set[str]) -> Issue:
