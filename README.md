@@ -42,7 +42,7 @@ pull requests comes in [Full setup](#full-setup).
 
 ## Full setup
 
-Specs, builds, evidence cleanup and a manual trigger.
+Specs, builds, `ai-evidence` and `ai-fix` on pull requests, evidence cleanup and a manual trigger.
 
 **1. Add the workflow** as `.github/workflows/specster.yml`, in place of the one above:
 
@@ -53,7 +53,7 @@ on:
   issues:
     types: [labeled]
   pull_request:
-    types: [closed]
+    types: [labeled, closed]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -69,14 +69,13 @@ permissions:
   contents: read
   issues: write
 
-concurrency:
-  group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
-  cancel-in-progress: false
-
 jobs:
   spec:
-    if: (github.event_name == 'workflow_dispatch' && inputs.phase != 'build') || github.event.label.name == 'ai-spec'
+    if: (github.event_name == 'workflow_dispatch' && inputs.phase != 'build') || (github.event_name == 'issues' && github.event.label.name == 'ai-spec')
     runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -87,8 +86,11 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   build:
-    if: (github.event_name == 'workflow_dispatch' && inputs.phase == 'build') || github.event.label.name == 'ai-build'
+    if: (github.event_name == 'workflow_dispatch' && inputs.phase == 'build') || (github.event_name == 'issues' && github.event.label.name == 'ai-build')
     runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
     timeout-minutes: 120
     permissions:
       contents: write
@@ -103,9 +105,50 @@ jobs:
           phase: ${{ inputs.phase || 'build' }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
-  cleanup:
-    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'specster/issue-') && github.event.pull_request.head.repo.full_name == github.repository
+  evidence:
+    if: github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'ai-evidence' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: Endika/specster@v0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  fix:
+    if: github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'ai-fix' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: Endika/specster@v0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  cleanup:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: specster-issue-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+      cancel-in-progress: false
     timeout-minutes: 5
     permissions:
       contents: write
@@ -202,6 +245,8 @@ labels:
   ready: spec-ready             # applied when Specster publishes a spec
   build: ai-build                # trigger label for the build phase
   built: ai-pr                    # applied when a build opens a pull request
+  evidence: ai-evidence          # trigger label on a pull request: before/after evidence
+  fix: ai-fix                    # trigger label on a pull request: apply its open review threads
 
 trust:
   comments: collaborators       # all | collaborators | owner: who counts, by author_association

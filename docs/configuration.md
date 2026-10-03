@@ -35,6 +35,11 @@ carries a "Changes from the previous spec" section instead of starting over. The
 comment left in place and `ai-build` added instead is refused, since the spec does not cover it
 yet (see "Build phase").
 
+On a pull request, two other labels apply: `ai-evidence` (`labels.evidence`) and `ai-fix`
+(`labels.fix`). Specster reads them from the `pull_request` event and ignores any other label
+there. It refuses, with a short comment, a pull request from a fork (or from a deleted fork), a
+closed one and a draft, and nothing else runs. Either way the label comes off at the end.
+
 Adding a label needs the "triage" repository permission (or higher) on GitHub, so that permission
 is the trigger control. `workflow_dispatch` with an `issue_number` input works the same way and is
 useful for re-running a failed job without re-labeling.
@@ -43,11 +48,13 @@ useful for re-running a failed job without re-labeling.
 
 
 - `actions/checkout` must run before Specster, or it has no repository to explore.
-- The `concurrency` group is per issue: two labelings of the same issue queue instead of racing.
-  `cancel-in-progress: false` because a half-finished run must not be killed mid-comment.
-  A closed pull request's cleanup uses the group of the pull request's number, so two closes of
-  the same pull request queue; against other runs, the evidence branch is protected by a leased
-  push that retries once.
+- The `concurrency` group is per issue or pull request number: two labelings of the same issue
+  queue instead of racing. `cancel-in-progress: false` because a half-finished run must not be
+  killed mid-comment. A pull request's `ai-evidence`, `ai-fix` and cleanup runs share its
+  number's group, so they queue behind each other; against other runs, the evidence branch is
+  protected by a leased push that retries once. The group is set on each job, not on the
+  workflow: a job skipped by its `if` (another label, such as `bug`) never joins it, so it cannot
+  take the place of a Specster run waiting in the queue.
 - The `spec` job's `permissions` is the minimum: `contents: read` to explore the repo, `issues:
   write` to comment and change labels. The `build` job needs more: `contents: write` to push the
   branch, `pull-requests: write` to open the PR, `issues: write` to comment, change labels and
@@ -55,27 +62,40 @@ useful for re-running a failed job without re-labeling.
   `GITHUB_TOKEN`, opening pull requests from an Action also needs "Allow GitHub Actions to create
   and approve pull requests" turned on in the repository's Settings > Actions > General; without
   it, the branch is still pushed but the pull request step is refused (see [Permissions](build.md#permissions)).
+  The `evidence` and `fix` jobs need `contents: write` (to publish evidence, or push to the pull
+  request's branch) and `pull-requests: write` (to comment, reply to review threads and change
+  labels on the pull request).
   The `cleanup` job only needs `contents: write`, to remove the closed pull request's folder from
   the `specster-evidence` branch; it never comments on the pull request or the issue.
-- Each job's `if` keeps other labels, other issue events and the other phase from ever starting
-  the container; the label is also checked again inside Specster against `labels.spec` and
-  `labels.build` in the config. If you rename either label, change the matching `if:` too, or the
-  job never starts. The `cleanup` job starts only when a pull request from a `specster/issue-*`
-  branch of this repository (never a fork) is closed, merged or not, whoever closed it, bots
-  included, except a close done with the default `GITHUB_TOKEN`, which triggers no workflow;
-  Specster checks the branch again and skips any other. It checks out the default branch, not the
-  pull request, so a closed and unmerged pull request's code never runs with the job's token.
+- Each job's `if` keeps other labels, other events and the other phase from ever starting the
+  container: `spec` and `build` answer only `issues` events (and `workflow_dispatch`), so
+  `ai-spec` on a pull request starts nothing. The label is also checked again inside Specster
+  against `labels.spec` and `labels.build` (or `labels.evidence` and `labels.fix`) in the config. If
+  you rename a label, change the matching `if:` too, or the job never starts. The `evidence` and
+  `fix` jobs start only when their label is added to a pull request from a branch of this
+  repository, never a fork; Specster checks that again against the pull request itself and refuses a
+  fork. The `cleanup` job starts when any pull request from a branch of this repository is closed,
+  merged or not, whoever closed it, bots included, except a close done with the default
+  `GITHUB_TOKEN`, which triggers no workflow; Specster checks the repository again from the event
+  and skips a fork.
+- The `evidence`, `fix` and `cleanup` jobs check out the default branch, not the pull request:
+  Specster's config, and in the dogfood workflow Specster itself, always come from there, so a
+  pull request cannot raise its own trust or budget, and its code never runs with the job's
+  token outside the sandbox. Specster checks this too: an `ai-evidence` or `ai-fix` run whose
+  checkout is not the tip of the default branch is refused before it reads the pull request.
 - The `build` job's `timeout-minutes: 120` gives parallel workers, correction rounds and the final
   test run room; the `spec` job only ever makes one model call, so 20 minutes is generous already.
   Keep `build.max_minutes` (default 100) below the build job's `timeout-minutes`: at that limit
   Specster stops the way a spent budget does (pushes what is done, comments, `needs-human`), while
   a job timeout kills the container with no comment and no cost recorded. Each test run is also
   shortened to the time the build has left, and no worker or reviewer starts another model turn
-  once it has passed.
+  once it has passed. The `fix` job builds the same way and gets the same 120 minutes; the
+  `evidence` job, which sets up, serves and captures the base and the head, gets 60.
 - The step's `outcome` output is `questions`, `spec`, `refused`, `pr_opened`, `not_approved`,
   `build_failed`, `error` or `budget_exhausted`, or `skipped` when the event was not for Specster
-  (another label, a bot sender). A cleanup ends `cleaned`, `skipped` when there was nothing to
-  remove, or `error`.
+  (another label, a bot sender). A refused pull request (fork, closed, draft, or a checkout that
+  is not the default branch) ends `refused`. A cleanup ends `cleaned`, `skipped` when there was
+  nothing to remove, or `error`.
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see [Your own bot identity](#your-own-bot-identity)). A
   build refuses only when neither `identity.bot_login` nor the token's own login (asked over

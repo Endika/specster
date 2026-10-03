@@ -28,7 +28,7 @@ class RoleMetrics(BaseModel):
 class RunMetrics(BaseModel):
     version: int = 1
     run_id: str
-    phase: Literal["spec", "build"] = "spec"
+    phase: Literal["spec", "build", "evidence", "fix"] = "spec"
     outcome: Literal[
         "questions",
         "spec",

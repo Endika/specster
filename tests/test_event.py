@@ -62,19 +62,75 @@ def test_unknown_dispatch_phase_is_rejected() -> None:
         parse_event("workflow_dispatch", SENDER, "3", "deploy")
 
 
-def test_closed_pull_request_is_a_cleanup() -> None:
-    payload = {
-        "action": "closed",
-        "pull_request": {"number": 5, "head": {"ref": "specster/issue-3"}},
-        "sender": {"login": "renovate[bot]", "type": "Bot"},
+def pull_event(
+    action: str, head_repo: str | None = "o/r", label: str = "", sender_type: str = "User"
+) -> dict[str, object]:
+    head: dict[str, object] = {"ref": "feature/x", "repo": None}
+    if head_repo is not None:
+        head["repo"] = {"full_name": head_repo}
+    payload: dict[str, object] = {
+        "action": action,
+        "pull_request": {"number": 5, "head": head, "base": {"repo": {"full_name": "o/r"}}},
+        "sender": {"login": "ana", "type": sender_type},
     }
-    t = parse_event("pull_request", payload, None)
-    assert (t.issue_number, t.kind, t.head_ref) == (5, "closed", "specster/issue-3")
+    if label:
+        payload["label"] = {"name": label}
+    return payload
+
+
+def test_closed_pull_request_is_a_cleanup() -> None:
+    t = parse_event("pull_request", pull_event("closed", sender_type="Bot"), None)
+    assert (t.issue_number, t.kind, t.head_ref) == (5, "closed", "feature/x")
+    assert (t.head_repo, t.base_repo, t.same_repo) == ("o/r", "o/r", True)
     assert skip_reason(t, LabelsConfig()) is None
     assert phase_of(t, LabelsConfig()) == "cleanup"
 
 
+@pytest.mark.parametrize("head_repo", ["fork/r", None])
+def test_a_fork_or_deleted_fork_is_not_the_same_repository(head_repo: str | None) -> None:
+    t = parse_event("pull_request", pull_event("closed", head_repo), None)
+    assert t.head_repo == (head_repo or "") and not t.same_repo
+
+
+def test_a_pull_request_label_becomes_a_pr_labeled_trigger() -> None:
+    t = parse_event("pull_request", pull_event("labeled", label="ai-evidence"), None)
+    assert t == Trigger(
+        5,
+        "pr_labeled",
+        "ai-evidence",
+        "ana",
+        "User",
+        head_ref="feature/x",
+        head_repo="o/r",
+        base_repo="o/r",
+    )
+
+
+def test_pull_request_labels_route_to_the_evidence_and_fix_phases() -> None:
+    labels = LabelsConfig(evidence="show-me", fix="apply-review")
+    show = parse_event("pull_request", pull_event("labeled", label="show-me"), None)
+    apply = parse_event("pull_request", pull_event("labeled", label="apply-review"), None)
+    assert skip_reason(show, labels) is None and phase_of(show, labels) == "evidence"
+    assert skip_reason(apply, labels) is None and phase_of(apply, labels) == "fix"
+
+
+@pytest.mark.parametrize("label", ["bug", "ai-spec", "ai-build"])
+def test_any_other_pull_request_label_is_skipped(label: str) -> None:
+    t = parse_event("pull_request", pull_event("labeled", label=label), None)
+    assert skip_reason(t, LabelsConfig()) == f"label '{label}' is not 'ai-evidence' or 'ai-fix'"
+
+
+def test_a_bot_labeling_a_pull_request_is_skipped() -> None:
+    t = parse_event("pull_request", pull_event("labeled", label="ai-fix", sender_type="Bot"), None)
+    assert skip_reason(t, LabelsConfig()) == "sender ana is a bot"
+
+
 def test_other_pull_request_actions_are_unsupported() -> None:
-    payload = {"action": "opened", "pull_request": {"number": 1, "head": {"ref": "x"}}}
     with pytest.raises(EventError):
-        parse_event("pull_request", payload, None)
+        parse_event("pull_request", pull_event("opened"), None)
+
+
+@pytest.mark.parametrize("label", ["ai-evidence", "ai-fix"])
+def test_pull_request_labels_on_an_issue_are_skipped(label: str) -> None:
+    t = parse_event("issues", labeled(label), None)
+    assert skip_reason(t, LabelsConfig()) == f"label '{label}' is not 'ai-spec' or 'ai-build'"

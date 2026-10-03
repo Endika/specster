@@ -72,9 +72,9 @@ Everything is sent once, when the run ends.
 ### Metrics
 
 All metrics are gauges with one value per run, so there is no temporality to choose. Every
-metric carries `specster.repo`, `specster.phase` (`spec`, `build` or `cleanup`) and
-`specster.outcome`. The issue number is never a metric attribute: each issue would be its own
-billable series.
+metric carries `specster.repo`, `specster.phase` (`spec`, `build`, `evidence`, `fix` or
+`cleanup`) and `specster.outcome`. The issue number is never a metric attribute: each issue would
+be its own billable series.
 
 | Metric | Unit | Extra attributes |
 |---|---|---|
