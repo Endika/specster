@@ -10,7 +10,12 @@ from specster import screenshot_exec
 from specster.evidence import PNG_MAGIC
 
 ORIGIN = "http://127.0.0.1:8000"
-HEIGHTS = {"/": 500, "/long": 90_000}
+HEIGHTS = {"/": 500, "/long": 90_000, "/missing": 500, "/blank": 500}
+
+
+class FakeResponse:
+    def __init__(self, status: int) -> None:
+        self.status = status
 
 
 class FakePage:
@@ -18,12 +23,16 @@ class FakePage:
         self.context = context
         self.url = ""
 
-    def goto(self, url: str, wait_until: str, timeout: float) -> None:
+    def goto(self, url: str, wait_until: str, timeout: float) -> FakeResponse | None:
         self.context.calls.append(("goto", url, wait_until))
         assert 0 < timeout <= 5_000
         if url.endswith("/broken"):
             raise TimeoutError("Timeout 5000ms exceeded.\n  navigating to /broken")
         self.url = url
+        # Playwright answers None for a navigation with no HTTP response, such as about:blank.
+        return {"/missing": FakeResponse(404), "/blank": None}.get(
+            url.removeprefix(ORIGIN), FakeResponse(200)
+        )
 
     def evaluate(self, script: str, arg: float | None = None) -> object:
         self.context.calls.append(("evaluate", script, arg))
@@ -127,9 +136,29 @@ def test_each_page_is_shot_on_desktop_and_mobile_with_a_steady_browser(
     assert isinstance(kwargs, dict)
     assert kwargs["full_page"] and kwargs["animations"] == "disabled"
     assert kwargs["clip"] == {"x": 0, "y": 0, "width": 1280, "height": 800}
-    assert sorted(p.name for p in out.iterdir()) == ["home.desktop.png", "home.mobile.png"]
+    assert sorted(p.name for p in out.iterdir()) == [
+        "home.desktop.png",
+        "home.desktop.status",
+        "home.mobile.png",
+        "home.mobile.status",
+    ]
     assert (out / "home.mobile.png").read_bytes() == PNG_MAGIC + (ORIGIN + "/").encode()
+    assert (out / "home.mobile.status").read_text() == "200"
     assert [line.split(" in ")[0] for line in log] == ["home desktop: ok", "home mobile: ok"]
+    assert all(line.endswith(" s (HTTP 200)") for line in log)
+
+
+@pytest.mark.usefixtures("playwright")
+def test_the_status_each_page_answered_with_is_kept_and_logged(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pages = [{"name": "missing", "path": "/missing"}, {"name": "blank", "path": "/blank"}]
+    log = run(tmp_path, pages, capsys)
+    assert (tmp_path / "missing.desktop.status").read_text() == "404"
+    assert (tmp_path / "blank.mobile.status").read_text() == "none"
+    assert (tmp_path / "missing.desktop.png").exists() and (tmp_path / "blank.mobile.png").exists()
+    assert log[0].startswith("missing desktop: ok in ") and log[0].endswith(" (HTTP 404)")
+    assert log[3].startswith("blank mobile: ok in ") and log[3].endswith(" (no response)")
 
 
 def test_a_long_page_is_cut_at_the_height_limit(
@@ -148,5 +177,9 @@ def test_a_page_that_fails_is_logged_and_the_rest_still_shot(
     log = run(tmp_path, pages, capsys)
     assert log[0] == "broken desktop: failed: TimeoutError: Timeout 5000ms exceeded."
     assert log[1] == "  navigating to /broken"
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["home.desktop.png", "home.mobile.png"]
+    assert sorted(p.name for p in tmp_path.glob("*.png")) == [
+        "home.desktop.png",
+        "home.mobile.png",
+    ]
+    assert not (tmp_path / "broken.desktop.status").exists()
     assert all(c.closed for c in playwright.browsers[0].contexts)

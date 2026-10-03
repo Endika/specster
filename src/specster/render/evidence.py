@@ -24,6 +24,19 @@ def _status(capture: Capture | None) -> str:
 def _shot(
     page: PageItem, side: str, shot: Shot, lab: Mapping[str, str], links: Mapping[str, str]
 ) -> str:
+    cell = _picture(page, side, shot, lab, links)
+    if not shot.http_error:
+        return cell
+    if shot.no_response:
+        said = lab["evidence_no_response"]
+    else:
+        said = lab["evidence_http_status"].format(status=shot.http_status)
+    return f"{cell}<br>{said}"
+
+
+def _picture(
+    page: PageItem, side: str, shot: Shot, lab: Mapping[str, str], links: Mapping[str, str]
+) -> str:
     if shot.png is None:
         return _cell(shot.note)
     name = f"{page.page.name}.{side}.{shot.viewport}.png"

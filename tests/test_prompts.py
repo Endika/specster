@@ -1,10 +1,18 @@
 import dataclasses
 from datetime import UTC, datetime
 
+import pytest
+
 from specster.approved import ApprovedSpec
-from specster.config import PersonaConfig
+from specster.config import PersonaConfig, PreviewConfig
 from specster.github import Comment
-from specster.prompts import review_block, revision_block, system_prompt
+from specster.prompts import (
+    _EVIDENCE,
+    _served,
+    review_block,
+    revision_block,
+    system_prompt,
+)
 from specster.schemas import EvidencePage, EvidenceRequest, PlanTask
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -77,10 +85,42 @@ def test_the_planner_is_told_how_big_a_task_may_be() -> None:
     assert "at most 5 files" in prompt and "a rename" in prompt
 
 
+PREVIEW = PreviewConfig(
+    serve_command=["sh", "-c", "VITE_BASE_PATH=/ npm run build && npx vite preview"],
+    ready_url="http://127.0.0.1:4173/app/",
+)
+
+
 def test_prompt_asks_for_evidence_only_with_preview() -> None:
-    assert "evidence" not in system_prompt(PersonaConfig(), [], preview=False)
-    text = system_prompt(PersonaConfig(), [], preview=True)
+    plain = system_prompt(PersonaConfig(), [])
+    assert "evidence" not in plain and "served" not in plain
+    text = system_prompt(PersonaConfig(), [], preview=PREVIEW)
+    assert text.replace("\n".join([_EVIDENCE, _served(PREVIEW), ""]) + "\n", "") == plain
     assert "evidence" in text and "GET" in text
+
+
+def test_prompt_says_where_the_app_is_served_and_that_a_base_path_does_not_apply() -> None:
+    text = system_prompt(PersonaConfig(), [], preview=PREVIEW)
+    assert "The app is served at http://127.0.0.1:4173, started by this command as is: " in text
+    assert "sh -c 'VITE_BASE_PATH=/ npm run build && npx vite preview'." in text
+    assert "exactly as written on that origin" in text and "Vite base" in text
+    assert "/app/ is probably its root" in text
+
+
+@pytest.mark.parametrize("url", ["http://localhost:8000", "http://localhost:8000/"])
+def test_a_ready_url_with_no_path_or_just_a_slash_suggests_no_root(url: str) -> None:
+    bare = PreviewConfig(serve_command=["python", "app.py"], ready_url=url)
+    text = system_prompt(PersonaConfig(), [], preview=bare)
+    assert "served at http://localhost:8000" in text and "probably its root" not in text
+
+
+def test_a_multi_line_serve_command_stays_on_one_line_of_the_prompt() -> None:
+    cfg = PreviewConfig(
+        serve_command=["sh", "-c", "npm run build\n  && npx vite preview"],
+        ready_url="http://localhost:8000/",
+    )
+    served = _served(cfg)
+    assert "\n" not in served and "'npm run build && npx vite preview'" in served
 
 
 def test_revision_block_replays_the_approved_evidence() -> None:
@@ -94,7 +134,7 @@ def test_revision_block_replays_the_approved_evidence() -> None:
 
 
 def test_prompt_explains_pages_and_the_revision_replays_them() -> None:
-    assert "pages" in system_prompt(PersonaConfig(), [], preview=True)
+    assert "pages" in system_prompt(PersonaConfig(), [], preview=PREVIEW)
     task = PlanTask(id="a", title="A", description="d", files=["app.py"], acceptance=["x"])
     comment = Comment(1, "specster[bot]", "Bot", "NONE", "b", T0, T0)
     page = EvidencePage(name="users-page", path="/users", why="x")

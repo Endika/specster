@@ -1,8 +1,9 @@
 """Run in the sandbox by the browser venv's python, never by Specster's own:
 `python -I screenshot_exec.py <origin> <outdir> <pages json> <max height px> <timeout s>`
 
-Writes `{name}.{desktop|mobile}.png` per page and one log line per shot; a page that fails is
-logged and the next one still shot.
+Writes `{name}.{desktop|mobile}.png` per page, next to a `.status` file with the HTTP status the
+page answered with (or `none`), and one log line per shot; a page that fails is logged and the
+next one still shot.
 """
 
 import importlib
@@ -32,7 +33,7 @@ def _shoot(
     size: tuple[int, int],
     max_height: int,
     timeout_s: float,
-) -> None:
+) -> int | None:
     deadline = time.monotonic() + timeout_s
 
     def ms() -> float:
@@ -48,7 +49,9 @@ def _shoot(
     try:
         context.clock.set_fixed_time(FIXED_TIME)
         page = context.new_page()
-        page.goto(url, wait_until="networkidle", timeout=ms())
+        response = page.goto(url, wait_until="networkidle", timeout=ms())
+        status: int | None = None if response is None else int(response.status)
+        path.with_suffix(".status").write_text("none" if status is None else str(status))
         page.evaluate(FONTS_READY, ms())
         full = int(page.evaluate(PAGE_HEIGHT))
         page.screenshot(
@@ -58,6 +61,7 @@ def _shoot(
             animations="disabled",
             timeout=ms(),
         )
+        return status
     finally:
         context.close()
 
@@ -78,7 +82,7 @@ def main(args: list[str]) -> int:
                     shot = f"{page['name']}.{viewport}.png"
                     started = time.monotonic()
                     try:
-                        _shoot(
+                        status = _shoot(
                             browser,
                             origin + page["path"],
                             out / shot,
@@ -91,7 +95,8 @@ def main(args: list[str]) -> int:
                         print(f"{page['name']} {viewport}: failed: {type(e).__name__}: {e}")
                     else:
                         took = time.monotonic() - started
-                        print(f"{page['name']} {viewport}: ok in {took:.1f} s")
+                        answer = "no response" if status is None else f"HTTP {status}"
+                        print(f"{page['name']} {viewport}: ok in {took:.1f} s ({answer})")
                     sys.stdout.flush()
         finally:
             browser.close()

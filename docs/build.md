@@ -148,7 +148,12 @@ one table per page, desktop and mobile by before and after, with the images link
 commit that published them on `specster-evidence`, and says whether the PNGs changed (byte for
 byte; no pixel diff). A shot that could not be taken says why in its cell; a side whose
 requests ran but whose shots did not (out of time, browser failure) only notes it in the page
-table, not as a problem with the side.
+table, not as a problem with the side. A page that answered with an HTTP error, or with no
+response at all, says so under its shot ("the page answered 404"), so an error page does not
+pass for the page that was asked for. The planner is told the preview's origin, its
+`serve_command` and the path of its `ready_url`, and that paths are requested exactly as written:
+a base path from the project's own config (Vite's `base`, for instance) only applies if
+`serve_command` uses it.
 
 - The browser is installed only when the approved spec has pages, once per build, as root:
   Playwright (pinned) and Chromium's headless shell with its system libraries, into
