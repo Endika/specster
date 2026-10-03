@@ -32,23 +32,20 @@ from specster.github import GitHubError, PullFiles, PullInfo, PullTracker
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel
 from specster.llm.factory import ProviderConfigError
-from specster.metrics import RunMetrics, spent
+from specster.metrics import RunMetrics
 from specster.prompts import context_block, evidence_planner_prompt, pull_block
-from specster.render import PullEvidenceView, hint, render_budget, render_pull_evidence
+from specster.render import PullEvidenceView, hint, render_pull_evidence
 from specster.repomap import build_repo_map
 from specster.sandbox import (
-    DOCKER_SOCKET,
     Identity,
     Sandbox,
     SandboxError,
-    docker_socket_problem,
     lock_down,
-    require_root,
     scratch_dir,
 )
 from specster.schemas import EvidencePlan
 from specster.skills import Fetch
-from specster.thread import HiddenItem, previous_runs
+from specster.thread import HiddenItem
 from specster.usecases.build_phase import give_back
 from specster.usecases.context import (
     LABEL_COLORS,
@@ -59,9 +56,9 @@ from specster.usecases.context import (
     RunContext,
     describe,
     log,
-    login_warnings_for,
     usage_fields,
 )
+from specster.usecases.pull_request import check_host, known_spend
 from specster.workspace import Workspace
 
 PLANNER = "planner"
@@ -130,10 +127,10 @@ class EvidencePhase:
                     ),
                 )
             )
-        known = self._known_spend()
+        known = known_spend(run)
         if known is None:
             return 0
-        self._check_host()
+        check_host(run, self.identity)
         model = self._planner_model()
         files = self._files()
         scratch = scratch_dir()
@@ -143,35 +140,6 @@ class EvidencePhase:
             shutil.rmtree(scratch, ignore_errors=True)
             if self._touched:
                 give_back(run.env.workspace)
-
-    def _known_spend(self) -> float | None:
-        """What earlier runs on this pull request spent; None once a spent budget is reported."""
-        run = self.run
-        cfg, n = run.cfg, run.number
-        comments = run.tracker.list_comments(n)
-        own = run.tracker.own_login()
-        run.warnings = login_warnings_for(cfg.identity.bot_login, own)
-        known, unknown = spent(previous_runs(comments, cfg.identity.bot_login or own))
-        if unknown:
-            run.warnings.append(
-                f"{unknown} previous runs have unknown cost and are not counted in the budget"
-            )
-        cap = cfg.budget.max_usd_per_issue
-        if cap is None or known < cap:
-            return known
-        m = run.metrics("budget_exhausted", 0.0, warnings=run.warnings)
-        body = render_budget(known, unknown, cap, run.context(m), pull=True)
-        run.finish("budget_exhausted", body, [self.label], metrics=m)
-        return None
-
-    def _check_host(self) -> None:
-        try:
-            require_root(self.identity(FINAL_SLOT))
-        except SandboxError as e:
-            raise Failure(str(e), hint(self.lang, "hint_root")) from e
-        socket = docker_socket_problem(DOCKER_SOCKET)
-        if socket is not None:
-            raise Failure(socket, hint(self.lang, "hint_docker_socket", label=self.label))
 
     def _planner_model(self) -> ChatModel:
         try:

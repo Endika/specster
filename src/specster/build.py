@@ -12,10 +12,9 @@ from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from specster.agent import TIME_UP, AgentError, BudgetSpent, Metered, attached_usage
-from specster.approved import ApprovedSpec
 from specster.browser import Installer, install
 from specster.config import BudgetConfig, BuildConfig, Config, ModelConfig, PersonaConfig
 from specster.evidence import EvidenceRun
@@ -25,6 +24,7 @@ from specster.ledger import Ledger, Meter
 from specster.llm.base import ChatModel, Usage
 from specster.plan import levels
 from specster.prompts import (
+    Origin,
     context_block,
     review_block,
     reviewer_system_prompt,
@@ -34,7 +34,7 @@ from specster.prompts import (
 from specster.repomap import RepoMap
 from specster.review import blocking, run_review
 from specster.sandbox import RunResult, Sandbox
-from specster.schemas import Finding, PlanTask, ReviewResult
+from specster.schemas import EvidencePage, EvidenceRequest, Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
 from specster.telemetry import span
 from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
@@ -115,10 +115,23 @@ class BuildReport:
         return sum(len(r.commits) for r in self.tasks)
 
 
+class BuildPlan(Protocol):
+    """What a build runs: an issue's approved spec, or the plan for a pull request's review."""
+
+    @property
+    def tasks(self) -> Sequence[PlanTask]: ...
+    @property
+    def text(self) -> str: ...
+    @property
+    def evidence(self) -> Sequence[EvidenceRequest]: ...
+    @property
+    def pages(self) -> Sequence[EvidencePage]: ...
+
+
 @dataclass(frozen=True)
 class BuildSetup:
     cfg: Config
-    spec: ApprovedSpec
+    spec: BuildPlan
     git: Git
     # Slot -> its sandbox: 1..max_parallel for workers, 0 for the final tests.
     make_sandbox: Callable[[int], Sandbox]
@@ -138,6 +151,9 @@ class BuildSetup:
     config_path: str = CONFIG_PATH
     make_escalation: Callable[[], ChatModel] | None = None
     install_browser: Installer = install
+    # "pull_request": `base` is a pull request's head and `branch` stays local; the plan's text
+    # is its review, and the prompts say so.
+    origin: Origin = "issue"
 
 
 def budget_stop(ledger: Ledger, budget: BudgetConfig, prior_known_usd: float) -> str | None:
@@ -360,7 +376,7 @@ class _Build:
         )
         has_tests = self.cfg.build.test_command is not None
         self.worker_system = worker_system_prompt(
-            setup.persona, setup.build_skills.on_demand, has_tests
+            setup.persona, setup.build_skills.on_demand, has_tests, setup.origin
         )
         self.worker_context = context_block(setup.repo_map, setup.build_skills.inline)
 
@@ -452,7 +468,7 @@ class _Build:
                 self.s.time_left,
                 self._aborted.is_set,
             )
-            user = task_block(self.s.spec.text, task, findings, secrets.token_hex(8))
+            user = task_block(self.s.spec.text, task, findings, secrets.token_hex(8), self.s.origin)
             started = True
             make = self.s.make_escalation if escalated else self.s.make_worker
             assert make is not None
@@ -700,7 +716,7 @@ class _Build:
         s = self.s
         has_tests = self.cfg.build.test_command is not None
         user = review_block(
-            s.spec.text, self.tasks, commits, diff, note, tests, secrets.token_hex(8)
+            s.spec.text, self.tasks, commits, diff, note, tests, secrets.token_hex(8), s.origin
         )
         meter = s.ledger.meter(self.cfg.models.reviewer)
         try:
@@ -784,10 +800,13 @@ class _Build:
             final, setup_failed = self._final_tests(None)
             if not final.ok:
                 what = "setup_command fails" if setup_failed else "tests fail"
+                where, about = "the base commit", "this issue is"
+                if self.s.origin == "pull_request":
+                    where, about = "the pull request's head", "the review is"
                 return report(
                     "failed",
-                    f"the {what} on the base commit, before any task ran: fix that first, or set "
-                    "build.allow_failing_base: true if this issue is about fixing it",
+                    f"the {what} on {where}, before any task ran: fix that first, or set "
+                    f"build.allow_failing_base: true if {about} about fixing it",
                 )
             final = None
         self._run_tasks(self.tasks, 0, {})

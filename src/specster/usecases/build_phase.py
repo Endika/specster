@@ -84,7 +84,7 @@ def _low_budget(run: RunContext, known: float) -> list[str]:
     ]
 
 
-def _models(
+def role_models(
     run: RunContext, make_model: Callable[[ModelConfig], ChatModel]
 ) -> tuple[Callable[[], ChatModel], Callable[[], ChatModel], Callable[[], ChatModel] | None]:
     models = run.cfg.models
@@ -103,7 +103,7 @@ def _models(
     return lambda: make_model(models.worker), lambda: make_model(models.reviewer), stronger
 
 
-def _skill_facts(books: Sequence[SkillBook]) -> dict[str, Any]:
+def skill_facts(books: Sequence[SkillBook]) -> dict[str, Any]:
     def names(skills: Sequence[Skill]) -> list[str]:
         return list(dict.fromkeys(s.name for s in skills))
 
@@ -114,10 +114,10 @@ def _skill_facts(books: Sequence[SkillBook]) -> dict[str, Any]:
     }
 
 
-def _report_facts(
+def report_facts(
     run: RunContext, report: BuildReport, books: Sequence[SkillBook]
 ) -> dict[str, Any]:
-    return _skill_facts(books) | {
+    return skill_facts(books) | {
         "tasks_total": len(report.tasks),
         "tasks_done": sum(1 for r in report.tasks if r.status == "done"),
         "tasks_escalated": sum(1 for r in report.tasks if r.escalated_to),
@@ -141,7 +141,7 @@ def _build_metrics(
         phase="build",
         roles=ledger.roles(),
         turns=ledger.turns(),
-        **_report_facts(run, report, books),
+        **report_facts(run, report, books),
         **usage_fields(ledger.usage()),
         **fields,
     )
@@ -297,7 +297,7 @@ class BuildPhase:
         socket = docker_socket_problem(DOCKER_SOCKET)
         if socket is not None:
             raise Failure(socket, hint(self.lang, "hint_docker_socket", label=labels.build))
-        make_worker, make_reviewer, make_escalation = _models(run, self.make_model)
+        make_worker, make_reviewer, make_escalation = role_models(run, self.make_model)
         build_skills = load_phase_skills(run, self.fetch, "build")
         review_skills = load_phase_skills(run, self.fetch, "review")
         run.warnings += build_skills.warnings + [
@@ -359,7 +359,7 @@ class BuildPhase:
 
         ledger = run.ledger = Ledger(cfg.pricing)
         build_skills, review_skills = tools.books
-        run.build_facts = _skill_facts(tools.books) | {"tasks_total": len(approval.spec.tasks)}
+        run.build_facts = skill_facts(tools.books) | {"tasks_total": len(approval.spec.tasks)}
         try:
             report = run_build(
                 BuildSetup(
@@ -390,7 +390,7 @@ class BuildPhase:
             ) from e
         truncations = [tools.repo_map.truncation] if tools.repo_map.truncation else []
         report.truncations[:0] = truncations
-        run.build_facts = _report_facts(run, report, tools.books)
+        run.build_facts = report_facts(run, report, tools.books)
         return git, report, ledger
 
     def _publish(

@@ -2,15 +2,32 @@
 ready and ours."""
 
 import shutil
+from collections.abc import Callable
 
 import httpx
 
 from specster.approved import BuildRefused
+from specster.build import FINAL_SLOT
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.github import GitHubError, PullInfo, PullTracker
-from specster.render import hint
-from specster.sandbox import scratch_dir
-from specster.usecases.context import NO_CHECKOUT, Failure, RunContext, describe
+from specster.metrics import spent
+from specster.render import hint, render_budget
+from specster.sandbox import (
+    DOCKER_SOCKET,
+    Identity,
+    SandboxError,
+    docker_socket_problem,
+    require_root,
+    scratch_dir,
+)
+from specster.thread import previous_runs
+from specster.usecases.context import (
+    NO_CHECKOUT,
+    Failure,
+    RunContext,
+    describe,
+    login_warnings_for,
+)
 
 
 def _checkout_refusal(run: RunContext, pulls: PullTracker) -> BuildRefused | None:
@@ -74,3 +91,35 @@ def open_pull(run: RunContext, pulls: PullTracker) -> PullInfo | int:
         message = f"Pull request #{pull.number} is a draft"
         return run.refuse(BuildRefused(message, hint(lang, "hint_pull_draft", label=label)))
     return pull
+
+
+def known_spend(run: RunContext) -> float | None:
+    """What earlier runs on this pull request spent; None once a spent budget is reported."""
+    cfg, n = run.cfg, run.number
+    comments = run.tracker.list_comments(n)
+    own = run.tracker.own_login()
+    run.warnings = login_warnings_for(cfg.identity.bot_login, own)
+    known, unknown = spent(previous_runs(comments, cfg.identity.bot_login or own))
+    if unknown:
+        run.warnings.append(
+            f"{unknown} previous runs have unknown cost and are not counted in the budget"
+        )
+    cap = cfg.budget.max_usd_per_issue
+    if cap is None or known < cap:
+        return known
+    m = run.metrics("budget_exhausted", 0.0, warnings=run.warnings)
+    body = render_budget(known, unknown, cap, run.context(m), pull=True)
+    run.finish("budget_exhausted", body, [run.trigger_label], metrics=m)
+    return None
+
+
+def check_host(run: RunContext, identity: Callable[[int], Identity | None]) -> None:
+    """Root to drop privileges into the sandboxes, and no Docker socket they could reach."""
+    lang, label = run.cfg.persona.language, run.trigger_label
+    try:
+        require_root(identity(FINAL_SLOT))
+    except SandboxError as e:
+        raise Failure(str(e), hint(lang, "hint_root")) from e
+    socket = docker_socket_problem(DOCKER_SOCKET)
+    if socket is not None:
+        raise Failure(socket, hint(lang, "hint_docker_socket", label=label))
