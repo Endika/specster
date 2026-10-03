@@ -94,6 +94,7 @@ class Review:
     state: str
     body: str
     submitted_at: datetime | None
+    edited_at: datetime | None = None
 
 
 MAX_PULL_FILES = 300
@@ -133,6 +134,7 @@ class PullTracker(IssueTracker, Protocol):
     def review_threads(self, number: int) -> list[ReviewThread]: ...
     def reviews(self, number: int) -> list[Review]: ...
     def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None: ...
+    def branch_protected(self, branch: str) -> bool: ...
 
 
 def _ts(value: str) -> datetime:
@@ -283,6 +285,13 @@ class GitHubRest:
         resp.raise_for_status()
         raise GitHubError(f"check branch {branch}: HTTP {resp.status_code}")
 
+    def branch_protected(self, branch: str) -> bool:
+        resp = self._http.get(f"/repos/{self._repo}/branches/{quote(branch, safe='/')}")
+        if resp.status_code == 404:
+            return False
+        resp.raise_for_status()
+        return bool(resp.json()["protected"])
+
     def create_pull(self, title: str, body: str, head: str, base: str) -> PullRequest:
         resp = self._http.post(
             f"/repos/{self._repo}/pulls",
@@ -366,8 +375,8 @@ class GitHubRest:
             f"reviewThreads(first:{THREADS_PER_PAGE},after:$c)"
             "{pageInfo{hasNextPage endCursor} nodes{isResolved "
             f"comments(first:{COMMENTS_PER_THREAD})"
-            "{totalCount nodes{databaseId author{login} authorAssociation body path line "
-            "originalLine diffHunk createdAt lastEditedAt}}}}}}}"
+            "{totalCount nodes{databaseId author{__typename login} authorAssociation body path "
+            "line originalLine diffHunk createdAt lastEditedAt}}}}}}}"
         )
         threads: list[ReviewThread] = []
         cursor: str | None = None
@@ -406,17 +415,49 @@ class GitHubRest:
         )
 
     def reviews(self, number: int) -> list[Review]:
-        return [
-            Review(
-                id=r["id"],
-                author=_login(r.get("user")),
-                association=r.get("author_association", "NONE"),
-                state=r["state"],
-                body=r.get("body") or "",
-                submitted_at=_ts(r["submitted_at"]) if r.get("submitted_at") else None,
+        # GraphQL, since only it says when a review's text was last edited.
+        owner, name = self._repo.split("/", 1)
+        query = (
+            "query($o:String!,$r:String!,$n:Int!,$c:String)"
+            "{repository(owner:$o,name:$r){pullRequest(number:$n){"
+            f"reviews(first:{THREADS_PER_PAGE},after:$c)"
+            "{pageInfo{hasNextPage endCursor} nodes{databaseId author{__typename login} "
+            "authorAssociation state body submittedAt lastEditedAt}}}}}"
+        )
+        reviews: list[Review] = []
+        cursor: str | None = None
+        for _ in range(MAX_THREAD_PAGES):
+            resp = self._http.post(
+                self._graphql_url,
+                json={
+                    "query": query,
+                    "variables": {"o": owner, "r": name, "n": number, "c": cursor},
+                },
             )
-            for r in self._pages(f"/pulls/{number}/reviews")
-        ]
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get("errors"):
+                raise GitHubError(f"reviews: {payload['errors'][0].get('message', '')}")
+            pull = ((payload.get("data") or {}).get("repository") or {}).get("pullRequest")
+            if pull is None:
+                raise GitHubError(f"reviews: no pull request #{number}", 404)
+            page = pull["reviews"]
+            reviews += [
+                Review(
+                    id=r["databaseId"],
+                    author=_graphql_login(r.get("author")),
+                    association=r.get("authorAssociation", "NONE"),
+                    state=r["state"],
+                    body=r.get("body") or "",
+                    submitted_at=_ts(r["submittedAt"]) if r.get("submittedAt") else None,
+                    edited_at=_ts(r["lastEditedAt"]) if r.get("lastEditedAt") else None,
+                )
+                for r in page["nodes"]
+            ]
+            if not page["pageInfo"]["hasNextPage"]:
+                return reviews
+            cursor = page["pageInfo"]["endCursor"]
+        raise GitHubError(f"reviews: more than {MAX_THREAD_PAGES * THREADS_PER_PAGE} reviews")
 
     def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None:
         try:
@@ -437,10 +478,18 @@ def _login(user: Mapping[str, Any] | None) -> str:
     return str(user["login"]) if user else GHOST
 
 
+def _graphql_login(actor: Mapping[str, Any] | None) -> str:
+    """A GraphQL author's login as REST spells it: a GitHub App's bot carries `[bot]` there."""
+    login = _login(actor)
+    if actor and actor.get("__typename") == "Bot" and not login.endswith("[bot]"):
+        return f"{login}[bot]"
+    return login
+
+
 def _review_comment(c: Mapping[str, Any]) -> ReviewComment:
     return ReviewComment(
         id=c["databaseId"],
-        author=_login(c.get("author")),
+        author=_graphql_login(c.get("author")),
         association=c.get("authorAssociation", "NONE"),
         body=c.get("body") or "",
         path=c.get("path") or "",

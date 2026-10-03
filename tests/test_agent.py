@@ -7,17 +7,26 @@ from pydantic import ValidationError
 
 from specster.agent import (
     AgentError,
+    FixOutcome,
     Metered,
     NotYet,
     SubmissionError,
+    check_fix,
     run_agent,
     run_evidence_planner,
+    run_fix_planner,
     run_loop,
 )
 from specster.config import ModelConfig, SkillsConfig
 from specster.ledger import Ledger
 from specster.llm.base import ModelRefusal, ToolCall, ToolResult, ToolSpec, Turn, Usage
-from specster.schemas import EvidencePage, EvidenceRequest, QuestionsResult, SpecResult
+from specster.schemas import (
+    EvidencePage,
+    EvidenceRequest,
+    FixPlan,
+    QuestionsResult,
+    SpecResult,
+)
 from specster.skills import SkillBook, load_skills
 from specster.workspace import Workspace
 from tests.fakes import ScriptedModel
@@ -386,3 +395,74 @@ def test_the_evidence_planner_may_choose_nothing_but_must_say_why(tmp_path: Path
     plan, model = plan_evidence(tmp_path, [{"evidence": []}, {"why": "Only docs change."}])
     assert plan.evidence == [] and plan.pages == [] and plan.why == "Only docs change."
     assert model.received[1][0].is_error and "why" in model.received[1][0].content
+
+
+FIX_TASK = {
+    "id": "a",
+    "title": "A",
+    "description": "d",
+    "files": ["app.py"],
+    "acceptance": ["x"],
+    "addresses": ["c1"],
+}
+
+
+def fix_plan(tasks: list[dict[str, Any]], not_applied: list[dict[str, str]]) -> FixPlan:
+    return FixPlan.model_validate({"tasks": tasks, "not_applied": not_applied})
+
+
+def checked(plan: FixPlan, keys: Sequence[str] = ("c1", "r2"), **allow: bool) -> FixOutcome:
+    flags = {"allow_workflows": False, "allow_config": False} | allow
+    return check_fix(plan, keys, config_path=".github/specster/config.yml", **flags)
+
+
+def test_a_fix_plan_accounts_for_every_review_item_and_orders_shared_files() -> None:
+    second = FIX_TASK | {"id": "b", "addresses": ["c1", "r2", "r2"]}
+    out = checked(fix_plan([FIX_TASK, second], []))
+    assert out.addressed == {"c1": ["a", "b"], "r2": ["b"]} and out.not_applied == []
+    assert out.tasks[1].depends_on == ["a"] and out.plan_fixes
+
+
+@pytest.mark.parametrize(
+    ("tasks", "declined", "keys", "said"),
+    [
+        ([FIX_TASK], [], ("c1", "r2"), "review items not accounted for: r2"),
+        ([FIX_TASK | {"addresses": ["c9"]}], [], ("c1",), "unknown review item ids: c9"),
+        ([FIX_TASK], [{"id": "c1", "reason": "r"}], ("c1",), "c1 must be either"),
+        ([], [{"id": "c1", "reason": "r"}, {"id": "c1", "reason": "r"}], ("c1",), "c1 must be"),
+        ([FIX_TASK | {"files": ["../x"]}], [], ("c1",), "not a path"),
+        ([FIX_TASK | {"files": [".github/workflows/ci.yml"]}], [], ("c1",), "a workflow file"),
+        ([FIX_TASK | {"files": [".github/specster/x.md"]}], [], ("c1",), "Specster's config"),
+    ],
+)
+def test_a_fix_plan_is_sent_back_when_it_breaks_a_rule(
+    tasks: list[dict[str, Any]], declined: list[dict[str, str]], keys: tuple[str, ...], said: str
+) -> None:
+    with pytest.raises(SubmissionError, match=said):
+        checked(fix_plan(tasks, declined), keys)
+
+
+def test_a_fix_plan_may_touch_workflows_and_config_when_the_repository_allows_it() -> None:
+    files = [".github/workflows/ci.yml", ".github/specster/config.yml"]
+    out = checked(
+        fix_plan([FIX_TASK | {"files": files}], []),
+        ("c1",),
+        allow_workflows=True,
+        allow_config=True,
+    )
+    assert out.tasks[0].files == files
+
+
+def test_the_fix_planner_reads_and_submits_through_the_loop(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("A = 0\n")
+    model = ScriptedModel(
+        [
+            [ToolCall("1", "read_file", {"path": "app.py"})],
+            [ToolCall("2", "submit_fix", {"tasks": [FIX_TASK], "not_applied": []})],
+        ]
+    )
+    out = run_fix_planner(
+        model, "s", "c", "u", Workspace(tmp_path), 5, lambda p: checked(p, ("c1",))
+    )
+    assert out.value.addressed == {"c1": ["a"]} and out.turns == 2
+    assert "submit_fix" in [t.name for t in model.tools]

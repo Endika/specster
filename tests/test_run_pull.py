@@ -91,7 +91,8 @@ def outcome(tmp_path: Path) -> str:
     [
         # Without build.preview the evidence phase refuses before it reads anything else.
         ("ai-evidence", "evidence", "build.preview is not set"),
-        ("ai-fix", "fix", "ai-fix is not implemented yet"),
+        # With no review on the pull request the fix phase has nothing to apply.
+        ("ai-fix", "fix", "Nothing to apply"),
     ],
 )
 def test_a_pull_request_label_reaches_its_phase(
@@ -113,7 +114,7 @@ def test_a_fork_is_refused_before_anything_runs(
     tr = tracker("ai-fix", dataclasses.replace(OPEN, head_repo=head_repo))
     assert go(env(tmp_path, "ai-fix"), tr) == 1
     assert len(tr.posted) == 1 and origin in tr.posted[0]
-    assert "not implemented" not in tr.posted[0] and tr.replies == []
+    assert "Nothing to apply" not in tr.posted[0] and tr.replies == []
     assert tr.issue.labels == () and outcome(tmp_path) == "outcome=refused\n"
 
 
@@ -138,7 +139,7 @@ def test_a_closed_or_draft_pull_request_is_refused_with_the_reason(
     tr = tracker("ai-evidence", pull)
     assert go(env(tmp_path, "ai-evidence"), tr) == 1
     assert len(tr.posted) == 1 and reason in tr.posted[0] and fix in tr.posted[0]
-    assert "not implemented" not in tr.posted[0]
+    assert "build.preview" not in tr.posted[0]
     assert outcome(tmp_path) == "outcome=refused\n"
 
 

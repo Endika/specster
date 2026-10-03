@@ -92,10 +92,10 @@ be its own billable series.
 | `specster.spec.comments` | 1 | `specster.kind`: `included`, `untrusted`, `after_label`, `edited_after_label`; spec phase only |
 | `specster.spec.hidden_removed` | 1 | spec phase only |
 | `specster.spec.skills` | 1 | `specster.kind`: `available`, `read`, `inlined`; spec phase only |
-| `specster.build.tasks` | 1 | `specster.state`: `total`, `done`, `escalated`; build phase only |
-| `specster.build.test_runs` | 1 | build phase only |
-| `specster.build.parallel` | 1 | build phase only |
-| `specster.build.review_rounds` | 1 | build phase only |
+| `specster.build.tasks` | 1 | `specster.state`: `total`, `done`, `escalated`; build and fix phases |
+| `specster.build.test_runs` | 1 | build and fix phases |
+| `specster.build.parallel` | 1 | build and fix phases |
+| `specster.build.review_rounds` | 1 | build and fix phases |
 | `specster.build.evidence` | 1 | `specster.state`: `items`, `problems`; build and evidence phases |
 
 A cleanup run sends only `specster.runs`, with its outcome (`cleaned`, `skipped` or `error`).

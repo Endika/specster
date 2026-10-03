@@ -65,7 +65,7 @@ def record_run(repo: str, phase: str, final: tuple[str, RunMetrics | None] | Non
             ("inlined", len(m.skills_inlined)),
         ):
             put("specster.spec.skills", n, **{"specster.kind": kind})
-    if phase == "build":
+    if phase in ("build", "fix"):
         for state, v in (
             ("total", m.tasks_total),
             ("done", m.tasks_done),

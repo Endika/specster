@@ -722,7 +722,7 @@ class _Build:
         try:
             outcome = run_review(
                 Metered(s.make_reviewer(), meter, self._budget_stop),
-                reviewer_system_prompt(s.persona, s.review_skills.on_demand, has_tests),
+                reviewer_system_prompt(s.persona, s.review_skills.on_demand, has_tests, s.origin),
                 context_block(s.repo_map, s.review_skills.inline),
                 user,
                 Workspace(self.integration, self.cfg.repo_map.exclude),

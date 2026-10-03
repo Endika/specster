@@ -61,6 +61,7 @@ Outcome = Literal[
     "not_approved",
     "build_failed",
     "evidence_posted",
+    "fix_pushed",
 ]
 
 
@@ -170,7 +171,8 @@ class RunContext:
         base = f"{self.env.server_url}/{self.env.repo}/issues/{self.number}"
         links = [(c.author, f"{base}#issuecomment-{c.id}") for c in r.comments]
         m = self.metrics("refused", 0.0, role=self._build_role(), warnings=self.warnings)
-        body = render_refused(r.message, r.hint, self.context(m), links)
+        pull = self.phase in ("evidence", "fix")
+        body = render_refused(r.message, r.hint, self.context(m), links, pull)
         self.finish("refused", body, [self.trigger_label], metrics=m)
         return 1
 

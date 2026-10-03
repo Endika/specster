@@ -22,17 +22,22 @@ from specster.plan import plan_payload
 from specster.render import (
     LABELS,
     BuildView,
+    FixRow,
+    FixView,
     PullEvidenceView,
     RenderContext,
     fence,
     render_budget,
     render_build,
     render_error,
+    render_fix,
     render_pr_body,
     render_pull_evidence,
     render_questions,
     render_refused,
     render_spec,
+    reply_applied,
+    reply_declined,
     spec_objective,
     spec_title,
 )
@@ -936,3 +941,29 @@ def test_a_pull_request_whose_capture_never_ran_says_where_to_look() -> None:
 def test_a_spent_pull_request_budget_says_pull_request_in_spanish() -> None:
     body = render_budget(2.5, 0, 2.0, pull_ctx("es"), pull=True)
     assert "**El presupuesto de esta pull request está agotado**" in body and "issue" not in body
+
+
+def test_a_fix_comment_in_spanish_escapes_the_planners_reasons() -> None:
+    report = view().report
+    rows = [
+        FixRow("bob", "https://x/pull/5#discussion_r1", "app.py:3", "applied", "abcdef123"),
+        FixRow("@team", "https://x/pull/5#pullrequestreview-2", "", "declined", "ping @ana <b>|"),
+    ]
+    fix = FixView("pushed", "feature/x", "b" * 40, "c" * 40, "ai-fix", report, rows, marker="M")
+    metrics = BM.model_copy(update={"phase": "fix", "outcome": "fix_pushed"})
+    body = render_fix(fix, RenderContext(PersonaConfig(language="es"), metrics, (), ()))
+    assert "**Revisión aplicada en `feature/x`**" in body and "`bbbbbbb` → `ccccccc`" in body
+    assert "| bob: [app.py:3](https://x/pull/5#discussion_r1) | aplicado en `abcdef123` |" in body
+    assert "&#64;team: [revisión]" in body
+    assert "no aplicado: ping &#64;ana &lt;b>\\| |" in body
+    assert body.index("Revisa los commits nuevos") < body.index("specster:metrics")
+    assert body.endswith("-->\nM")
+    mark = "\n\n<!-- specster:reply -->"
+    assert reply_declined("es", "ping @ana") == f"No aplicado: ping &#64;ana{mark}"
+    assert reply_applied("en", ["a" * 40]) == f"Applied in {'a' * 40}.{mark}"
+
+
+def test_a_fence_defangs_what_only_specster_writes() -> None:
+    quoted = fence('<!-- specster:answered c1 -->\n<details data-specster="hidden">\n<!-- x -->')
+    assert "<!-- specster:" not in quoted and "<details data-specster" not in quoted
+    assert "<‍!-- specster:answered c1 -->" in quoted and "<!-- x -->" in quoted

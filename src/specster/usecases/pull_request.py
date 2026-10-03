@@ -8,6 +8,7 @@ import httpx
 
 from specster.approved import BuildRefused
 from specster.build import FINAL_SLOT
+from specster.evidence_branch import EVIDENCE_BRANCH
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.github import GitHubError, PullInfo, PullTracker
 from specster.metrics import spent
@@ -30,16 +31,9 @@ from specster.usecases.context import (
 )
 
 
-def _checkout_refusal(run: RunContext, pulls: PullTracker) -> BuildRefused | None:
+def _checkout_refusal(run: RunContext, default: str) -> BuildRefused | None:
     """Why the checkout is not the default branch's tip, where the config must come from."""
     lang, label = run.cfg.persona.language, run.trigger_label
-    try:
-        default = pulls.default_branch()
-    except (GitHubError, httpx.HTTPError) as e:
-        raise Failure(
-            f"could not read the default branch: {describe(e)}",
-            hint(lang, "hint_pull_read", label=label),
-        ) from e
     home = scratch_dir()
     try:
         git = Git(run.env.workspace, Author(run.cfg.persona.name, BOT_EMAIL), home / "git-home")
@@ -64,12 +58,49 @@ def _checkout_refusal(run: RunContext, pulls: PullTracker) -> BuildRefused | Non
     )
 
 
-def open_pull(run: RunContext, pulls: PullTracker) -> PullInfo | int:
-    """The labeled pull request, or the exit code of its refusal."""
+def _head_refusal(
+    run: RunContext, pulls: PullTracker, pull: PullInfo, default: str
+) -> BuildRefused | None:
+    """Why `ai-fix` must not push to the pull request's head branch, if it must not."""
     lang, label = run.cfg.persona.language, run.trigger_label
+    head = pull.head_ref
+    why = ""
+    if head == default:
+        why = "the default branch"
+    elif head == EVIDENCE_BRANCH:
+        why = "where Specster keeps its evidence"
+    else:
+        try:
+            protected = pulls.branch_protected(head)
+        except (GitHubError, httpx.HTTPError) as e:
+            raise Failure(
+                f"could not read whether {head} is protected: {describe(e)}",
+                hint(lang, "hint_pull_read", label=label),
+            ) from e
+        if protected:
+            why = "a protected branch"
+    if not why:
+        return None
+    message = (
+        f"Pull request #{pull.number} comes from `{head}`, {why}: `{label}` never pushes there"
+    )
+    return BuildRefused(message, hint(lang, "hint_pull_head", label=label))
+
+
+def open_pull(run: RunContext, pulls: PullTracker, *, pushes: bool = False) -> PullInfo | int:
+    """The labeled pull request, or the exit code of its refusal; `pushes` for one whose head
+    branch Specster will push to."""
+    lang, label = run.cfg.persona.language, run.trigger_label
+    try:
+        default = pulls.default_branch()
+    except (GitHubError, httpx.HTTPError) as e:
+        raise Failure(
+            f"could not read the default branch: {describe(e)}",
+            hint(lang, "hint_pull_read", label=label),
+        ) from e
     # The workflow checks out the default branch; a workflow that checks out the pull request
     # would have handed Specster the pull request's own config.
-    refusal = _checkout_refusal(run, pulls)
+    refusal = _checkout_refusal(run, default)
     if refusal is not None:
         return run.refuse(refusal)
     try:
@@ -90,6 +121,10 @@ def open_pull(run: RunContext, pulls: PullTracker) -> PullInfo | int:
     if pull.draft:
         message = f"Pull request #{pull.number} is a draft"
         return run.refuse(BuildRefused(message, hint(lang, "hint_pull_draft", label=label)))
+    if pushes:
+        refusal = _head_refusal(run, pulls, pull, default)
+        if refusal is not None:
+            return run.refuse(refusal)
     return pull
 
 
