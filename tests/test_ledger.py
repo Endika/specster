@@ -39,7 +39,7 @@ def test_a_role_with_unknown_usage_makes_the_total_unknown() -> None:
 def test_a_meter_counts_toward_the_known_cost_until_it_is_closed() -> None:
     led = Ledger({})
     worker = ModelConfig(model="claude-sonnet-5")
-    meter = led.meter("worker", worker)
+    meter = led.meter(worker)
     meter.turn(MTOK)
     meter.turn(MTOK)
     assert led.known_cost() == 4.0 and led.roles() == {} and led.turns() == 0
@@ -47,3 +47,10 @@ def test_a_meter_counts_toward_the_known_cost_until_it_is_closed() -> None:
     meter.close()
     meter.close()
     assert led.known_cost() == led.cost() == 4.0 and led.roles()["worker"].turns == 2
+
+
+def test_a_meter_counts_the_turns_it_has_seen() -> None:
+    meter = Ledger({}).meter(ModelConfig(model="claude-sonnet-5"))
+    meter.turn(Usage(100, 50, 0, 0))
+    meter.turn(Usage(1, 1, 0, 0))
+    assert meter.turns == 2 and meter.usage.input_tokens == 101

@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 
 from specster.closing import rewrite_references
 from specster.evidence import Capture, EvidenceRun, PageItem, Shot
-from specster.render.common import _NONE, _cell, _code, _kept, _prose, fence
+from specster.render.common import _NONE, _cell, _code, _code_cell, _kept, _prose, fence
 
 DIFF_INLINE_MAX = 4_000
 # Display widths in the pull request, for a 1280 and a 390 pixel wide viewport.
@@ -109,7 +109,7 @@ def evidence_section(
         for item in run.items:
             r = item.request
             out.append(
-                f"| `{_code(r.name)}` | `{r.method} {_code(r.path)}` | "
+                f"| `{_code_cell(r.name)}` | `{r.method} {_code_cell(r.path)}` | "
                 f"{_status(item.base)}{_TO}{_status(item.head)} | {yes if item.changed else no} |"
             )
         out.append("")

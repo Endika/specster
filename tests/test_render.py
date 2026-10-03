@@ -863,3 +863,27 @@ def test_pages_are_rendered_as_page_rows_in_both_languages(lang: str, heading: s
     assert heading in out
     assert "| `users-page` | `PAGE /users?x=1` | New column. |" in out
     assert '"pages":[' in out
+
+
+@pytest.mark.parametrize("objective", ["Tom & Jerry in R&D", "Tom &amp; Jerry in R&amp;D"])
+def test_an_ampersand_in_the_spec_objective_reaches_the_pr_body_unchanged(objective: str) -> None:
+    body = render_pr_body(view(spec_text=f"**Objective.** {objective}\n\nmore"), bare())
+    assert f"**Objective.** {objective}\n" in body and "&amp;amp;" not in body
+
+
+def test_a_pipe_in_a_request_path_is_escaped_in_the_spec_evidence_table() -> None:
+    pipe = get("ab", "/q?x=1|2")
+    page = EvidencePage(name="pq", path="/a|b", why="y")
+    spec, tasks = spec_and_tasks()
+    out = render_spec(
+        spec.model_copy(update={"evidence": [pipe], "pages": [page]}), tasks, [], ctx()
+    )
+    assert "| `ab` | `GET /q?x=1\\|2` | w |" in out
+    assert "| `pq` | `PAGE /a\\|b` | y |" in out
+
+
+def test_a_pipe_in_a_request_path_is_escaped_in_the_pr_evidence_table() -> None:
+    capture = json_capture("{}\n")
+    one = EvidenceItem(get("ab", "/q?x=1|2"), capture, capture, diff_text("ab", capture, capture))
+    body = render_pr_body(view(evidence=evidence_run(one)), bare())
+    assert "| `ab` | `GET /q?x=1\\|2` |" in body

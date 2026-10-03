@@ -234,7 +234,7 @@ def test_metered_stops_before_the_turn_once_spent() -> None:
         return "build budget spent: $1.00 of $1.00" if checks == 3 else None
 
     ledger = Ledger({})
-    meter = ledger.meter("worker", ModelConfig(model="claude-sonnet-5"))
+    meter = ledger.meter(ModelConfig(model="claude-sonnet-5"))
     model = ScriptedModel([[ToolCall(str(i), "echo", {})] for i in range(5)])
     with pytest.raises(AgentError, match=r"BudgetSpent: build budget spent: \$1\.00") as err:
         run_loop(

@@ -103,6 +103,11 @@ def _code(text: str) -> str:
     return " ".join(rewrite_references(text.replace("`", "")).split())
 
 
+def _code_cell(text: str) -> str:
+    """_code for a table cell: GFM splits a cell on "|" even inside a code span."""
+    return _code(text).replace("|", "\\|")
+
+
 def _indent(text: str) -> list[str]:
     return [f"  {line}" if line else "" for line in _prose(text).splitlines()]
 
