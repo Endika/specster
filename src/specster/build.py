@@ -432,11 +432,13 @@ class _Build:
         return True
 
     def _bill_fatal(
-        self, role: str, model: ModelConfig, e: BaseException, meter: Meter | None = None
+        self, role: str, model: ModelConfig, e: BaseException, meter: Meter | None
     ) -> None:
         found = attached_usage(e)
-        if found is None and meter is not None and meter.turns:
-            found = (meter.usage, meter.turns)
+        if found is None and meter is not None:
+            usage, turns = meter.snapshot()
+            # A done turn is known (AgentError's turn_no - 1); with zero, a send may be in flight.
+            found = (usage, turns) if turns else None
         if found is None:
             # Turns may have been paid for; an unknown cost is never billed as $0.
             self.s.ledger.mark_unknown(role, model)

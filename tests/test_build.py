@@ -985,6 +985,7 @@ def test_a_reviewer_that_dies_mid_review_is_billed_for_its_metered_turns(tmp_pat
         run_build(s)
     reviewer = s.ledger.roles()["reviewer"]
     assert reviewer.turns == 1 and reviewer.cost_usd == TURN_USD
+    assert s.ledger.known_cost() == s.ledger.cost()
 
 
 def test_a_worker_subject_that_closes_an_issue_never_reaches_the_commit(tmp_path: Path) -> None:

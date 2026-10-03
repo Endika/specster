@@ -22,6 +22,10 @@ class Meter:
             self.usage = self.usage + usage
             self.turns += 1
 
+    def snapshot(self) -> tuple[Usage, int]:
+        with self._lock:
+            return self.usage, self.turns
+
     def close(self) -> None:
         with self._lock:
             self._running.discard(self)

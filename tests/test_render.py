@@ -865,10 +865,15 @@ def test_pages_are_rendered_as_page_rows_in_both_languages(lang: str, heading: s
     assert '"pages":[' in out
 
 
-@pytest.mark.parametrize("objective", ["Tom & Jerry in R&D", "Tom &amp; Jerry in R&amp;D"])
-def test_an_ampersand_in_the_spec_objective_reaches_the_pr_body_unchanged(objective: str) -> None:
-    body = render_pr_body(view(spec_text=f"**Objective.** {objective}\n\nmore"), bare())
-    assert f"**Objective.** {objective}\n" in body and "&amp;amp;" not in body
+def test_an_old_specs_raw_objective_is_escaped_and_a_current_one_is_not_doubled() -> None:
+    def objective(text: str) -> str:
+        body = render_pr_body(view(spec_text=f"**Objective.** {text}\n\nmore"), bare())
+        return next(line for line in body.splitlines() if line.startswith("**Objective.**"))
+
+    old = objective("hide <!-- rest &#32; Tom & Jerry")
+    assert old == "**Objective.** hide &lt;!-- rest &amp;#32; Tom &amp; Jerry"
+    current = "Tom &amp; Jerry &lt;b> &#64;carol"
+    assert objective(current) == f"**Objective.** {current}"
 
 
 def test_a_pipe_in_a_request_path_is_escaped_in_the_spec_evidence_table() -> None:

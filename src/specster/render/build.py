@@ -18,8 +18,8 @@ from specster.render.common import (
     _kept,
     _l,
     _links,
-    _no_mentions,
     _prose,
+    _unescaped,
     fence,
 )
 from specster.render.evidence import evidence_section
@@ -146,8 +146,8 @@ def render_pr_body(view: BuildView, ctx: RenderContext) -> str:
 
     def make(cuts: _Cuts, notes: list[str]) -> list[str]:
         if objective is not None:
-            # Already escaped when the spec comment was rendered.
-            body = [f"**{lab['objective']}.** {_no_mentions(rewrite_references(objective))}", ""]
+            # An older Specster may have left it raw: undo the escapes, then escape once.
+            body = [f"**{lab['objective']}.** {_prose(_unescaped(objective))}", ""]
         else:
             body = [f"**{lab['spec_link']}:** {view.spec_url}", ""]
         tests, note = _tests(report, lab, cuts.output)
