@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.18.0](https://github.com/Endika/specster/compare/specster-v0.17.0...specster-v0.18.0) (2026-10-03)
+
+
+### Features
+
+* apply a pull request's open review threads as commits on its branch ([c65acbe](https://github.com/Endika/specster/commit/c65acbe1d9d4240f1c338a1293605e57bdb23c1d))
+* post before/after evidence on any pull request labelled ai-evidence ([6cf77b2](https://github.com/Endika/specster/commit/6cf77b2bd1a6d3ed94104a646e3671a78c05e63e))
+* read pull requests, their review threads and reply to review comments ([6c47d1d](https://github.com/Endika/specster/commit/6c47d1d952739c73aa50013fc98ac2d573a41dca))
+* refuse ai-fix on a branch whose rulesets require pull requests ([6a39517](https://github.com/Endika/specster/commit/6a39517a675270eeaf302fb4014e9f6dbb408fb4))
+* route ai-evidence and ai-fix labels on same-repo pull requests ([ed2a22b](https://github.com/Endika/specster/commit/ed2a22bf77b425a89d05663d751395605ac8216c))
+
+
+### Documentation
+
+* explain ai-evidence and ai-fix on pull requests ([87670f4](https://github.com/Endika/specster/commit/87670f40d555fc885d1e51baab6770c89ac8e888))
+
 ## [0.17.0](https://github.com/Endika/specster/compare/specster-v0.16.0...specster-v0.17.0) (2026-10-03)
 
 
