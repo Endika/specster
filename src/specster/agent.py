@@ -5,16 +5,20 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from specster.approved import safe_path
 from specster.ledger import Meter
 from specster.llm.base import ChatModel, ChatSession, ToolResult, ToolSpec, Turn, Usage
 from specster.plan import PlanError, normalize_plan
 from specster.schemas import (
     SUBMIT_EVIDENCE,
+    SUBMIT_FIX,
     SUBMIT_QUESTIONS,
     SUBMIT_SPEC,
     EvidencePage,
     EvidencePlan,
     EvidenceRequest,
+    FixPlan,
+    NotApplied,
     PlanTask,
     QuestionsResult,
     SpecResult,
@@ -22,10 +26,11 @@ from specster.schemas import (
 )
 from specster.skills import SkillBook
 from specster.telemetry import span
-from specster.workspace import ToolError, Workspace
+from specster.workspace import ToolError, Workspace, is_config_path, is_workflow_path
 
 NUDGE = "Call submit_questions or submit_spec now."
 EVIDENCE_NUDGE = "Call submit_evidence now."
+FIX_NUDGE = "Call submit_fix now."
 LAST = "Last turn: submit now."
 
 
@@ -400,4 +405,103 @@ def run_evidence_planner(
         {SUBMIT_EVIDENCE: submit},
         max_turns,
         EVIDENCE_NUDGE,
+    )
+
+
+@dataclass(frozen=True)
+class FixOutcome:
+    tasks: list[PlanTask]
+    plan_fixes: list[str]
+    not_applied: list[NotApplied]
+    # Review item -> the ids of the tasks that apply it.
+    addressed: dict[str, list[str]]
+
+
+def check_fix(
+    plan: FixPlan,
+    keys: Sequence[str],
+    *,
+    allow_workflows: bool,
+    allow_config: bool,
+    config_path: str,
+) -> FixOutcome:
+    """A fix plan that accounts for every review item once and that the build may run."""
+    known = set(keys)
+    addressed: dict[str, list[str]] = {}
+    for task in plan.tasks:
+        for key in dict.fromkeys(task.addresses):
+            addressed.setdefault(key, []).append(task.id)
+    declined = [n.id for n in plan.not_applied]
+    unknown = sorted((set(addressed) | set(declined)) - known)
+    if unknown:
+        raise SubmissionError(f"unknown review item ids: {', '.join(unknown)}")
+    twice = sorted(
+        {k for k in declined if declined.count(k) > 1} | (set(declined) & set(addressed))
+    )
+    if twice:
+        raise SubmissionError(
+            f"{', '.join(twice)} must be either in a task's addresses or once in not_applied"
+        )
+    missing = [k for k in keys if k not in addressed and k not in declined]
+    if missing:
+        raise SubmissionError(
+            f"review items not accounted for: {', '.join(missing)}; list each in a task's "
+            "addresses or in not_applied with a reason"
+        )
+    files = sorted({f for t in plan.tasks for f in t.files})
+    unsafe = [f for f in files if not safe_path(f)]
+    if unsafe:
+        raise SubmissionError(f"{unsafe[0]} is not a path a task can write")
+    if not allow_workflows and (wf := [f for f in files if is_workflow_path(f)]):
+        raise SubmissionError(
+            f"{wf[0]} is a workflow file, which this repository does not let Specster change; "
+            "put the items that ask for it in not_applied"
+        )
+    if not allow_config and (own := [f for f in files if is_config_path(f, config_path)]):
+        raise SubmissionError(
+            f"{own[0]} is Specster's configuration, which this repository does not let "
+            "Specster change; put the items that ask for it in not_applied"
+        )
+    tasks, fixes = normalize_plan(plan.tasks)
+    order = {k: i for i, k in enumerate(keys)}
+    return FixOutcome(
+        tasks,
+        fixes,
+        sorted(plan.not_applied, key=lambda n: order[n.id]),
+        {k: addressed[k] for k in keys if k in addressed},
+    )
+
+
+def run_fix_planner(
+    model: ChatModel,
+    system: str,
+    context: str,
+    user: str,
+    ws: Workspace,
+    max_turns: int,
+    check: Callable[[FixPlan], FixOutcome],
+) -> LoopResult[FixOutcome]:
+    """The tasks that apply a pull request's review, read from its head."""
+
+    def submit(args: dict[str, Any]) -> FixOutcome:
+        return check(FixPlan.model_validate(args))
+
+    tools = [
+        *read_tool_specs(),
+        ToolSpec(
+            SUBMIT_FIX,
+            "Submit the tasks that apply the review and the items left as they are. Ends the run.",
+            json_schema(FixPlan),
+        ),
+    ]
+    return run_loop(
+        model,
+        system,
+        context,
+        user,
+        tools,
+        read_handlers(ws),
+        {SUBMIT_FIX: submit},
+        max_turns,
+        FIX_NUDGE,
     )

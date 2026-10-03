@@ -93,10 +93,10 @@ useful for re-running a failed job without re-labeling.
   the `evidence` job, which stops at the same `build.max_minutes` while it plans, sets up, serves
   and captures the base and the head.
 - The step's `outcome` output is `questions`, `spec`, `refused`, `pr_opened`, `not_approved`,
-  `build_failed`, `evidence_posted`, `error` or `budget_exhausted`, or `skipped` when the event
-  was not for Specster (another label, a bot sender). A refused pull request (fork, closed,
-  draft, no `build.preview` for `ai-evidence`, or a checkout that is not the default branch) ends
-  `refused`. A cleanup ends `cleaned`, `skipped` when there was
+  `build_failed`, `evidence_posted`, `fix_pushed`, `error` or `budget_exhausted`, or `skipped`
+  when the event was not for Specster (another label, a bot sender). A refused pull request (fork,
+  closed, draft, no `build.preview` for `ai-evidence`, nothing to apply or a pull request that
+  moved while `ai-fix` worked, or a checkout that is not the default branch) ends `refused`. A cleanup ends `cleaned`, `skipped` when there was
   nothing to remove, or `error`.
 - `github_token` can be the default `GITHUB_TOKEN` (comments come from "github-actions[bot]") or a
   GitHub App installation token (comments come from your own bot; see [Your own bot identity](#your-own-bot-identity)). A

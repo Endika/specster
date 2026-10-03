@@ -48,6 +48,8 @@ class FakeTracker:
     threads: list[ReviewThread] = field(default_factory=list)
     review_list: list[Review] = field(default_factory=list)
     replies: list[tuple[int, int, str]] = field(default_factory=list)
+    protected: set[str] = field(default_factory=set)
+    protected_error: str | None = None
 
     def get_issue(self, number: int) -> Issue:
         return self.issue
@@ -112,6 +114,11 @@ class FakeTracker:
 
     def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> None:
         self.replies.append((number, comment_id, body))
+
+    def branch_protected(self, branch: str) -> bool:
+        if self.protected_error is not None:
+            raise GitHubError(self.protected_error, 403)
+        return branch in self.protected
 
 
 def _with_labels(issue: Issue, labels: set[str]) -> Issue:

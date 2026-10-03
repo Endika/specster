@@ -7,6 +7,7 @@ SUBMIT_SPEC = "submit_spec"
 SUBMIT_TASK = "submit_task"
 SUBMIT_REVIEW = "submit_review"
 SUBMIT_EVIDENCE = "submit_evidence"
+SUBMIT_FIX = "submit_fix"
 
 
 class _Out(BaseModel):
@@ -143,6 +144,28 @@ class EvidencePlan(_Out):
         if len(self.evidence) + len(self.pages) > EVIDENCE_MAX:
             raise ValueError(f"evidence and pages together are at most {EVIDENCE_MAX}")
         return self
+
+
+# A review item's id as the fix planner sees it: c<id> for a thread, r<id> for a review.
+REVIEW_ITEM_ID = r"^[cr][0-9]+$"
+
+
+class FixTask(PlanTask):
+    addresses: list[Annotated[str, Field(pattern=REVIEW_ITEM_ID)]] = Field(
+        min_length=1, description="Ids of the review items this task applies, e.g. c123 or r45."
+    )
+
+
+class NotApplied(_Out):
+    id: str = Field(pattern=REVIEW_ITEM_ID, description="The review item left as it is.")
+    reason: str = _text(300, "Why it is not applied, in one sentence.")
+
+
+class FixPlan(_Out):
+    tasks: list[FixTask] = Field(default=[], description="The changes the review asks for.")
+    not_applied: list[NotApplied] = Field(
+        default=[], description="Every review item no task applies, with why."
+    )
 
 
 class TaskSubmission(_Out):

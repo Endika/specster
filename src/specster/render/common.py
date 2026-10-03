@@ -50,7 +50,17 @@ def hint(language: str, name: str, /, **values: object) -> str:
     return LABELS.get(language, LABELS["en"])[name].format(**values)
 
 
+# What only Specster itself writes: quoted text keeps it, with a zero-width joiner inside, so no
+# parser of Specster's comments can take a quote for Specster's own structure.
+_STRUCTURE = re.compile(r"<(?=!--\s*specster:|details\s+data-specster=)", re.IGNORECASE)
+
+
+def defang(text: str) -> str:
+    return _STRUCTURE.sub("<\u200d", text)
+
+
 def fence(text: str, info: str = "") -> str:
+    text = defang(text)
     longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
     ticks = "`" * max(3, longest + 1)
     return f"{ticks}{info}\n{text}\n{ticks}"
@@ -187,9 +197,9 @@ def _footer(ctx: RenderContext) -> list[str]:
     inlined = ", ".join(_prose(n) for n in m.skills_inlined) or "none"
     read = ", ".join(_prose(n) for n in m.skills_read) or "none"
     # The thread and the planner's file reads are the spec phase's; a build has neither, and
-    # the evidence planner reads no comments.
+    # the evidence planner reads no comments. A fix reads the review and builds.
     facts = [] if m.phase == "build" else [f"- Files read: {len(m.files_read)}{shown}"]
-    if m.phase == "spec":
+    if m.phase in ("spec", "fix"):
         facts.append(
             f"- Comments: {m.comments_included} read, {m.comments_untrusted} untrusted, "
             f"{m.comments_after_label} after the label, "
@@ -279,10 +289,14 @@ def _fit(
     ctx: RenderContext,
     make: Callable[[_Cuts, list[str]], list[str]],
     sizes: Mapping[str, int],
+    last_line: str = "",
 ) -> str:
+    """The body, cut until it fits; `last_line` stays the comment's very last line."""
+    end = f"\n{last_line}" if last_line else ""
+
     def render(cuts: _Cuts) -> str:
         notes: list[str] = []
-        return _build_wrap(ctx, make(cuts, notes), notes)
+        return _build_wrap(ctx, make(cuts, notes), notes) + end
 
     cuts = _Cuts()
     out = render(cuts)
@@ -319,7 +333,7 @@ def _fit(
     text, tail = "\n".join(body[:-3]), body[-3:]
     keep = max(0, len(text) - (len(out) - BODY_MAX) - 1_000)
     notes.append(f"body cut to its first {keep:,} of {len(text):,} characters: {_OVER}")
-    return _build_wrap(ctx, [text[:keep], "", *tail], notes)
+    return _build_wrap(ctx, [text[:keep], "", *tail], notes) + end
 
 
 def _links(comments: Sequence[tuple[str, str]]) -> list[str]:

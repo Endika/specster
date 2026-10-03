@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import pytest
@@ -91,6 +92,13 @@ class FakeGitHubServer:
             return httpx.Response(201, json={})
         if path == "/repos/o/r" and method == "GET":
             return httpx.Response(200, json={"default_branch": "trunk"})
+        if path.startswith("/repos/o/r/branches/") and method == "GET":
+            name = path.removeprefix("/repos/o/r/branches/")
+            if name == "secret":
+                return httpx.Response(403, json={"message": "Resource not accessible"})
+            if name not in self.branches | {"trunk"}:
+                return httpx.Response(404, json={"message": "Branch not found"})
+            return httpx.Response(200, json={"name": name, "protected": name == "trunk"})
         if path.startswith("/repos/o/r/git/ref/heads/") and method == "GET":
             name = path.removeprefix("/repos/o/r/git/ref/heads/")
             return httpx.Response(200 if name in self.branches else 404, json={})
@@ -193,6 +201,14 @@ def test_default_branch_and_branch_existence() -> None:
     gh = client(FakeGitHubServer())
     assert gh.default_branch() == "trunk"
     assert gh.branch_exists("specster/issue-3") and not gh.branch_exists("specster/issue-7")
+
+
+def test_branch_protection_is_read_and_a_missing_branch_is_not_protected() -> None:
+    gh = client(FakeGitHubServer())
+    assert gh.branch_protected("trunk") and not gh.branch_protected("specster/issue-3")
+    assert not gh.branch_protected("specster/issue-7")
+    with pytest.raises(httpx.HTTPStatusError):
+        gh.branch_protected("secret")
 
 
 def test_create_pull_returns_its_url_and_explains_a_refusal() -> None:
@@ -430,33 +446,56 @@ def test_review_threads_of_an_unknown_pull_request_raise_a_github_error() -> Non
         gh.review_threads(9)
 
 
-def test_reviews_read_every_page() -> None:
+def _reviews_client(pages: list[list[dict[str, Any]]], seen: list[object]) -> GitHubRest:
     def handle(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/repos/o/r/pulls/9/reviews"
-        review = {
-            "id": 5,
-            "user": {"login": "rev"},
-            "author_association": "OWNER",
-            "state": "CHANGES_REQUESTED",
-            "body": None,
-            "submitted_at": "2026-01-01T09:00:00Z",
+        assert request.url.path == "/graphql"
+        variables = json.loads(request.content)["variables"]
+        seen.append(variables["c"])
+        index = len(seen) - 1
+        more = index + 1 < len(pages)
+        page = {
+            "pageInfo": {"hasNextPage": more, "endCursor": str(index + 1)},
+            "nodes": pages[index],
         }
-        if request.url.params.get("page") is None:
-            link = (
-                '<https://api.github.com/repos/o/r/pulls/9/reviews?per_page=100&page=2>; rel="next"'
-            )
-            return httpx.Response(200, json=[review], headers={"Link": link})
         return httpx.Response(
-            200, json=[{**review, "id": 6, "user": None, "state": "PENDING", "submitted_at": None}]
+            200, json={"data": {"repository": {"pullRequest": {"reviews": page}}}}
         )
 
-    reviews = GitHubRest("o/r", "tok", transport=httpx.MockTransport(handle)).reviews(9)
-    assert [(r.id, r.author, r.state, r.body) for r in reviews] == [
-        (5, "rev", "CHANGES_REQUESTED", ""),
-        (6, "ghost", "PENDING", ""),
+    return GitHubRest(
+        "o/r",
+        "tok",
+        graphql_url="https://api.github.com/graphql",
+        transport=httpx.MockTransport(handle),
+    )
+
+
+def test_reviews_follow_the_cursor_and_say_when_their_text_was_edited() -> None:
+    review = {
+        "databaseId": 5,
+        "author": {"login": "rev"},
+        "authorAssociation": "OWNER",
+        "state": "CHANGES_REQUESTED",
+        "body": None,
+        "submittedAt": "2026-01-01T09:00:00Z",
+        "lastEditedAt": "2026-01-02T09:00:00Z",
+    }
+    pending = {**review, "databaseId": 6, "author": None, "state": "PENDING", "submittedAt": None}
+    seen: list[object] = []
+    reviews = _reviews_client([[review], [{**pending, "lastEditedAt": None}]], seen).reviews(9)
+    assert seen == [None, "1"]
+    assert [(r.id, r.author, r.association, r.state, r.body) for r in reviews] == [
+        (5, "rev", "OWNER", "CHANGES_REQUESTED", ""),
+        (6, "ghost", "OWNER", "PENDING", ""),
     ]
     assert reviews[0].submitted_at == datetime(2026, 1, 1, 9, tzinfo=UTC)
-    assert reviews[1].submitted_at is None
+    assert reviews[0].edited_at == datetime(2026, 1, 2, 9, tzinfo=UTC)
+    assert reviews[1].submitted_at is None and reviews[1].edited_at is None
+
+
+def test_reviews_refuse_to_drop_reviews_past_the_page_bound() -> None:
+    endless: list[list[dict[str, Any]]] = [[]] * (github.MAX_THREAD_PAGES + 1)
+    with pytest.raises(GitHubError, match="more than"):
+        _reviews_client(endless, []).reviews(9)
 
 
 def test_a_reply_posts_to_the_comment_and_a_refusal_raises() -> None:
@@ -478,3 +517,24 @@ def test_a_reply_posts_to_the_comment_and_a_refusal_raises() -> None:
 
 def test_a_pull_label_time_comes_from_the_same_issue_events() -> None:
     assert client(FakeGitHubServer()).label_applied_at(7, "ai-spec") is not None
+
+
+def test_a_graphql_bot_login_is_spelled_as_rest_spells_it() -> None:
+    thread = _thread(1)
+    nodes: Any = thread["comments"]
+    app = {"__typename": "Bot", "login": "specster-endika"}
+    person = {"__typename": "User", "login": "specster-endika"}
+    nodes["nodes"] = [nodes["nodes"][0] | {"author": a} for a in (app, person)]
+    nodes["totalCount"] = 2
+    comments = _threads_client([[thread]]).review_threads(9)[0].comments
+    assert [c.author for c in comments] == ["specster-endika[bot]", "specster-endika"]
+    review = {
+        "databaseId": 5,
+        "author": app,
+        "authorAssociation": "NONE",
+        "state": "COMMENTED",
+        "body": "b",
+        "submittedAt": None,
+        "lastEditedAt": None,
+    }
+    assert _reviews_client([[review]], []).reviews(9)[0].author == "specster-endika[bot]"

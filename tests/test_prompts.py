@@ -10,6 +10,7 @@ from specster.prompts import (
     _EVIDENCE,
     _served,
     review_block,
+    reviewer_system_prompt,
     revision_block,
     system_prompt,
     task_block,
@@ -156,3 +157,9 @@ def test_prompt_explains_pages_and_the_revision_replays_them() -> None:
     assert "Approved pages" not in revision_block(plain, "n")
     block = revision_block(dataclasses.replace(plain, pages=(page,)), "n")
     assert "Approved pages (JSON):" in block and '"/users"' in block
+
+
+def test_the_reviewer_of_a_pull_request_fix_is_not_told_about_an_issue_or_a_spec() -> None:
+    text = reviewer_system_prompt(PersonaConfig(), [], True, "pull_request")
+    assert "a plan that applies a pull request's review" in text and "spec" not in text
+    assert "approved plan. Read the spec" in reviewer_system_prompt(PersonaConfig(), [], True)

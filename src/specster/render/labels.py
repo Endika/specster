@@ -51,6 +51,7 @@ LABELS: dict[str, dict[str, str]] = {
         "next_questions": "Answer below, then add the `{label}` label again.",
         "next_spec": "Review the spec. The `{label}` label will build it.",
         "refused": "Specster will not build this issue",
+        "refused_pull": "Specster will not run on this pull request",
         "pr_opened": "Pull request opened",
         "build_failed": "The build failed",
         "not_approved": "The reviewer did not approve the build",
@@ -119,6 +120,11 @@ LABELS: dict[str, dict[str, str]] = {
             "branch here and open the pull request from it."
         ),
         "hint_pull_closed": "Reopen the pull request, then add the `{label}` label again.",
+        "hint_pull_head": (
+            "Nothing ran. `{label}` only pushes to a pull request's own branch: open it from a "
+            "branch that is not the default branch, `specster-evidence` or a protected one, then "
+            "add the `{label}` label again."
+        ),
         "hint_pull_checkout": (
             "Check out the default branch in the workflow (actions/checkout with ref: "
             "${{{{ github.event.repository.default_branch }}}}), then add the `{label}` label "
@@ -152,8 +158,47 @@ LABELS: dict[str, dict[str, str]] = {
             "The planner did not submit a usable answer. Add the `{label}` label again, or "
             "split the pull request so it can be read within budget.max_turns turns."
         ),
-        "hint_not_implemented": (
-            "Nothing ran. This label does nothing yet in this version of Specster."
+        "fix_pushed": "Review applied on `{branch}`",
+        "fix_declined": "Nothing to change: no review item was applied",
+        "fix_not_approved": "The reviewer did not approve the fix: nothing was pushed",
+        "fix_failed": "The fix failed: nothing was pushed",
+        "fix_budget": "The fix stopped, its budget spent: nothing was pushed",
+        "fix_time": ("The fix stopped at its time limit (`build.max_minutes`): nothing was pushed"),
+        "fix_moved": "The pull request moved while I worked: nothing was pushed",
+        "fix_closed": "The pull request changed while I worked: nothing was pushed",
+        "fix_range_pushed": "`{old}` \u2192 `{new}`",
+        "fix_range": "Head `{head}`",
+        "fix_item": "Review item",
+        "fix_review": "review",
+        "fix_row_applied": "applied in {detail}",
+        "fix_row_planned": "planned in {detail}",
+        "fix_row_declined": "not applied: {detail}",
+        "fix_row_unapplied": "not applied: its task changed no files",
+        "fix_next_pushed": (
+            "Review the new commits. Each thread has a reply; resolving them is up to you."
+        ),
+        "fix_next_declined": (
+            "Each thread has a reply with the reason; resolving them is up to you."
+        ),
+        "fix_next_moved": (
+            "The `{label}` label stays on: remove it and add it again to apply the review on the "
+            "new head."
+        ),
+        "fix_next": "Add the `{label}` label again to try again.",
+        "fix_reply_applied": "Applied in {shas}.",
+        "fix_reply_declined": "Not applied: {reason}",
+        "fix_reply_unapplied": "Not applied: its task changed no files.",
+        "hint_fix_nothing": (
+            "Leave review comments as a trusted reviewer (see trust.comments), then add the "
+            "`{label}` label again."
+        ),
+        "hint_fix_planner": (
+            "The planner did not submit a usable plan. Add the `{label}` label again, or apply "
+            "part of the review first so the rest can be read within budget.max_turns turns."
+        ),
+        "hint_fix_push": (
+            "Check that the token has contents: write and that the pull request's branch "
+            "accepts pushes, then add the `{label}` label again."
         ),
     },
     "es": {
@@ -208,6 +253,7 @@ LABELS: dict[str, dict[str, str]] = {
         "next_questions": "Responde abajo y vuelve a poner la etiqueta `{label}`.",
         "next_spec": "Revisa la spec. La etiqueta `{label}` la construir\u00e1.",
         "refused": "Specster no va a construir esta issue",
+        "refused_pull": "Specster no va a trabajar en esta pull request",
         "pr_opened": "Pull request abierta",
         "build_failed": "La construcci\u00f3n ha fallado",
         "not_approved": "El revisor no ha aprobado la construcci\u00f3n",
@@ -283,6 +329,11 @@ LABELS: dict[str, dict[str, str]] = {
             "la rama aqu\u00ed y abre la pull request desde ella."
         ),
         "hint_pull_closed": "Reabre la pull request y vuelve a poner la etiqueta `{label}`.",
+        "hint_pull_head": (
+            "No se ha ejecutado nada. `{label}` solo sube commits a la rama propia de una pull "
+            "request: \u00e1brela desde una rama que no sea la rama por defecto, "
+            "`specster-evidence` ni una rama protegida, y vuelve a poner la etiqueta `{label}`."
+        ),
         "hint_pull_checkout": (
             "Haz checkout de la rama por defecto en el workflow (actions/checkout con ref: "
             "${{{{ github.event.repository.default_branch }}}}) y vuelve a poner la etiqueta "
@@ -323,9 +374,51 @@ LABELS: dict[str, dict[str, str]] = {
             "El planificador no ha enviado una respuesta v\u00e1lida. Vuelve a poner la etiqueta "
             "`{label}`, o divide la pull request para que se pueda leer en budget.max_turns turnos."
         ),
-        "hint_not_implemented": (
-            "No se ha ejecutado nada. Esta etiqueta a\u00fan no hace nada en esta versi\u00f3n "
-            "de Specster."
+        "fix_pushed": "Revisi\u00f3n aplicada en `{branch}`",
+        "fix_declined": "Nada que cambiar: no se ha aplicado ning\u00fan punto de la revisi\u00f3n",
+        "fix_not_approved": ("El revisor no ha aprobado la correcci\u00f3n: no se ha subido nada"),
+        "fix_failed": "La correcci\u00f3n ha fallado: no se ha subido nada",
+        "fix_budget": ("La correcci\u00f3n se ha parado, sin presupuesto: no se ha subido nada"),
+        "fix_time": (
+            "La correcci\u00f3n se ha parado en su l\u00edmite de tiempo "
+            "(`build.max_minutes`): no se ha subido nada"
+        ),
+        "fix_moved": "La pull request ha cambiado mientras trabajaba: no se ha subido nada",
+        "fix_closed": "La pull request ha cambiado mientras trabajaba: no se ha subido nada",
+        "fix_range_pushed": "`{old}` \u2192 `{new}`",
+        "fix_range": "Head `{head}`",
+        "fix_item": "Punto de la revisi\u00f3n",
+        "fix_review": "revisi\u00f3n",
+        "fix_row_applied": "aplicado en {detail}",
+        "fix_row_planned": "previsto en {detail}",
+        "fix_row_declined": "no aplicado: {detail}",
+        "fix_row_unapplied": "no aplicado: su tarea no cambi\u00f3 ning\u00fan fichero",
+        "fix_next_pushed": (
+            "Revisa los commits nuevos. Cada hilo tiene una respuesta; resolverlos te toca a ti."
+        ),
+        "fix_next_declined": (
+            "Cada hilo tiene una respuesta con el motivo; resolverlos te toca a ti."
+        ),
+        "fix_next_moved": (
+            "La etiqueta `{label}` sigue puesta: qu\u00edtala y vuelve a ponerla para aplicar "
+            "la revisi\u00f3n sobre el head nuevo."
+        ),
+        "fix_next": "Vuelve a poner la etiqueta `{label}` para intentarlo de nuevo.",
+        "fix_reply_applied": "Aplicado en {shas}.",
+        "fix_reply_declined": "No aplicado: {reason}",
+        "fix_reply_unapplied": "No aplicado: su tarea no cambi\u00f3 ning\u00fan fichero.",
+        "hint_fix_nothing": (
+            "Deja comentarios de revisi\u00f3n como revisor de confianza (mira trust.comments) "
+            "y vuelve a poner la etiqueta `{label}`."
+        ),
+        "hint_fix_planner": (
+            "El planificador no ha enviado un plan v\u00e1lido. Vuelve a poner la etiqueta "
+            "`{label}`, o aplica antes parte de la revisi\u00f3n para que el resto se pueda "
+            "leer en budget.max_turns turnos."
+        ),
+        "hint_fix_push": (
+            "Comprueba que el token tiene contents: write y que la rama de la pull request "
+            "acepta pushes, y vuelve a poner la etiqueta `{label}`."
         ),
     },
 }

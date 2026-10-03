@@ -37,11 +37,18 @@ class Thread:
     nonce: str
 
 
-def own_text(body: str) -> str:
-    # The hidden section quotes what was removed from people's text and may hold a forged
-    # "</details>", so the comment is cut where that section (or the footer) starts.
+def own_section(body: str) -> str:
+    """What Specster itself wrote in its comment, before the hidden section and the footer.
+
+    The hidden section quotes what was removed from people's text, markers and a forged
+    "</details>" included, so nothing past it is Specster's own.
+    """
     cuts = [i for i in (body.find(HIDDEN_OPEN), body.rfind(FOOTER_OPEN)) if i != -1]
-    text = strip_markers(body[: min(cuts)] if cuts else body)
+    return body[: min(cuts)] if cuts else body
+
+
+def own_text(body: str) -> str:
+    text = strip_markers(own_section(body))
     return re.sub(r"<!-- specster:[^>]*-->", "", text, flags=re.DOTALL).strip()
 
 

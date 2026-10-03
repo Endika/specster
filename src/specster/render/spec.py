@@ -169,11 +169,15 @@ def spec_title(spec_text: str) -> str | None:
 
 
 def render_refused(
-    message: str, hint: str, ctx: RenderContext, comments: Sequence[tuple[str, str]] = ()
+    message: str,
+    hint: str,
+    ctx: RenderContext,
+    comments: Sequence[tuple[str, str]] = (),
+    pull: bool = False,
 ) -> str:
     lab = _l(ctx)
     body = [
-        f"**{lab['refused']}**",
+        f"**{lab['refused_pull' if pull else 'refused']}**",
         "",
         fence(rewrite_references(message)),
         "",

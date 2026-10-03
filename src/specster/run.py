@@ -158,7 +158,7 @@ def main(
                         run, trigger, make_model, fetch, identity, install_browser
                     ).execute()
                 if phase in ("evidence", "fix"):
-                    pull = open_pull(run, tracker)
+                    pull = open_pull(run, tracker, pushes=phase == "fix")
                     if isinstance(pull, int):
                         return pull
                     kind = EvidencePhase if phase == "evidence" else FixPhase
