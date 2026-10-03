@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/Endika/specster/compare/specster-v0.16.0...specster-v0.17.0) (2026-10-03)
+
+
+### Features
+
+* tell the planner where the app is served and flag pages that answer with an error ([88fcd31](https://github.com/Endika/specster/commit/88fcd3188b9a366df57f96334655ee8cbfd6c34d))
+
+
+### Bug Fixes
+
+* escape pipes in table paths and bill a dead worker's metered spend ([48b6543](https://github.com/Endika/specster/commit/48b6543f21f760585ee5b80a9480f7b5a2071b8f))
+* re-escape an old spec's objective in the pull request body ([e69fcf4](https://github.com/Endika/specster/commit/e69fcf4d22428e50a729a064c446f7f5320f2f76))
+
 ## [0.16.0](https://github.com/Endika/specster/compare/specster-v0.15.0...specster-v0.16.0) (2026-10-02)
 
 
