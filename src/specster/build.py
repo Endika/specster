@@ -1,6 +1,5 @@
 import contextvars
 import json
-import math
 import os
 import queue
 import secrets
@@ -8,31 +7,20 @@ import shutil
 import stat
 import sys
 import threading
-import traceback
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-import httpx
-
 from specster.agent import TIME_UP, AgentError, BudgetSpent, Metered, attached_usage
 from specster.approved import ApprovedSpec
-from specster.browser import INSTALL_MAX_S, SCRIPT, BrowserEnv, Installer, install
-from specster.config import BudgetConfig, Config, ModelConfig, PersonaConfig, PreviewConfig
-from specster.evidence import (
-    LOG_TAIL_CHARS,
-    PAGE_MAX_HEIGHT,
-    PAGE_MAX_S,
-    EvidenceRun,
-    Shot,
-    Side,
-    collect,
-    read_shots,
-)
-from specster.git import BOT_EMAIL, Author, Git, GitError
+from specster.browser import Installer, install
+from specster.config import BudgetConfig, BuildConfig, Config, ModelConfig, PersonaConfig
+from specster.evidence import EvidenceRun
+from specster.evidence_run import CaptureSetup, EvidenceCapture, enclose
+from specster.git import Git, GitError
 from specster.ledger import Ledger, Meter
 from specster.llm.base import ChatModel, Usage
 from specster.plan import levels
@@ -45,8 +33,8 @@ from specster.prompts import (
 )
 from specster.repomap import RepoMap
 from specster.review import blocking, run_review
-from specster.sandbox import RunResult, Sandbox, Server
-from specster.schemas import EvidencePage, Finding, PlanTask, ReviewResult
+from specster.sandbox import RunResult, Sandbox
+from specster.schemas import Finding, PlanTask, ReviewResult
 from specster.skills import SkillBook
 from specster.telemetry import span
 from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
@@ -252,6 +240,72 @@ def _test_text(res: RunResult | None, setup_failed: bool) -> str:
     return f"{head}exit {res.exit_code}{timed_out}\n{note}{res.output}"
 
 
+def install_tools(
+    git: Git,
+    build: BuildConfig,
+    commit: str,
+    sandbox: Callable[[], Sandbox],
+    others: Sequence[Sandbox],
+    scratch: Path,
+    author: str,
+    truncations: list[str],
+    warnings: list[str],
+) -> RunResult | None:
+    """Install the toolchains `commit` declares once, as `sandbox`'s slot, and put them on its
+    path and on each of `others`; the failed run if any."""
+    if not build.tools and not git.present(commit, TOOL_FILES):
+        return None
+    if not MISE.exists():
+        warnings.append(f"toolchains are declared, but {MISE} is missing: none installed")
+        return None
+    box = sandbox()
+    tools = scratch / "tools"
+    tools.mkdir(mode=0o755)
+    if box.identity is not None:
+        os.chown(tools, box.identity.uid, box.identity.gid)
+    enclosure = scratch / "tools-install"
+    try:
+        tree = enclose(git, author, box, enclosure, commit)
+        wanted = enclosure / "tools.toml"
+        wanted.write_text(
+            "[tools]\n" + "".join(f"{k} = {json.dumps(v)}\n" for k, v in build.tools.items())
+        )
+        wanted.chmod(0o644)
+        box.hand_over(tree)
+        home = box.new_home(enclosure, "home")
+        env = [
+            f"MISE_DATA_DIR={tools}",
+            f"MISE_CACHE_DIR={home}/.cache/mise",
+            f"MISE_STATE_DIR={home}/.local/state/mise",
+            f"MISE_GLOBAL_CONFIG_FILE={wanted}",
+            f"MISE_TRUSTED_CONFIG_PATHS={tree}",
+            f"MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS={_IDIOMATIC_TOOLS}",
+            f"MISE_DISABLE_BACKENDS={_DISABLED_BACKENDS}",
+            "MISE_YES=1",
+            "MISE_QUIET=1",
+        ]
+        mise = ["/usr/bin/env", *env, str(MISE)]
+        for step in ("install", "bin-paths"):
+            res = box.run([*mise, step], tree, home, f"toolchains {step}")
+            if res.truncation:
+                truncations.append(res.truncation)
+            if not res.ok:
+                return res
+    finally:
+        shutil.rmtree(enclosure, ignore_errors=True)
+    root = tools.resolve()
+    bins = [
+        line
+        for line in res.output.splitlines()
+        if line.startswith("/") and Path(line).resolve().is_relative_to(root)
+    ]
+    if box.identity is not None:
+        _freeze(tools)
+    for slot_box in [*others, box]:
+        slot_box.use_tools(bins)
+    return None
+
+
 class _Build:
     def __init__(self, setup: BuildSetup) -> None:
         self.s = setup
@@ -275,6 +329,19 @@ class _Build:
         self._aborted = threading.Event()
         self._corrected: Counter[str] = Counter()
         self._out_of_time = False
+        self._capture = EvidenceCapture(
+            CaptureSetup(
+                setup.cfg,
+                setup.git,
+                setup.scratch,
+                setup.persona.name,
+                setup.time_left,
+                setup.install_browser,
+            ),
+            self._final_sandbox,
+            self.truncations,
+            self.warnings,
+        )
         has_tests = self.cfg.build.test_command is not None
         self.worker_system = worker_system_prompt(
             setup.persona, setup.build_skills.on_demand, has_tests
@@ -303,18 +370,7 @@ class _Build:
         return ("budget_exhausted", late) if late is not None else stopped
 
     def _enclose(self, sandbox: Sandbox, enclosure: Path, commit: str) -> Path:
-        """A credential-less repo, never a worktree: once handed over, root never runs git in it."""
-        enclosure.mkdir(mode=0o750)
-        enclosure.chmod(0o750)
-        if sandbox.identity is not None:
-            os.chown(enclosure, -1, sandbox.identity.gid, follow_symlinks=False)
-        tree = enclosure / "tree"
-        tree.mkdir()
-        self.git.export_tree(commit, tree, enclosure / "index")
-        Git(tree, Author(self.s.persona.name, BOT_EMAIL), enclosure / "git-home").seed(
-            f"specster: {commit}"
-        )
-        return tree
+        return enclose(self.git, self.s.persona.name, sandbox, enclosure, commit)
 
     def _work(
         self,
@@ -576,9 +632,7 @@ class _Build:
             return self._run_final_tests("base" if round_no is None else str(round_no))
 
     def _run_final_tests(self, tag: str) -> tuple[RunResult, bool]:
-        if self._final is None:
-            self._final = self.s.make_sandbox(FINAL_SLOT)
-        sandbox = self._final
+        sandbox = self._final_sandbox()
         build = self.cfg.build
         assert build.test_command is not None
         head = self.git.head(self.integration)
@@ -601,200 +655,30 @@ class _Build:
         finally:
             shutil.rmtree(enclosure, ignore_errors=True)
 
-    def _install_tools(self) -> RunResult | None:
-        """Install the declared toolchains once, as the final slot; the failed run if any."""
-        build = self.cfg.build
-        if not build.tools and not self.git.present(self.s.base, TOOL_FILES):
-            return None
-        if not MISE.exists():
-            self.warnings.append(f"toolchains are declared, but {MISE} is missing: none installed")
-            return None
+    def _final_sandbox(self) -> Sandbox:
         if self._final is None:
             self._final = self.s.make_sandbox(FINAL_SLOT)
-        sandbox = self._final
-        tools = self.s.scratch / "tools"
-        tools.mkdir(mode=0o755)
-        if sandbox.identity is not None:
-            os.chown(tools, sandbox.identity.uid, sandbox.identity.gid)
-        enclosure = self.s.scratch / "tools-install"
-        try:
-            tree = self._enclose(sandbox, enclosure, self.s.base)
-            wanted = enclosure / "tools.toml"
-            wanted.write_text(
-                "[tools]\n" + "".join(f"{k} = {json.dumps(v)}\n" for k, v in build.tools.items())
-            )
-            wanted.chmod(0o644)
-            sandbox.hand_over(tree)
-            home = sandbox.new_home(enclosure, "home")
-            env = [
-                f"MISE_DATA_DIR={tools}",
-                f"MISE_CACHE_DIR={home}/.cache/mise",
-                f"MISE_STATE_DIR={home}/.local/state/mise",
-                f"MISE_GLOBAL_CONFIG_FILE={wanted}",
-                f"MISE_TRUSTED_CONFIG_PATHS={tree}",
-                f"MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS={_IDIOMATIC_TOOLS}",
-                f"MISE_DISABLE_BACKENDS={_DISABLED_BACKENDS}",
-                "MISE_YES=1",
-                "MISE_QUIET=1",
-            ]
-            mise = ["/usr/bin/env", *env, str(MISE)]
-            for step in ("install", "bin-paths"):
-                res = sandbox.run([*mise, step], tree, home, f"toolchains {step}")
-                if res.truncation:
-                    self.truncations.append(res.truncation)
-                if not res.ok:
-                    return res
-        finally:
-            shutil.rmtree(enclosure, ignore_errors=True)
-        root = tools.resolve()
-        bins = [
-            line
-            for line in res.output.splitlines()
-            if line.startswith("/") and Path(line).resolve().is_relative_to(root)
-        ]
-        if sandbox.identity is not None:
-            _freeze(tools)
-        for slot_box in [*self._sandboxes.values(), sandbox]:
-            slot_box.use_tools(bins)
-        return None
+        return self._final
+
+    def _install_tools(self) -> RunResult | None:
+        """Install the declared toolchains once, as the final slot; the failed run if any."""
+        return install_tools(
+            self.git,
+            self.cfg.build,
+            self.s.base,
+            self._final_sandbox,
+            list(self._sandboxes.values()),
+            self.s.scratch,
+            self.s.persona.name,
+            self.truncations,
+            self.warnings,
+        )
 
     def _evidence(self) -> EvidenceRun | None:
         """The approved requests at base and head; never raises, never changes the outcome."""
-        with span("evidence"):
-            return self._collect_evidence()
-
-    def _collect_evidence(self) -> EvidenceRun | None:
-        requests = self.s.spec.evidence
-        pages = self.s.spec.pages
-        preview = self.cfg.build.preview
-        if not requests and not pages:
-            return None
-        if preview is None:
-            self.warnings.append(
-                "the spec lists evidence, but build.preview is not set: none collected"
-            )
-            return None
-        if self._time_stop() is not None:
-            self.warnings.append("evidence skipped: the build is out of time")
-            return None
-        browser = self._install_browser() if pages else None
-        if pages and browser is None and not requests:
-            return None
-        enclosures: list[Path] = []
-        failed: dict[str, str] = {}
-        homes: dict[Side, Path] = {}
-        try:
-            if self._final is None:
-                self._final = self.s.make_sandbox(FINAL_SLOT)
-            sandbox = self._final
-
-            def start_side(side: Side) -> tuple[Server | None, str | None]:
-                return self._start_side(sandbox, preview, side, enclosures, failed, homes)
-
-            def shoot(side: Side) -> tuple[dict[str, tuple[Shot, ...]], str]:
-                assert browser is not None and preview is not None
-                return self._shoot(sandbox, browser, preview, pages, side, homes[side])
-
-            # The app is on loopback: an HTTP(S)_PROXY from the runner must not catch it.
-            with httpx.Client(trust_env=False) as client:
-                run = collect(
-                    start_side,
-                    preview,
-                    requests,
-                    client,
-                    self.s.time_left or _forever,
-                    pages=pages,
-                    shoot=shoot if browser is not None else None,
-                )
-        except Exception as e:
-            traceback.print_exc()
-            self.warnings.append(f"evidence: {type(e).__name__}: {e}")
-            return None
-        finally:
-            for enclosure in enclosures:
-                shutil.rmtree(enclosure, ignore_errors=True)
-        problems = tuple(
-            replace(p, log_tail=failed[p.side][-LOG_TAIL_CHARS:]) if p.side in failed else p
-            for p in run.problems
-        )
-        return replace(run, problems=problems, logs={**run.logs, **failed})
-
-    def _install_browser(self) -> BrowserEnv | None:
-        """Once per build, as root; a failure only costs the screenshots."""
-        left = self.s.time_left() if self.s.time_left is not None else INSTALL_MAX_S
-        try:
-            with span("browser install"):
-                got = self.s.install_browser(min(INSTALL_MAX_S, left))
-        except Exception as e:
-            traceback.print_exc()
-            got = f"the browser install failed: {type(e).__name__}: {e}"
-        if isinstance(got, str):
-            self.warnings.append(f"screenshots skipped: {got}")
-            return None
-        return got
-
-    def _shoot(
-        self,
-        sandbox: Sandbox,
-        browser: BrowserEnv,
-        preview: PreviewConfig,
-        pages: Sequence[EvidencePage],
-        side: Side,
-        home: Path,
-    ) -> tuple[dict[str, tuple[Shot, ...]], str]:
-        """Shot as the slot while the side's server runs; the server's stop reaps the browser."""
-        out = home / "shots"
-        argv = [
-            "/usr/bin/env",
-            f"PLAYWRIGHT_BROWSERS_PATH={browser.browsers}",
-            str(browser.python),
-            "-I",
-            str(SCRIPT),
-            preview.origin,
-            str(out),
-            json.dumps([{"name": p.name, "path": p.path} for p in pages]),
-            str(PAGE_MAX_HEIGHT),
-            f"{PAGE_MAX_S:g}",
-        ]
-        res = sandbox.run(argv, home, home, f"browser {side}", reap=False)
-        if res.truncation:
-            self.truncations.append(res.truncation)
-        log = res.output
-        if res.timed_out:
-            log += f"\nbrowser {side}: timed out\n"
-        return read_shots(out, pages, side), log
-
-    def _start_side(
-        self,
-        sandbox: Sandbox,
-        preview: PreviewConfig,
-        side: Side,
-        enclosures: list[Path],
-        failed: dict[str, str],
-        homes: dict[Side, Path],
-    ) -> tuple[Server | None, str | None]:
-        """The side's server, started after the setup and seed commands; else why not."""
-        commit = self.s.base if side == "base" else self.git.head(self.integration)
-        enclosure = self.s.scratch / f"evidence-{side}"
-        enclosures.append(enclosure)
-        tree = self._enclose(sandbox, enclosure, commit)
-        sandbox.hand_over(tree)
-        home = homes[side] = sandbox.new_home(enclosure, "home")
-        steps = [
-            ("setup_command", self.cfg.build.setup_command),
-            ("seed_command", preview.seed_command),
-        ]
-        for which, argv in steps:
-            if argv is None:
-                continue
-            res = sandbox.run(argv, tree, home, f"{which.removesuffix('_command')} {side}")
-            if res.truncation:
-                self.truncations.append(res.truncation)
-            if not res.ok:
-                failed[side] = res.output
-                timed_out = ", timed out" if res.timed_out else ""
-                return None, f"{which} failed (exit {res.exit_code}{timed_out})"
-        return sandbox.start(preview.serve_command, tree, home, f"serve {side}"), None
+        spec = self.s.spec
+        head = self.git.head(self.integration)
+        return self._capture.collect(self.s.base, head, spec.evidence, spec.pages)
 
     def _review(self, tests: str, round_no: int) -> ReviewResult:
         with span("review", {"specster.round": round_no}):
@@ -965,10 +849,6 @@ def _budget_cut(reason: str) -> str | None:
     """The cap that cut a model loop short, if the budget is what stopped it."""
     _, cut, cap = reason.partition(BUDGET_CUT)
     return cap.split(";")[0] if cut else None
-
-
-def _forever() -> float:
-    return math.inf
 
 
 def run_build(setup: BuildSetup) -> BuildReport:
