@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.4](https://github.com/Endika/specster/compare/specster-v0.18.3...specster-v0.18.4) (2026-10-04)
+
+
+### Bug Fixes
+
+* say how the slot kept growing when a reap never converges ([e30d0f5](https://github.com/Endika/specster/commit/e30d0f5d1c65f34dbb567ae12fc78628f4e79006))
+
 ## [0.18.3](https://github.com/Endika/specster/compare/specster-v0.18.2...specster-v0.18.3) (2026-10-04)
 
 
