@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.2](https://github.com/Endika/specster/compare/specster-v0.18.1...specster-v0.18.2) (2026-10-04)
+
+
+### Bug Fixes
+
+* count captured pages next to requests in the evidence footer and metrics ([1e72ee9](https://github.com/Endika/specster/commit/1e72ee94891c61b373fd50440c56520521b5593d))
+
+
+### Documentation
+
+* give the measured costs of ai-evidence and ai-fix ([12572ec](https://github.com/Endika/specster/commit/12572eca50fa87c8c9e1d50dee79903b2695b1a4))
+
 ## [0.18.1](https://github.com/Endika/specster/compare/specster-v0.18.0...specster-v0.18.1) (2026-10-03)
 
 
