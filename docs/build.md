@@ -178,9 +178,10 @@ a base path from the project's own config (Vite's `base`, for instance) only app
 
 ## Toolchains for other languages
 
-The image carries [mise](https://mise.jdx.dev), pinned and checked against its release's sha256.
-When a build has a `setup_command` or `test_command`, or collects evidence through
-`build.preview`, it installs the toolchains the repository declares at its root (`mise.toml`,
+The image does not carry [mise](https://mise.jdx.dev): a build that needs toolchains
+downloads it (pinned, and checked against its release's sha256 before it is unpacked), a few
+seconds that only those builds pay, since each action run starts from a fresh container.
+When a build has a `setup_command` or `test_command`, or collects evidence through `build.preview`, it installs the toolchains the repository declares at its root (`mise.toml`,
 `.tool-versions`, `.nvmrc`, `.node-version`, `.ruby-version`, `.java-version`, `.go-version`,
 `.bun-version`) plus anything `build.tools` names:
 
@@ -193,7 +194,8 @@ build:
 
 What the repository declares wins over `build.tools` for the same tool. A repository mixing
 languages lists several tools, and all of them end up on the commands' `PATH`. A repository that
-declares nothing never runs mise, and a Python one keeps using the image's Python and uv.
+declares nothing never downloads or runs mise, and a Python one keeps using the image's Python
+and uv.
 
 How it runs: once per build, before the base test run, mise installs as the final-tests slot's
 unprivileged uid on an exported copy of the base commit, the same trust as `setup_command`, since
@@ -262,9 +264,9 @@ arbitrary code still runs as that code chooses. `/tmp` and `/dev/shm` are shared
 slots (only `TMPDIR`, under each command's own `HOME`, is private to that run, and
 `build.test_env` cannot point it back at `/tmp`), so do not write secrets there. Isolating them
 would take a mount namespace, which the action's unprivileged container cannot create. Python,
-`uv`, git and mise are baked into the image; any other toolchain comes from mise (see "Toolchains
-for other languages" above) or from `build.setup_command`, unprivileged, with no `apt`/`sudo`
-available. The reap loop kills a
+`uv` and git are baked into the image; any other toolchain comes from mise, downloaded on demand
+(see "Toolchains for other languages" above) or from `build.setup_command`, unprivileged, with no
+`apt`/`sudo` available. The reap loop kills a
 process in D sleep without waiting for it to stop: CI checks it with a `vfork` parent, which waits
 in D until its child is gone. A process wedged in D for good (a hung network filesystem) cannot be
 staged without privileges; if one outlives the kill, the build stops with an error.

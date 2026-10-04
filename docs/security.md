@@ -117,6 +117,7 @@ which anyone can write, so they have their own rules.
 - **Private skills need `raw.githubusercontent.com` or `api.github.com` URLs.** A
   `github.com/<org>/<repo>/raw/...` URL redirects to `raw.githubusercontent.com`, a different host,
   so `skills_auth_token` is dropped on the way and the fetch fails.
+- **A build that needs toolchains downloads mise from `github.com`** (pinned, sha256-checked before it is unpacked); an egress allowlist must let it through.
 - **A broken config only produces an issue comment if the event would have triggered a run under
   the default label names** (`ai-spec` etc.). If `labels.spec` was itself customized away from the
   default and that is the label that was just added, Specster cannot know that from a config it

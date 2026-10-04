@@ -9,19 +9,6 @@ ENV UV_COMPILE_BYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
-# mise installs the toolchains a repository declares (node, java, ruby, ...), so projects in other
-# or mixed languages can build; pinned, and checked against the release's published sha256.
-ARG MISE_VERSION=v2026.9.12
-ARG MISE_SHA256=b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff
-RUN python -c "import hashlib, sys, urllib.request; v, want = sys.argv[1:]; \
-data = urllib.request.urlopen(f'https://github.com/jdx/mise/releases/download/{v}/mise-{v}-linux-x64.tar.gz').read(); \
-got = hashlib.sha256(data).hexdigest(); \
-sys.exit(f'mise {v}: sha256 {got}, expected {want}') if got != want else open('/tmp/mise.tgz', 'wb').write(data)" \
-        "$MISE_VERSION" "$MISE_SHA256" \
-    && tar xzf /tmp/mise.tgz -C /opt \
-    && ln -s /opt/mise/bin/mise /usr/local/bin/mise \
-    && rm /tmp/mise.tgz \
-    && mise --version
 # One uid/gid per sandbox slot (0 = final integration tests, 1..8 = workers), so getpwuid works.
 RUN for i in 0 1 2 3 4 5 6 7 8; do \
         groupadd --gid "$((61000 + i))" "specster-sb$i" \
