@@ -22,6 +22,8 @@ from specster.evidence_run import CaptureSetup, EvidenceCapture, enclose
 from specster.git import Git, GitError
 from specster.ledger import Ledger, Meter
 from specster.llm.base import ChatModel, Usage
+from specster.mise import INSTALL_MAX_S as MISE_INSTALL_MAX_S
+from specster.mise import MiseInstaller, ensure_mise
 from specster.plan import levels
 from specster.prompts import (
     Origin,
@@ -41,7 +43,6 @@ from specster.worker import STOPPED, TaskTools, WorkerResult, run_worker
 from specster.workspace import CONFIG_PATH, TaskWorkspace, ToolError, Workspace, has_git_component
 
 DIFF_MAX_CHARS = 150_000
-MISE = Path("/usr/local/bin/mise")
 # Tools whose own version files (.nvmrc, .ruby-version, ...) count as declared; Python is left
 # out because the image's Python and uv already serve it.
 _IDIOMATIC_TOOLS = "node,ruby,java,go,bun,deno,erlang,elixir"
@@ -151,6 +152,7 @@ class BuildSetup:
     config_path: str = CONFIG_PATH
     make_escalation: Callable[[], ChatModel] | None = None
     install_browser: Installer = install
+    install_mise: MiseInstaller = ensure_mise
     # "pull_request": `base` is a pull request's head and `branch` stays local; the plan's text
     # is its review, and the prompts say so.
     origin: Origin = "issue"
@@ -282,14 +284,19 @@ def install_tools(
     author: str,
     truncations: list[str],
     warnings: list[str],
+    install_mise: MiseInstaller = ensure_mise,
+    time_left: Callable[[], float] | None = None,
 ) -> RunResult | None:
     """Install the toolchains `commit` declares once, as `sandbox`'s slot, and put them on its
     path and on each of `others`; the failed run if any."""
     if not build.tools and not git.present(commit, TOOL_FILES):
         return None
-    if not MISE.exists():
-        warnings.append(f"toolchains are declared, but {MISE} is missing: none installed")
+    left = MISE_INSTALL_MAX_S if time_left is None else min(MISE_INSTALL_MAX_S, time_left())
+    got = install_mise(left) if left > 0 else "no build time is left"
+    if isinstance(got, str):
+        warnings.append(f"toolchains are declared, but mise could not be installed: {got}")
         return None
+    mise_bin = got
     box = sandbox()
     tools = scratch / "tools"
     tools.mkdir(mode=0o755)
@@ -316,7 +323,7 @@ def install_tools(
             "MISE_YES=1",
             "MISE_QUIET=1",
         ]
-        mise = ["/usr/bin/env", *env, str(MISE)]
+        mise = ["/usr/bin/env", *env, str(mise_bin)]
         for step in ("install", "bin-paths"):
             res = box.run([*mise, step], tree, home, f"toolchains {step}")
             if res.truncation:
@@ -690,6 +697,8 @@ class _Build:
             self.s.persona.name,
             self.truncations,
             self.warnings,
+            self.s.install_mise,
+            self.s.time_left,
         )
 
     def _evidence(self) -> EvidenceRun | None:

@@ -36,6 +36,7 @@ from specster.evidence import files
 from specster.git import BOT_EMAIL, Author, Git, GitError
 from specster.ledger import Ledger
 from specster.llm.base import ChatModel, ToolCall, ToolResult, ToolSpec, Turn, Usage
+from specster.mise import MiseInstaller
 from specster.pricing import cost_usd
 from specster.repomap import RepoMap
 from specster.sandbox import RunResult, Sandbox, SandboxError
@@ -86,6 +87,10 @@ def lock(sb: Sandbox, repo: Path) -> Sandbox:
     return sb
 
 
+def refuse_mise(_timeout_s: float) -> Path | str:
+    raise AssertionError("mise was not expected to be installed")
+
+
 def refuse_install(timeout_s: float) -> BrowserEnv | str:
     raise AssertionError(f"no test installs a real browser ({timeout_s:g} s)")
 
@@ -105,6 +110,7 @@ def setup(
     evidence: Sequence[EvidenceRequest] = (),
     pages: Sequence[EvidencePage] = (),
     install_browser: Installer = refuse_install,
+    install_mise: MiseInstaller = refuse_mise,
 ) -> BuildSetup:
     repo = tmp_path / "repo"
     git = make_repo(repo, {"app.py": "A = 0\n", "util.py": "B = 0\n", **(files or {})})
@@ -146,6 +152,7 @@ def setup(
         CONFIG_PATH,
         (lambda: escalation) if escalation is not None else None,
         install_browser,
+        install_mise,
     )
 
 
@@ -226,21 +233,32 @@ else:
 """
 
 
-def fake_mise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def fake_mise(tmp_path: Path) -> Path:
     mise = tmp_path / "mise"
     mise.write_text(f"#!{sys.executable}\n{FAKE_MISE}")
     mise.chmod(0o755)
-    monkeypatch.setattr("specster.build.MISE", mise)
     return mise
 
 
+def provides(binary: Path) -> MiseInstaller:
+    return lambda _timeout_s: binary
+
+
 def test_declared_toolchains_are_installed_once_and_put_on_every_command_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
-    fake_asked = fake_mise(tmp_path, monkeypatch).with_name("asked")
+    mise = fake_mise(tmp_path)
+    fake_asked = mise.with_name("asked")
     book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
     build = BuildConfig(test_command=["faketool"], tools={"node": "22"})
-    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([verdict("approve")]), build)
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([verdict("approve")]),
+        build,
+        install_mise=provides(mise),
+    )
     report = run_build(s)
     assert report.status == "approved" and report.final_tests is not None
     assert report.final_tests.ok
@@ -248,10 +266,9 @@ def test_declared_toolchains_are_installed_once_and_put_on_every_command_path(
     assert not (s.scratch / "tools").exists()
 
 
-def test_a_version_file_in_the_repo_is_enough_to_install_its_toolchain(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls = fake_mise(tmp_path, monkeypatch).with_name("calls")
+def test_a_version_file_in_the_repo_is_enough_to_install_its_toolchain(tmp_path: Path) -> None:
+    mise = fake_mise(tmp_path)
+    calls = mise.with_name("calls")
     book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
     s = setup(
         tmp_path,
@@ -260,43 +277,76 @@ def test_a_version_file_in_the_repo_is_enough_to_install_its_toolchain(
         ScriptedModel([verdict("approve")]),
         BuildConfig(test_command=["faketool"]),
         files={".nvmrc": "22\n"},
+        install_mise=provides(mise),
     )
     assert run_build(s).status == "approved" and calls.read_text() == "install\nbin-paths\n"
 
 
-def test_a_repo_that_declares_no_toolchain_never_runs_mise(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls = fake_mise(tmp_path, monkeypatch).with_name("calls")
+def test_a_repo_that_declares_no_toolchain_never_installs_or_runs_mise(tmp_path: Path) -> None:
+    calls = fake_mise(tmp_path).with_name("calls")
     book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
     build = BuildConfig(test_command=PASS)
     s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([verdict("approve")]), build)
     assert run_build(s).status == "approved" and not calls.exists()
 
 
-def test_toolchains_that_fail_to_install_stop_the_build_with_mise_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_mise(tmp_path, monkeypatch)
+def test_toolchains_that_fail_to_install_stop_the_build_with_mise_output(tmp_path: Path) -> None:
+    mise = fake_mise(tmp_path)
     book = ScriptBook({'id="a"': [[done("feat(a): set A")]]})
     build = BuildConfig(test_command=PASS, tools={"broken": "1"})
-    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([]), build)
+    s = setup(
+        tmp_path, [task("a", "app.py")], book, ScriptedModel([]), build, install_mise=provides(mise)
+    )
     report = run_build(s)
     assert report.status == "failed" and report.reason == "the toolchains could not be installed"
     assert report.final_tests is not None and "no such tool: broken" in report.final_tests.output
     assert book.sessions == {}
 
 
-def test_build_tools_without_mise_in_the_image_is_said_plainly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("specster.build.MISE", tmp_path / "no-mise")
+def test_no_build_time_left_skips_the_toolchains_without_installing(tmp_path: Path) -> None:
     book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
     build = BuildConfig(test_command=PASS, tools={"node": "22"})
-    s = setup(tmp_path, [task("a", "app.py")], book, ScriptedModel([verdict("approve")]), build)
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([verdict("approve")]),
+        build,
+        time_left=lambda: 0.0,
+    )
+    report = run_build(s)
+    assert (
+        "toolchains are declared, but mise could not be installed: no build time is left"
+    ) in report.warnings
+
+
+def test_a_mise_that_cannot_be_installed_is_a_warning_and_skips_the_toolchains(
+    tmp_path: Path,
+) -> None:
+    asked: list[float] = []
+
+    def failing(timeout_s: float) -> Path | str:
+        asked.append(timeout_s)
+        return "the download failed: ReadTimeout: slow"
+
+    book = ScriptBook({'id="a"': [[write("app.py", "A = 1\n"), done("feat(a): set A")]]})
+    build = BuildConfig(test_command=PASS, tools={"node": "22"})
+    s = setup(
+        tmp_path,
+        [task("a", "app.py")],
+        book,
+        ScriptedModel([verdict("approve")]),
+        build,
+        install_mise=failing,
+        time_left=lambda: 30.0,
+    )
     report = run_build(s)
     assert report.status == "approved"
-    assert any("toolchains are declared" in w and "none installed" in w for w in report.warnings)
+    assert asked == [30.0]
+    assert (
+        "toolchains are declared, but mise could not be installed: "
+        "the download failed: ReadTimeout: slow"
+    ) in report.warnings
 
 
 @ROOT_ONLY
@@ -1153,6 +1203,7 @@ def evidence_setup(
     evidence: Sequence[EvidenceRequest] = EVIDENCE,
     pages: Sequence[EvidencePage] = (),
     install_browser: Installer = refuse_install,
+    install_mise: MiseInstaller = refuse_mise,
 ) -> BuildSetup:
     book = ScriptBook({'id="a"': [[write("app.py", head_app), done("feat(a): list users")]]})
     return setup(
@@ -1166,6 +1217,7 @@ def evidence_setup(
         time_left=time_left,
         pages=pages,
         install_browser=install_browser,
+        install_mise=install_mise,
     )
 
 
@@ -1249,10 +1301,9 @@ def test_evidence_never_goes_through_a_proxy_in_the_environment(
 
 
 @LOCAL
-def test_a_preview_alone_gets_the_toolchains_installed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls = fake_mise(tmp_path, monkeypatch).with_name("calls")
+def test_a_preview_alone_gets_the_toolchains_installed(tmp_path: Path) -> None:
+    mise = fake_mise(tmp_path)
+    calls = mise.with_name("calls")
     port = free_port()
     serve = ["/bin/sh", "-c", f"faketool && exec {sys.executable} app.py"]
     s = evidence_setup(
@@ -1261,6 +1312,7 @@ def test_a_preview_alone_gets_the_toolchains_installed(
         app(port, HEAD_ROUTES),
         preview_for(port, serve),
         tools={"node": "22"},
+        install_mise=provides(mise),
     )
     report = run_build(s)
     assert report.status == "approved" and calls.read_text() == "install\nbin-paths\n"

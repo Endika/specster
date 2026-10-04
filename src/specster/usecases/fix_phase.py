@@ -40,6 +40,7 @@ from specster.ledger import Ledger
 from specster.llm.base import ChatModel
 from specster.llm.factory import ProviderConfigError
 from specster.metrics import RunMetrics
+from specster.mise import MiseInstaller, ensure_mise
 from specster.prompts import context_block, fix_planner_prompt
 from specster.render import (
     FixRow,
@@ -124,6 +125,7 @@ class FixPhase:
         fetch: Fetch,
         identity: Callable[[int], Identity | None],
         install_browser: Installer = install,
+        install_mise: MiseInstaller = ensure_mise,
     ) -> None:
         self.run = run
         self.trigger = trigger
@@ -133,6 +135,7 @@ class FixPhase:
         self.fetch = fetch
         self.identity = identity
         self.install_browser = install_browser
+        self.install_mise = install_mise
         self.lang = run.cfg.persona.language
         self.label = run.cfg.labels.fix
         self.login: str | None = None
@@ -392,6 +395,7 @@ class FixPhase:
                     env.config_path,
                     tools.make_escalation,
                     self.install_browser,
+                    self.install_mise,
                     origin="pull_request",
                 )
             )

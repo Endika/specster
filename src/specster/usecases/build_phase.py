@@ -26,6 +26,7 @@ from specster.ledger import Ledger
 from specster.llm.base import ChatModel
 from specster.llm.factory import ProviderConfigError
 from specster.metrics import RunMetrics, spent
+from specster.mise import MiseInstaller, ensure_mise
 from specster.render import (
     BuildView,
     hint,
@@ -191,6 +192,7 @@ class BuildPhase:
         fetch: Fetch,
         identity: Callable[[int], Identity | None],
         install_browser: Installer = install,
+        install_mise: MiseInstaller = ensure_mise,
     ) -> None:
         self.run = run
         self.trigger = trigger
@@ -198,6 +200,7 @@ class BuildPhase:
         self.fetch = fetch
         self.identity = identity
         self.install_browser = install_browser
+        self.install_mise = install_mise
         self.lang = run.cfg.persona.language
         # Set once the checkout's git is in use, so cleanup knows there is a .git to tidy.
         self.git: Git | None = None
@@ -383,6 +386,7 @@ class BuildPhase:
                     env.config_path,
                     tools.make_escalation,
                     self.install_browser,
+                    self.install_mise,
                 )
             )
         except SandboxError as e:

@@ -33,6 +33,7 @@ from specster.ledger import Ledger
 from specster.llm.base import ChatModel
 from specster.llm.factory import ProviderConfigError
 from specster.metrics import RunMetrics
+from specster.mise import MiseInstaller, ensure_mise
 from specster.prompts import context_block, evidence_planner_prompt, pull_block
 from specster.render import PullEvidenceView, hint, render_pull_evidence
 from specster.repomap import build_repo_map
@@ -90,6 +91,7 @@ class EvidencePhase:
         fetch: Fetch,
         identity: Callable[[int], Identity | None],
         install_browser: Installer = install,
+        install_mise: MiseInstaller = ensure_mise,
     ) -> None:
         self.run = run
         self.trigger = trigger
@@ -99,6 +101,7 @@ class EvidencePhase:
         self.fetch = fetch
         self.identity = identity
         self.install_browser = install_browser
+        self.install_mise = install_mise
         self.lang = run.cfg.persona.language
         self.label = run.cfg.labels.evidence
         self.warnings: list[str] = []
@@ -305,7 +308,17 @@ class EvidencePhase:
 
         author = cfg.persona.name
         failed = install_tools(
-            git, build, pull.base_sha, sandbox, [], scratch, author, self.truncations, self.warnings
+            git,
+            build,
+            pull.base_sha,
+            sandbox,
+            [],
+            scratch,
+            author,
+            self.truncations,
+            self.warnings,
+            self.install_mise,
+            time_left,
         )
         if failed is not None:
             tail = " ".join(failed.output[-LOG_TAIL_CHARS // 8 :].split())
