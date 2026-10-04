@@ -96,7 +96,7 @@ be its own billable series.
 | `specster.build.test_runs` | 1 | build and fix phases |
 | `specster.build.parallel` | 1 | build and fix phases |
 | `specster.build.review_rounds` | 1 | build and fix phases |
-| `specster.build.evidence` | 1 | `specster.state`: `items`, `problems`; build and evidence phases |
+| `specster.build.evidence` | 1 | `specster.state`: `items`, `pages`, `problems`; build and evidence phases |
 
 A cleanup run sends only `specster.runs`, with its outcome (`cleaned`, `skipped` or `error`).
 

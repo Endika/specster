@@ -125,6 +125,7 @@ def report_facts(
         "parallel_used": report.parallel_used,
         "review_rounds": report.review_rounds,
         "evidence_items": len(report.evidence.items) if report.evidence else 0,
+        "evidence_pages": len(report.evidence.pages) if report.evidence else 0,
         "evidence_problems": len(report.evidence.problems) if report.evidence else 0,
         "truncations": report.truncations,
         "warnings": run.warnings + report.warnings,

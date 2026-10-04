@@ -909,6 +909,21 @@ def pull_ctx(language: str) -> RenderContext:
     return RenderContext(PersonaConfig(language=language), m, (), ())
 
 
+def test_the_evidence_footer_counts_pages_as_well_as_requests() -> None:
+    m = RunMetrics(
+        run_id="1",
+        phase="evidence",
+        outcome="evidence_posted",
+        provider="p",
+        model="m",
+        evidence_items=0,
+        evidence_pages=1,
+    )
+    view = PullEvidenceView("a" * 40, "b" * 40, "ai-evidence", None, None)
+    body = render_pull_evidence(view, RenderContext(PersonaConfig(), m, (), ()))
+    assert "- Evidence: 0 requests and 1 pages captured, 0 sides with a problem" in body
+
+
 def test_a_pull_request_stopped_by_its_budget_says_so_in_spanish() -> None:
     view = PullEvidenceView(
         "a" * 40,
@@ -924,7 +939,8 @@ def test_a_pull_request_stopped_by_its_budget_says_so_in_spanish() -> None:
     assert "Base `aaaaaaa` → head `bbbbbbb`" in body
     assert "build budget spent: $1.00 of $1.00" in body
     assert "Vuelve a poner la etiqueta `ai-evidence` para capturarla de nuevo." in body
-    assert "Qué he elegido" not in body and "- Evidence: 0 requests captured" in body
+    assert "Qué he elegido" not in body
+    assert "- Evidence: 0 requests and 0 pages captured" in body
     assert "- Comments:" not in body and "- Build:" not in body
 
 

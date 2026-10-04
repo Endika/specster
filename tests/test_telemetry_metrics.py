@@ -142,7 +142,7 @@ def test_an_evidence_run_records_its_phase_and_evidence(
     assert len(named(points, "specster.runs", base)) == 1
     assert len(named(points, "specster.role.turns", base | {"specster.role": "planner"})) == 1
     states = {p.attributes["specster.state"] for p in named(points, "specster.build.evidence")}
-    assert states == {"items", "problems"} and named(points, "specster.build.tasks") == []
+    assert states == {"items", "pages", "problems"} and named(points, "specster.build.tasks") == []
 
 
 def test_a_fix_run_records_its_phase_and_its_build(tmp_path: Path, metric_points: Points) -> None:

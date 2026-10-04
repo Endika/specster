@@ -336,6 +336,7 @@ class EvidencePhase:
             "files_read": planned.files_read,
             "hidden_removed": len(planned.hidden),
             "evidence_items": len(evidence.items) if evidence else 0,
+            "evidence_pages": len(evidence.pages) if evidence else 0,
             "evidence_problems": len(evidence.problems) if evidence else 0,
             "truncations": planned.truncations + self.truncations,
             "warnings": run.warnings + self.warnings + unpriced,
