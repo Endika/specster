@@ -1,6 +1,7 @@
+import re
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 SUBMIT_QUESTIONS = "submit_questions"
 SUBMIT_SPEC = "submit_spec"
@@ -21,13 +22,33 @@ def _text(max_chars: int, description: str = "") -> Any:
 
 
 Item = Annotated[str, Field(max_length=400)]
+
+_BULLET = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
+
+
+def _lines(value: Any) -> Any:
+    """A list sent as one string (smaller models do this): a single line, or one bullet per line.
+
+    Multi-line prose is left as it is and fails validation: splitting it would invent a list.
+    """
+    if not isinstance(value, str):
+        return value
+    lines = [line for line in value.splitlines() if line.strip()]
+    if lines and all(_BULLET.match(line) for line in lines):
+        return [_BULLET.sub("", line).strip() for line in lines]
+    if len(lines) <= 1:
+        return [line.strip() for line in lines]
+    return value
+
+
+_Lines = BeforeValidator(_lines)
 _MARKDOWN = 'Markdown with real line breaks and quotes, not JSON escapes such as \\n or \\".'
 
 
 class Question(_Out):
     question: str = _text(400, "One concrete question the spec depends on, one sentence.")
     why: str = _text(400, "What changes in the spec depending on the answer, one sentence.")
-    options: list[Annotated[str, Field(max_length=120)]] = Field(
+    options: Annotated[list[Annotated[str, Field(max_length=120)]], _Lines] = Field(
         default=[], max_length=6, description="Likely answers, if there are a few."
     )
 
@@ -53,9 +74,13 @@ class PlanTask(_Out):
     )
     title: str = _text(120)
     description: str = _text(1500, "What to change, concretely.")
-    files: list[str] = Field(min_length=1, description="Repo-relative paths this task touches.")
-    depends_on: list[str] = Field(default=[], description="Ids of tasks that must finish first.")
-    acceptance: list[Annotated[str, Field(max_length=300)]] = Field(
+    files: Annotated[list[str], _Lines] = Field(
+        min_length=1, description="Repo-relative paths this task touches."
+    )
+    depends_on: Annotated[list[str], _Lines] = Field(
+        default=[], description="Ids of tasks that must finish first."
+    )
+    acceptance: Annotated[list[Annotated[str, Field(max_length=300)]], _Lines] = Field(
         min_length=1, description="Observable, checkable criteria."
     )
 
@@ -92,11 +117,13 @@ class EvidencePage(_Out):
 class SpecResult(_Out):
     title: str = _text(120)
     objective: str = _text(1000)
-    in_scope: list[Item]
-    out_of_scope: list[Item]
-    files: list[str] = Field(description="Every repo-relative path the change touches.")
+    in_scope: Annotated[list[Item], _Lines]
+    out_of_scope: Annotated[list[Item], _Lines]
+    files: Annotated[list[str], _Lines] = Field(
+        description="Every repo-relative path the change touches."
+    )
     approach: str = _text(4000, _MARKDOWN)
-    risks: list[Item]
+    risks: Annotated[list[Item], _Lines]
     test_strategy: str = _text(2000, _MARKDOWN)
     tasks: list[PlanTask] = Field(min_length=1)
     evidence: list[EvidenceRequest] = Field(
@@ -109,7 +136,7 @@ class SpecResult(_Out):
         max_length=EVIDENCE_MAX,
         description="Pages screenshotted before and after the change.",
     )
-    changes: list[Item] = Field(
+    changes: Annotated[list[Item], _Lines] = Field(
         default=[],
         max_length=20,
         description="Only in revision mode: each change from the previous spec, one line each.",
