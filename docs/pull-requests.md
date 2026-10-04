@@ -110,9 +110,11 @@ and add it again to run on the new head.
 - `build.max_minutes` (default 100) bounds both phases. The `evidence` and `fix` jobs have a
   `timeout-minutes` of 120, so Specster stops, comments and says why before the job is killed.
   Keep `build.max_minutes` below the job's timeout.
-- Cost estimates, not measured yet: the evidence planner is about $0.10 to $0.25, plus the
-  capture, which uses no model. A fix costs about what a build of the same size costs (see
-  [measured costs](build.md#measured-costs)), with the planner on top.
+- Measured on a small copy change (converthub #156, Opus 5.5 throughout): `ai-evidence` cost
+  $0.078 in 64 s (planner only; the capture uses no model), and `ai-fix` for one review thread
+  cost $0.263 in 94 s (planner $0.065, worker $0.105, reviewer $0.092). Larger diffs and more
+  threads cost more; a fix scales like a build of the same size (see
+  [measured costs](build.md#measured-costs)).
 
 ## Things to know
 
