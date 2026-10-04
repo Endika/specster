@@ -76,5 +76,9 @@ def record_run(repo: str, phase: str, final: tuple[str, RunMetrics | None] | Non
         put("specster.build.parallel", m.parallel_used)
         put("specster.build.review_rounds", m.review_rounds)
     if phase in ("build", "evidence"):
-        for state, v in (("items", m.evidence_items), ("problems", m.evidence_problems)):
+        for state, v in (
+            ("items", m.evidence_items),
+            ("pages", m.evidence_pages),
+            ("problems", m.evidence_problems),
+        ):
             put("specster.build.evidence", v, **{"specster.state": state})

@@ -71,6 +71,7 @@ class RunMetrics(BaseModel):
     review_rounds: int = Field(default=0, ge=0)
     tasks_escalated: int = Field(default=0, ge=0)
     evidence_items: int = Field(default=0, ge=0)
+    evidence_pages: int = Field(default=0, ge=0)
     evidence_problems: int = Field(default=0, ge=0)
 
 

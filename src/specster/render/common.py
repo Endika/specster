@@ -215,7 +215,7 @@ def _footer(ctx: RenderContext) -> list[str]:
         facts.append(f"- Plan parallelism: up to {m.plan_max_parallel} tasks at once")
     if m.phase == "evidence":
         facts.append(
-            f"- Evidence: {m.evidence_items} requests captured, "
+            f"- Evidence: {m.evidence_items} requests and {m.evidence_pages} pages captured, "
             f"{m.evidence_problems} sides with a problem"
         )
     elif m.roles:
