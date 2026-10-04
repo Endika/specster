@@ -659,3 +659,13 @@ def test_the_recheck_kills_what_is_left_and_reports_nothing_once_it_is_gone() ->
     finally:
         proc.kill()
         proc.wait()
+
+
+def test_a_reap_that_never_converges_says_how_the_slot_kept_growing() -> None:
+    trace = sandbox._ReapTrace(rounds=3, first_seen={2**22 + 1: 0, 2**22 + 2: 3})
+    trace.scans = [(0, 64, 0, 0.001), (1, 60, 5, 0.08), (2, 62, 7, 0.09), (3, 61, 4, 0.2)]
+    message = trace.report(61007, {2**22 + 1: "R", 2**22 + 2: "R"}, 37.5)
+    assert "2 left after 3 rounds in 37.5 s; 16 born after the first scan" in message
+    assert "scans 4, median 90 ms, max 200 ms" in message
+    assert "last scans (live/born): 64/0 60/5 62/7 61/4" in message
+    assert f"{2**22 + 1} (gone), {2**22 + 2} (gone)" in message
