@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/Endika/specster/compare/specster-v0.19.0...specster-v0.20.0) (2026-10-04)
+
+
+### Features
+
+* accept spec lists a model sends as bulleted text ([ce6b398](https://github.com/Endika/specster/commit/ce6b398234eebcd6a03ccaf2832d94ea3631f0db))
+
 ## [0.19.0](https://github.com/Endika/specster/compare/specster-v0.18.4...specster-v0.19.0) (2026-10-04)
 
 
