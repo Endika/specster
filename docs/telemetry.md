@@ -37,9 +37,33 @@ Authorization header. The SDK appends `/v1/metrics` and `/v1/traces` to the endp
 
 ### Datadog
 
-Through a Datadog Agent that has OTLP/HTTP enabled on port 4318 (`otlp_config.receiver.protocols.http.endpoint: 0.0.0.0:4318` in `datadog.yaml`, or
-`DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT`). The runner must be able to reach the Agent,
-so this suits self-hosted runners:
+The simplest way needs no Agent: Datadog's OTLP intake takes the API key in a `dd-api-key`
+header. Checked on 2026-10-04 with Specster 0.18.2 against Datadog EU: metrics and traces both
+arrived. Use your site's host (`otlp.datadoghq.eu`, `otlp.datadoghq.com`, `otlp.us3.datadoghq.com`,
+…), keep the key in a secret, and ask for delta temporality, which is what the metrics intake
+accepts:
+
+```yaml
+- uses: Endika/specster@v0
+  env:
+    OTEL_EXPORTER_OTLP_ENDPOINT: https://otlp.datadoghq.eu
+    OTEL_EXPORTER_OTLP_HEADERS: dd-api-key=${{ secrets.DD_API_KEY }}
+    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: delta
+```
+
+Put the same `env:` on every Specster step (spec, build, evidence, fix and cleanup). Nothing has
+to be installed in Datadog, and its setup wizard may keep waiting for an Agent: it is not needed.
+In Datadog, the metrics show up in the Metrics Explorer as `specster.*` (try `specster.runs`), and
+the traces in APM → Traces under `service:specster`. APM keeps every span for 15 minutes only;
+for an older run, widen the time range (e.g. "Past 1 Day") and search `service:specster`.
+
+Datadog's pages also describe `dd-otel-metric-config` (metric translation) and `compute_stats`
+(trace metrics) headers; Specster works without them.
+
+Through a Datadog Agent instead: enable OTLP/HTTP on port 4318
+(`otlp_config.receiver.protocols.http.endpoint: 0.0.0.0:4318` in `datadog.yaml`, or
+`DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT`) and point the endpoint at it. The runner must
+reach the Agent, so this suits self-hosted runners:
 
 ```yaml
 - uses: Endika/specster@v0
@@ -47,23 +71,8 @@ so this suits self-hosted runners:
     OTEL_EXPORTER_OTLP_ENDPOINT: http://datadog-agent.internal:4318
 ```
 
-Or an OpenTelemetry Collector with a Datadog exporter, using the same variable to point at it.
-
-Datadog also documents an OTLP intake that needs no Agent. It takes the API key in a
-`dd-api-key` header, and its endpoint depends on your Datadog site, so copy the metrics and
-traces URLs from Datadog's agentless OTLP pages:
-
-```yaml
-- uses: Endika/specster@v0
-  env:
-    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: <metrics intake URL for your site>
-    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: <traces intake URL for your site>
-    OTEL_EXPORTER_OTLP_HEADERS: dd-api-key=${{ secrets.DD_API_KEY }}
-```
-
-Datadog's pages also describe `dd-otel-metric-config` (metric translation) and `compute_stats`
-(trace metrics) headers; see them if you need those. Specster has not been run against the
-intake, so check that metrics and traces arrive before you build alerts on them.
+An OpenTelemetry Collector with a Datadog exporter works the same way, with the endpoint pointing
+at the Collector.
 
 ## What is sent
 
