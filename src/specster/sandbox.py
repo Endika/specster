@@ -7,7 +7,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
 
@@ -154,15 +154,8 @@ def _kill_all(identity: Identity) -> None:
     # writable cgroup mount, so the /proc loop below is what runs.
     uid = identity.uid
     started = time.monotonic()
-    live = _live_pids(uid)
-    first_seen: dict[int, int] = {}
-    rounds = 0
-
-    def note(pids: Iterable[int]) -> None:
-        for pid in pids:
-            first_seen.setdefault(pid, rounds)
-
-    note(live)
+    trace = _ReapTrace()
+    live = trace.scan(uid)
     # The budget starts after the first scan: under a saturated uid that scan alone takes seconds.
     deadline = time.monotonic() + _REAP_BUDGET_S
     for _ in range(_REAP_ROUNDS):
@@ -173,34 +166,61 @@ def _kill_all(identity: Identity) -> None:
         if time.monotonic() >= deadline:
             break
         time.sleep(_REAP_PAUSE_S)
-        rounds += 1
-        live = _live_pids(uid)
-        note(live)
+        trace.rounds += 1
+        live = trace.scan(uid)
     # Killed pids (a D wait included) die on their own; keep killing until the grace bound.
     grace = time.monotonic() + _DYING_GRACE_S
     while time.monotonic() < grace:
-        live = _live_pids(uid)
+        trace.rounds += 1
+        live = trace.scan(uid)
         if not live:
             return
-        rounds += 1
-        note(live)
         _signal_all(live, _KILL_SIGNAL)
         time.sleep(_REAP_PAUSE_S)
-    left = _recheck(uid, _RECHECK_S)
+    left = _recheck(uid, _RECHECK_S, trace)
     if left:
-        took = time.monotonic() - started
-        detail = ", ".join(_survivor(pid, first_seen.get(pid, rounds)) for pid in sorted(left)[:12])
-        raise SandboxError(
-            f"processes of sandbox uid {uid} survived the kill: {len(left)} left after {rounds} "
-            f"rounds in {took:.1f} s; {detail}"
+        raise SandboxError(trace.report(uid, left, time.monotonic() - started))
+
+
+@dataclass
+class _ReapTrace:
+    """What each scan of a reap saw, so a reap that never converges says why."""
+
+    rounds: int = 0
+    first_seen: dict[int, int] = field(default_factory=dict)
+    # Per scan: (round, live pids, pids never seen before, scan seconds).
+    scans: list[tuple[int, int, int, float]] = field(default_factory=list)
+
+    def scan(self, uid: int) -> list[int]:
+        t = time.monotonic()
+        live = _live_pids(uid)
+        took = time.monotonic() - t
+        born = [pid for pid in live if pid not in self.first_seen]
+        for pid in born:
+            self.first_seen[pid] = self.rounds
+        self.scans.append((self.rounds, len(live), len(born) if self.scans else 0, took))
+        return live
+
+    def report(self, uid: int, left: Mapping[int, str], took: float) -> str:
+        births = sum(b for _, _, b, _ in self.scans)
+        times = sorted(s for _, _, _, s in self.scans)
+        late = [f"{n}/{b}" for _, n, b, _ in self.scans[-8:]]
+        detail = ", ".join(
+            _survivor(pid, self.first_seen.get(pid, self.rounds)) for pid in sorted(left)[:12]
+        )
+        return (
+            f"processes of sandbox uid {uid} survived the kill: {len(left)} left after "
+            f"{self.rounds} rounds in {took:.1f} s; {births} born after the first scan; scans "
+            f"{len(times)}, median {times[len(times) // 2] * 1000:.0f} ms, max "
+            f"{times[-1] * 1000:.0f} ms; last scans (live/born): {' '.join(late)}; {detail}"
         )
 
 
-def _recheck(uid: int, settle_s: float) -> dict[int, str]:
+def _recheck(uid: int, settle_s: float, trace: "_ReapTrace | None" = None) -> dict[int, str]:
     """What is still alive after `settle_s` more kill rounds; at the bound most are dying."""
     settle = time.monotonic() + settle_s
     while time.monotonic() < settle:
-        live = _live_pids(uid)
+        live = trace.scan(uid) if trace is not None else _live_pids(uid)
         if not live:
             return {}
         _signal_all(live, _KILL_SIGNAL)
@@ -208,23 +228,39 @@ def _recheck(uid: int, settle_s: float) -> dict[int, str]:
     return _slot_states(uid)
 
 
-def _survivor(pid: int, first_round: int) -> str:
-    """One survivor, with what tells a dying process from one that escaped the kill."""
+def _status(pid: int | str) -> dict[str, str] | None:
     try:
-        fields = dict(
-            line.split(":", 1)
-            for line in Path(f"/proc/{pid}/status").read_text().splitlines()
-            if ":" in line
-        )
+        text = Path(f"/proc/{pid}/status").read_text()
     except OSError:
-        return f"{pid} (gone)"
+        return None
+    return dict(line.split(":", 1) for line in text.splitlines() if ":" in line)
+
+
+def _kill_pending(fields: Mapping[str, str]) -> bool:
     pending = int(fields.get("SigPnd", "0").strip() or "0", 16)
     shared = int(fields.get("ShdPnd", "0").strip() or "0", 16)
-    kill = bool((pending | shared) & (1 << (signal.SIGKILL - 1)))
+    return bool((pending | shared) & (1 << (signal.SIGKILL - 1)))
+
+
+def _survivor(pid: int, first_round: int) -> str:
+    """One survivor, with what tells a dying process from one that escaped the kill."""
+    fields = _status(pid)
+    if fields is None:
+        return f"{pid} (gone)"
     state = fields.get("State", "?").strip()[:1]
+    ppid = fields.get("PPid", "?").strip()
+    parent = ""
+    if ppid not in ("", "0", "1", "?"):
+        pf = _status(ppid)
+        parent = (
+            " parent gone"
+            if pf is None
+            else f" parent {pf.get('State', '?').strip()[:1]} "
+            f"SIGKILL {'pending' if _kill_pending(pf) else 'not pending'}"
+        )
     return (
-        f"{pid} {state} ppid {fields.get('PPid', '?').strip()} "
-        f"first seen round {first_round} SIGKILL {'pending' if kill else 'not pending'}"
+        f"{pid} {state} ppid {ppid}{parent} first seen round {first_round} "
+        f"SIGKILL {'pending' if _kill_pending(fields) else 'not pending'}"
     )
 
 
