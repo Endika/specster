@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.3](https://github.com/Endika/specster/compare/specster-v0.18.2...specster-v0.18.3) (2026-10-04)
+
+
+### Documentation
+
+* give the Datadog OTLP intake setup that was checked end to end ([5f6eddf](https://github.com/Endika/specster/commit/5f6eddffb4cd36aaa00d192b7fd3138f00f12d15))
+
 ## [0.18.2](https://github.com/Endika/specster/compare/specster-v0.18.1...specster-v0.18.2) (2026-10-04)
 
 
