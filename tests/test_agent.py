@@ -86,6 +86,22 @@ def test_invalid_submission_gets_one_retry_with_the_error(tmp_path: Path) -> Non
     assert isinstance(out.result, SpecResult) and out.result.title == "CSV export"
 
 
+def test_a_spec_with_lists_sent_as_dash_text_is_accepted_first_time(tmp_path: Path) -> None:
+    ws, skills = setup(tmp_path)
+    task = {
+        "id": "a",
+        "title": "A",
+        "description": "d",
+        "files": ["app.py"],
+        "acceptance": "- x\n- y",
+    }
+    dashed = SPEC | {"in_scope": "- a\n- b", "risks": "- slow", "tasks": [task]}
+    model = ScriptedModel([[ToolCall("1", "submit_spec", dashed)]])
+    out = run_agent(model, "s", "c", "t", ws, skills, max_turns=5)
+    assert isinstance(out.result, SpecResult) and out.result.in_scope == ["a", "b"]
+    assert out.result.risks == ["slow"] and out.tasks[0].acceptance == ["x", "y"]
+
+
 def test_two_invalid_submissions_fail(tmp_path: Path) -> None:
     ws, skills = setup(tmp_path)
     bad = SPEC | {"tasks": []}
