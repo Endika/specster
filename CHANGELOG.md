@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/Endika/specster/compare/specster-v0.18.4...specster-v0.19.0) (2026-10-04)
+
+
+### Features
+
+* install mise only when a build needs toolchains ([f6141eb](https://github.com/Endika/specster/commit/f6141eb70f265b130a8c339d869d3d87d14d0a99))
+
 ## [0.18.4](https://github.com/Endika/specster/compare/specster-v0.18.3...specster-v0.18.4) (2026-10-04)
 
 
