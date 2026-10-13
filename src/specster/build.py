@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
+from opentelemetry.util.types import AttributeValue
+
 from specster.agent import TIME_UP, AgentError, BudgetSpent, Metered, attached_usage
 from specster.browser import Installer, install
 from specster.config import BudgetConfig, BuildConfig, Config, ModelConfig, PersonaConfig
@@ -419,7 +421,7 @@ class _Build:
         findings: Sequence[Finding],
         escalated: bool = False,
     ) -> WorkerResult:
-        attributes = {
+        attributes: dict[str, AttributeValue] = {
             "specster.task.id": task.id,
             "specster.task.round": round_no,
             "specster.task.escalated": escalated,

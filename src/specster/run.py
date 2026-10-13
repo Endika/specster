@@ -10,6 +10,7 @@ from types import TracebackType
 from opentelemetry import context, trace
 from opentelemetry.context import Context
 from opentelemetry.trace import StatusCode
+from opentelemetry.util.types import AttributeValue
 
 from specster.browser import Installer, install
 from specster.config import Config, ConfigError, LabelsConfig, ModelConfig, load_config
@@ -186,7 +187,7 @@ class _RootSpan:
 
     def __enter__(self) -> "_RootSpan":
         try:
-            attributes = {
+            attributes: dict[str, AttributeValue] = {
                 "specster.repo": self._run.env.repo,
                 "specster.phase": self._run.phase,
                 "specster.issue": self._run.number,
