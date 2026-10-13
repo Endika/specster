@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/Endika/specster/compare/specster-v0.20.0...specster-v0.20.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **types:** annotate span attributes for opentelemetry 1.45.1 ([251826f](https://github.com/Endika/specster/commit/251826f165a29cbea37b74aa2e12f5112dac3e43))
+
 ## [0.20.0](https://github.com/Endika/specster/compare/specster-v0.19.0...specster-v0.20.0) (2026-10-04)
 
 
