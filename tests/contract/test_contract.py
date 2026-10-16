@@ -20,7 +20,7 @@ PROVIDERS: dict[str, ModelConfig] = {
         project="specster-dev",
         max_tokens=1024,
     ),
-    "openai": ModelConfig(provider="openai", model="gpt-5-mini", max_tokens=1024),
+    "openai": ModelConfig(provider="openai", model="gpt-5.6-terra", max_tokens=1024),
     "openai-compatible": ModelConfig(
         provider="openai-compatible",
         model="gemini-flash-latest",

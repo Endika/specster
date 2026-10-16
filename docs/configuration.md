@@ -140,7 +140,7 @@ each.
 **anthropic** - `model` (e.g. `claude-opus-5-5`). Reads `ANTHROPIC_API_KEY`, or the variable named
 in `api_key_env`. `base_url` is optional, for a proxy in front of the Anthropic API.
 
-**openai** - `model` (e.g. `gpt-5-mini`). Reads `OPENAI_API_KEY`, or `api_key_env`. `base_url` is
+**openai** - `model` (e.g. `gpt-5.6-terra`). Reads `OPENAI_API_KEY`, or `api_key_env`. `base_url` is
 optional.
 
 **openai-compatible** - any server that speaks the OpenAI API. `base_url` is required.
