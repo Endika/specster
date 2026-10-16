@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/Endika/specster/compare/specster-v0.20.1...specster-v0.20.2) (2026-10-16)
+
+
+### Documentation
+
+* replace gpt-5-mini example with gpt-5.6-terra ([6b281b2](https://github.com/Endika/specster/commit/6b281b28a688a17f178f29f5096498ca9a955c7a))
+
 ## [0.20.1](https://github.com/Endika/specster/compare/specster-v0.20.0...specster-v0.20.1) (2026-10-13)
 
 
