@@ -16,7 +16,7 @@ from specster.llm.traced import TracedModel
         (ModelConfig(provider="bedrock", model="anthropic.claude-haiku-4-5"), "region"),
         (ModelConfig(provider="vertex-anthropic", project="p"), "region"),
         (ModelConfig(provider="vertex-anthropic", region="global"), "project"),
-        (ModelConfig(provider="openai", model="gpt-5-mini"), "OPENAI_API_KEY"),
+        (ModelConfig(provider="openai", model="gpt-5.6-terra"), "OPENAI_API_KEY"),
         (ModelConfig(provider="openai-compatible", model="m"), "base_url"),
         (
             ModelConfig(
@@ -53,7 +53,7 @@ def test_replay_needs_no_credentials() -> None:
         ModelConfig(provider="anthropic"),
         ModelConfig(provider="bedrock", model="anthropic.claude-haiku-4-5", region="eu-west-1"),
         ModelConfig(provider="vertex-anthropic", region="global", project="p"),
-        ModelConfig(provider="openai", model="gpt-5-mini"),
+        ModelConfig(provider="openai", model="gpt-5.6-terra"),
         ModelConfig(provider="openai-compatible", model="m", base_url="http://h/v1"),
         ModelConfig(
             provider="azure-openai",
