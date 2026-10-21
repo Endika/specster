@@ -403,6 +403,10 @@ Opus 5.5 is the only planner that passed every case, and the only one no injecte
 steered. As a worker it was also the cheapest and fastest on the seven build cases, and the only
 one the reviewer never sent back, so it is the default worker too.
 
+[Newer planners](docs/evals.md#benchmark-results-2026-09-29), on the same cases: Sonnet 5.5
+passed 49/52 at about half Opus 5.5's cost per run, the cheaper choice if 94% is enough;
+Haiku 5.5 19/21; Fable 5.1 14/21, steered by an injected comment in two of three runs.
+
 ## Safety in short
 
 - The issue thread is treated as untrusted data; hidden content is stripped before any model sees it.
