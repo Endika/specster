@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/Endika/specster/compare/specster-v0.21.0...specster-v0.21.1) (2026-10-21)
+
+
+### Documentation
+
+* add the newer planners' spec-phase results ([0713461](https://github.com/Endika/specster/commit/071346118ce802e16941d6c402809317829ec26d))
+
 ## [0.21.0](https://github.com/Endika/specster/compare/specster-v0.20.2...specster-v0.21.0) (2026-10-21)
 
 
