@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/Endika/specster/compare/specster-v0.20.2...specster-v0.21.0) (2026-10-21)
+
+
+### Features
+
+* price claude-fable-5-1, claude-sonnet-5-5 and claude-haiku-5-5 ([69af009](https://github.com/Endika/specster/commit/69af0096c6719226a688b5c6b17f95d74b5ef965))
+
 ## [0.20.2](https://github.com/Endika/specster/compare/specster-v0.20.1...specster-v0.20.2) (2026-10-16)
 
 
