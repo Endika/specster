@@ -323,6 +323,9 @@ build:
 
 pricing: {}                            # override or add prices, USD per million tokens:
                                         #   claude-haiku-4-5: {input: 1.0, output: 5.0, cache_read: 0.1, cache_write: 1.25}
+                                        # claude-haiku-5-5 is priced at its over-100K-token rate;
+                                        # if every prompt stays under 100K tokens, its real rate is:
+                                        #   claude-haiku-5-5: {input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125}
 ```
 
 `skills.sources[].phases` defaults to `all` (spec, build and review); with `load: always` every
