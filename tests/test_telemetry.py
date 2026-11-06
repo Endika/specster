@@ -173,6 +173,7 @@ def closed_port() -> int:
 def test_a_dead_endpoint_never_raises_and_flush_is_bounded(
     kind: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    before = set(threading.enumerate())
     srv = SilentServer()
     port = closed_port() if kind == "closed" else srv.port
     try:
@@ -192,6 +193,11 @@ def test_a_dead_endpoint_never_raises_and_flush_is_bounded(
         assert took < 15
     finally:
         srv.close()
+        # Closing the server makes the exporters retry. Past this test that retry meets
+        # --block-network, which leaks its socket into whichever test the collector runs in.
+        for thread in set(threading.enumerate()) - before:
+            thread.join(15)
+    assert not set(threading.enumerate()) - before
 
 
 def test_the_sandbox_sees_no_otel_variables(
