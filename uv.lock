@@ -1425,7 +1425,7 @@ wheels = [
 
 [[package]]
 name = "specster"
-version = "0.21.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic", extra = ["bedrock", "vertex"] },
