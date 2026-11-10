@@ -15,7 +15,9 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 # Imported here under a filter of its own: pytest lets a command-line `-W error` override any
 # ini filterwarnings entry, and google-genai trips a Python 3.14 deprecation at import time.
+# 3.0.0 also compiles with an invalid escape in types.py (googleapis/python-genai#3308).
 with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message=".*invalid escape sequence", category=SyntaxWarning)
     warnings.filterwarnings(
         "ignore",
         message="'_UnionGenericAlias' is deprecated",
