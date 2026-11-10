@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/Endika/specster/compare/specster-v0.21.1...specster-v1.0.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **gemini:** follow google-genai 3 onto the v1 API
+
+### Bug Fixes
+
+* **gemini:** follow google-genai 3 onto the v1 API ([e438d9f](https://github.com/Endika/specster/commit/e438d9f84b465b1fcbdf9dd64bb8fdb8bc8cac12))
+
 ## [0.21.1](https://github.com/Endika/specster/compare/specster-v0.21.0...specster-v0.21.1) (2026-10-21)
 
 
