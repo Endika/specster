@@ -102,7 +102,7 @@ def test_request_carries_the_context_tools_and_token_cap() -> None:
     server = FakeGemini([_reply([{"text": "ok"}])])
     GeminiChat(server.client(), "gemini", "gemini-test", 256, 0).start("s", "c", "u", TOOLS).send()
 
-    assert server.paths == ["/v1beta/models/gemini-test:generateContent"]
+    assert server.paths == ["/v1/models/gemini-test:generateContent"]
     sent = server.requests[0]
     assert sent["systemInstruction"]["parts"] == [{"text": "s\n\nc"}]
     assert sent["generationConfig"]["maxOutputTokens"] == 256
