@@ -183,9 +183,10 @@ the AWS OIDC login below.
 **vertex-anthropic** - `region` and `project` are required, `base_url` is rejected. No API key:
 Application Default Credentials, normally the GCP OIDC login below.
 
-**gemini** - `model` (e.g. `gemini-flash-latest`). Reads `GEMINI_API_KEY`, or `api_key_env`. The
-Gemini free tier may use prompts to improve Google products. Do not point it at company code
-unless you are on a paid tier with that turned off.
+**gemini** - `model` (e.g. `gemini-3.1-flash-lite`). Reads `GEMINI_API_KEY`, or `api_key_env`. It
+calls the `v1` API, where the `-latest` aliases (`gemini-flash-latest`, `gemini-pro-latest`...) do
+not exist: name a specific model version. The Gemini free tier may use prompts to improve Google
+products. Do not point it at company code unless you are on a paid tier with that turned off.
 
 **vertex-gemini** - `region` and `project` are required, `base_url` is rejected. Application
 Default Credentials, normally the GCP OIDC login below.

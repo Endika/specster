@@ -35,7 +35,7 @@ PROVIDERS: dict[str, ModelConfig] = {
         api_version="2024-10-21",
         max_tokens=1024,
     ),
-    "gemini": ModelConfig(provider="gemini", model="gemini-flash-latest", max_tokens=1024),
+    "gemini": ModelConfig(provider="gemini", model="gemini-3.1-flash-lite", max_tokens=1024),
     "vertex-gemini": ModelConfig(
         provider="vertex-gemini",
         model="gemini-flash-latest",
